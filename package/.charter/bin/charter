@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""charter: the committed-layer CLI. Python 3 standard library only.
+
+  check     run the gates on the tree (--all) or the staged files (--staged)
+  anchors   check that every claim in a markdown deliverable is anchored
+  synth     produce the progress synthesis from repository state
+  ledger    fold session records into charter/ledger.jsonl; add headless results
+  unit      start | stop | show the active unit of work
+  decisions regenerate charter/decisions/INDEX.md
+  log       summarise .charter/state/log.jsonl
+  version   print the installed version
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import lib      # noqa: E402
+import checks   # noqa: E402
+
+
+def today() -> str:
+    return dt.date.today().isoformat()
+
+
+# ---------------------------------------------------------------- check
+
+def cmd_check(a) -> int:
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    rep = checks.Report()
+    gates = {g for g in ("scope", "size", "done", "decisions", "memory", "perimeter", "changes") if getattr(a, g, False)}
+    if not gates:
+        gates = {"scope", "size", "done", "decisions", "memory", "perimeter", "changes"}
+    decs = checks.decision_index(root)
+    if a.staged:
+        paths = checks.staged_paths(root)
+        texts = {p: checks.staged_text(root, p) for p in paths}
+    else:
+        r = lib.git(root, "ls-files")
+        paths = [p for p in r.stdout.splitlines() if p.strip()]
+        texts = {}
+    units = lib.taskets(root)
+    unit = units.get(lib.active_unit(root) or "")
+    if "scope" in gates:
+        if a.staged:
+            rep.add(*checks.check_scope(root, cfg, paths))
+        else:
+            changed = checks.changed_paths(root, a.base)
+            rep.add(*checks.check_scope(root, cfg, changed))
+            legacy = [f for f in checks.check_scope(root, cfg, [p for p in paths if p not in changed]) if f.level == "block"]
+            for f in legacy:
+                rep.add(checks.Finding("scope", "warn", f"legacy: {f.message.split(' and no approved')[0]} (present before this change set; retire, move, or cover it by a change request)", path=f.path))
+        for u in units.values():
+            rep.add(*checks.check_unit_scope(root, cfg, u))
+    if "changes" in gates:
+        rep.add(*checks.check_changes(root))
+    if "size" in gates:
+        for p in paths:
+            if a.staged:
+                new_lines = texts[p].count("\n")
+                old_lines = checks.head_text(root, p).count("\n")
+            else:
+                new_lines = lib.count_lines(root / p)
+                old_lines = 0 if a.strict else new_lines   # --all only reports growth in --strict
+            rep.add(*checks.check_size(root, cfg, p, new_lines, old_lines))
+    if "done" in gates:
+        for p in paths:
+            if p.startswith(lib.TASKETS_DIR + "/") and p.endswith(".md"):
+                text = texts.get(p) if a.staged else (root / p).read_text(encoding="utf-8", errors="replace")
+                if text is None:
+                    continue
+                if a.staged and not a.strict:
+                    # at commit, only gate taskets whose status *changes* to done
+                    f, _, _ = lib.split_frontmatter(text)
+                    if str(f.get("status")) in lib.as_list(cfg.get("done_statuses")) and checks.head_status_of_unit(root, p) == str(f.get("status")):
+                        continue
+                rep.add(*checks.check_unit_done(root, cfg, text, p))
+    if "decisions" in gates:
+        for p in paths:
+            if p.startswith(".charter/") or p.startswith("charter/decisions/"):
+                continue
+            text = texts.get(p) if a.staged else None
+            if text is None:
+                try:
+                    text = (root / p).read_text(encoding="utf-8", errors="replace")
+                except (OSError, UnicodeDecodeError):
+                    continue
+            if "\x00" in text[:4096]:
+                continue
+            rep.add(*checks.check_decisions_text(root, decs, p, text))
+        rep.add(*checks.run_decision_checks(root, decs, only_bound_to=None if not a.staged else paths))
+    if "perimeter" in gates and a.staged:
+        rep.add(*checks.check_perimeter(root, cfg, unit, [p for p in paths if not p.startswith((lib.TASKETS_DIR, lib.CHARTER_DIR, lib.TOOL_DIR, ".claude/", ".github/"))], at_commit=True))
+    if "memory" in gates:
+        rep.add(*checks.check_memory(root, cfg, today()))
+    for f in rep.findings:
+        lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all")
+    for f in rep.findings:
+        print(f.line())
+    n_b, n_w = len(rep.blocks), len(rep.warns)
+    print(f"charter check: {n_b} blocking, {n_w} warning(s) [{'staged' if a.staged else 'tree'}, track {cfg.get('track')}]")
+    if n_b:
+        print("Refused. Each line above names its override. `git commit --no-verify` skips this hook; CI runs it again.")
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------- anchors
+
+def cmd_anchors(a) -> int:
+    root = lib.repo_root(a.root)
+    rc = 0
+    for f in a.files:
+        p = Path(f)
+        text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else sys.stdin.read()
+        rep = checks.check_anchors(root, text, min_len=a.min_len)
+        status = "ok" if rep.ok else "FAIL"
+        print(f"{f}: {status} — {rep.claims} claim(s), {rep.anchored} anchored, {rep.admitted} admitted unverified, "
+              f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved anchor(s)")
+        for ln, t in rep.unanchored:
+            print(f"  unanchored L{ln}: {t}")
+        for ln, t in rep.unresolved:
+            print(f"  unresolved L{ln}: {t}")
+        if not rep.ok:
+            rc = 1
+    return rc
+
+
+# ---------------------------------------------------------------- synth
+
+def _unit_state(root: Path, cfg: dict, u: dict) -> tuple[str, dict]:
+    status = str(u.get("status", ""))
+    body = u.get("_body", "")
+    acc = lib.section(body, "Acceptance")
+    boxes = checks.CHECKBOX_RE.findall(acc)
+    ev = lib.section(body, "Evidence")
+    ok, bad = checks.evidence_anchors(root, ev) if ev else ([], [])
+    log = [l.strip() for l in lib.section(body, "Log").splitlines() if l.strip()]
+    info = {"boxes": len(boxes), "open": sum(1 for b in boxes if b[0] == " "), "evidence": ok, "bad": bad, "log": log}
+    if status in lib.as_list(cfg.get("done_statuses")):
+        return ("accepted" if boxes and info["open"] == 0 and ok and not bad else "done-unaccepted"), info
+    if status == "blocked":
+        return "blocked", info
+    if status in ("deleted", "superseded", "parked", "skipped", "realized", "deferred"):
+        return "closed", info
+    return ("in-progress" if log else "open"), info
+
+
+def cmd_synth(a) -> int:
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    units = lib.taskets(root)
+    decs = lib.decisions(root)
+    chg = lib.change_requests(root)
+    sc = lib.scope(root)
+    head = lib.git(root, "rev-parse", "--short=12", "HEAD").stdout.strip() or "(no commits)"
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    L: list[str] = []
+    L.append(f"# Progress synthesis — {now}")
+    L.append("")
+    L.append(f"Generated by `charter synth` from the repository at commit {head}; every line carries the file it was read from. Regenerate rather than edit.")
+    L.append("")
+    states = {uid: _unit_state(root, cfg, u) for uid, u in units.items()}
+
+    L.append("## Scope")
+    if sc["exists"]:
+        for sid, item in sc["in"].items():
+            citing = [uid for uid, u in units.items() if sid in lib.as_list(u.get("scope"))]
+            summary = ", ".join(f"{uid} ({states[uid][0]})" for uid in citing) or "no unit cites it"
+            L.append(f"- {sid} — {item['title']}: {summary} (charter/scope.md)")
+        for xid, item in sc["out"].items():
+            approved = [cid for cid, c in chg.items() if str(c.get('status')) == 'approved' and any(lib.matches_any(p, lib.as_list(c.get('paths'))) for p in item['paths'])] if item['paths'] else []
+            L.append(f"- {xid} — out of scope: {item['title']}" + (f"; approved change(s): {', '.join(approved)}" if approved else "") + " (charter/scope.md)")
+    else:
+        L.append(f"- No charter/scope.md; track is {cfg.get('track')} (charter/config.json)")
+    L.append("")
+
+    def unit_line(uid: str, u: dict, st: str, info: dict) -> str:
+        ev = ", ".join(info["evidence"][:3]) if info["evidence"] else "no evidence anchors"
+        extra = f"; last log: {info['log'][-1][:80]}" if info["log"] else ""
+        return f"- {uid} — {u.get('title', '')} [{u.get('status')}]: {info['boxes'] - info['open']}/{info['boxes']} criteria closed; evidence: {ev}{extra} ({u['_path']})"
+
+    for title, want in (("Done and accepted", "accepted"), ("Done but not accepted (evidence or criteria missing)", "done-unaccepted"),
+                        ("In progress", "in-progress"), ("Open, not started", "open"), ("Blocked", "blocked")):
+        rows = [(uid, u) for uid, u in units.items() if states[uid][0] == want]
+        L.append(f"## {title}")
+        if rows:
+            for uid, u in rows:
+                L.append(unit_line(uid, u, *states[uid]))
+        else:
+            L.append(f"- none ({lib.TASKETS_DIR}/, {len(units)} unit(s) read)")
+        L.append("")
+
+    L.append("## Open decisions and change requests")
+    props = [(k, v) for k, v in decs.items() if str(v.get("status")) == "proposed"]
+    pchg = [(k, v) for k, v in chg.items() if str(v.get("status")) == "proposed"]
+    for k, v in props:
+        L.append(f"- decision {k} — {v.get('title', '')} is proposed, waiting on {v.get('arbiter', 'the owner')} ({v['_path']})")
+    for k, v in pchg:
+        L.append(f"- change {k} — {v.get('title', '')} is proposed, waiting on the owner ({v['_path']})")
+    if not props and not pchg:
+        L.append(f"- none ({len(decs)} decision(s) in charter/decisions/, {len(chg)} change request(s) in charter/changes/)")
+    L.append("")
+
+    L.append("## Gate activity, last 30 days")
+    logp = root / lib.STATE_DIR / "log.jsonl"
+    counts: dict[str, int] = {}
+    if logp.exists():
+        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).isoformat()
+        for line in logp.read_text().splitlines():
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if r.get("ts", "") >= since:
+                k = f"{r.get('gate')}/{r.get('decision')}"
+                counts[k] = counts.get(k, 0) + 1
+        for k, v in sorted(counts.items()):
+            L.append(f"- {k}: {v} (.charter/state/log.jsonl, this machine only)")
+    if not counts:
+        L.append("- no gate events recorded on this machine yet; the gates in .charter/bin/charter and .charter/hooks/ write them as they fire")
+    L.append("")
+
+    L.append("## Cost per accepted result")
+    ledger = root / lib.CHARTER_DIR / "ledger.jsonl"
+    if ledger.exists():
+        per_unit: dict[str, dict] = {}
+        for line in ledger.read_text().splitlines():
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            d = per_unit.setdefault(r.get("unit") or "(none)", {"sessions": 0, "usd": 0.0, "accepted": False})
+            d["sessions"] += 1
+            d["usd"] += float(r.get("est_usd") or 0)
+            d["accepted"] = d["accepted"] or bool(r.get("accepted"))
+        acc = [k for k, v in per_unit.items() if v["accepted"]]
+        total = sum(v["usd"] for v in per_unit.values())
+        L.append(f"- {len(per_unit)} unit(s) with ledger records, {len(acc)} accepted, estimated total {total:.2f} USD (estimate from charter/config.json prices; charter/ledger.jsonl)")
+        for k, v in per_unit.items():
+            L.append(f"- {k}: {v['sessions']} session(s), {v['usd']:.2f} USD estimated, {'accepted' if v['accepted'] else 'not accepted'} (charter/ledger.jsonl)")
+    else:
+        L.append("- no ledger yet: run `python3 .charter/bin/charter ledger fold` after sessions end to create charter/ledger.jsonl")
+    text = "\n".join(L) + "\n"
+    rep = checks.check_anchors(root, text)
+    if not rep.ok:
+        sys.stderr.write("charter synth: the synthesis failed its own anchoring check; not written.\n")
+        for ln, t in rep.unanchored:
+            sys.stderr.write(f"  unanchored L{ln}: {t}\n")
+        for ln, t in rep.unresolved:
+            sys.stderr.write(f"  unresolved L{ln}: {t}\n")
+        return 1
+    if a.write:
+        out = root / (a.out or f"{lib.CHARTER_DIR}/progress.md")
+        out.write_text(text, encoding="utf-8")
+        print(f"wrote {lib.rel(root, out)} ({rep.claims} claim lines, all anchored)")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+# ---------------------------------------------------------------- ledger
+
+def _est_usd(cfg: dict, usage: dict | None) -> float | None:
+    if not usage:
+        return None
+    p = cfg["prices_usd_per_mtok"]
+    return round((usage["input"] * p["input"] + usage["output"] * p["output"] + usage["cache_read"] * p["cache_read"]
+                  + usage["cache_write"] * p["cache_write"]) / 1_000_000, 4)
+
+
+def cmd_ledger(a) -> int:
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    ledger = root / lib.CHARTER_DIR / "ledger.jsonl"
+    units = lib.taskets(root)
+
+    def accepted(uid: str) -> bool:
+        u = units.get(uid)
+        return bool(u) and _unit_state(root, cfg, u)[0] == "accepted"
+
+    if a.action == "fold":
+        src = root / lib.STATE_DIR / "sessions.jsonl"
+        if not src.exists():
+            print("nothing to fold (.charter/state/sessions.jsonl absent)")
+            return 0
+        have = set()
+        if ledger.exists():
+            for line in ledger.read_text().splitlines():
+                try:
+                    have.add(json.loads(line).get("session"))
+                except json.JSONDecodeError:
+                    pass
+        n = 0
+        with ledger.open("a", encoding="utf-8") as out:
+            for line in src.read_text().splitlines():
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if r.get("session") in have:
+                    continue
+                rec = {"ts": r["ts"], "session": r["session"], "unit": r.get("unit", ""), "source": "interactive",
+                       "usage": r.get("usage"), "est_usd": _est_usd(cfg, r.get("usage")), "accepted": accepted(r.get("unit", "")),
+                       "note": r.get("note", "") + " est_usd is an estimate from charter/config.json prices"}
+                out.write(json.dumps(rec) + "\n")
+                n += 1
+        print(f"folded {n} session record(s) into {lib.rel(root, ledger)}")
+        return 0
+    if a.action == "add":
+        data = json.loads(Path(a.result).read_text()) if a.result else json.loads(sys.stdin.read())
+        if isinstance(data, list):   # stream-json: take the result line
+            data = next((d for d in reversed(data) if d.get("type") == "result"), data[-1])
+        rec = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "session": data.get("session_id", ""),
+               "unit": a.unit or lib.active_unit(root) or "", "source": "headless", "usage": data.get("usage"),
+               "est_usd": data.get("total_cost_usd"), "num_turns": data.get("num_turns"), "duration_ms": data.get("duration_ms"),
+               "accepted": accepted(a.unit or lib.active_unit(root) or ""), "note": "total_cost_usd as reported by claude -p (client-side estimate)"}
+        with ledger.open("a", encoding="utf-8") as out:
+            out.write(json.dumps(rec) + "\n")
+        print(f"recorded session {rec['session'][:8]} for unit {rec['unit'] or '(none)'}: {rec['est_usd']} USD")
+        return 0
+    if a.action == "show":
+        if not ledger.exists():
+            print("no ledger")
+            return 0
+        for line in ledger.read_text().splitlines():
+            r = json.loads(line)
+            print(f"{r['ts']} {r['session'][:8]} unit={r.get('unit') or '-'} {r.get('source')} est_usd={r.get('est_usd')} accepted={r.get('accepted')}")
+        return 0
+    return 2
+
+
+# ---------------------------------------------------------------- unit
+
+def cmd_unit(a) -> int:
+    root = lib.repo_root(a.root)
+    st = root / lib.STATE_DIR
+    st.mkdir(parents=True, exist_ok=True)
+    if a.action == "start":
+        units = lib.taskets(root)
+        if a.id not in units:
+            print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
+            return 1
+        (st / "active").write_text(a.id + "\n")
+        cfg = lib.load_config(root)
+        for f in checks.check_unit_scope(root, cfg, units[a.id]):
+            print(f.line())
+        print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
+        return 0
+    if a.action == "stop":
+        p = st / "active"
+        if p.exists():
+            p.unlink()
+        print("no active unit")
+        return 0
+    aid = lib.active_unit(root)
+    print(aid or "no active unit")
+    return 0
+
+
+# ---------------------------------------------------------------- decisions index
+
+def cmd_decisions(a) -> int:
+    root = lib.repo_root(a.root)
+    decs = lib.decisions(root)
+    lines = ["# Decision index", "", "Generated by `charter decisions index`; do not edit. One file per decision in this directory.", "",
+             "| id | title | status | expires | binds | check |", "|---|---|---|---|---|---|"]
+    for k, v in decs.items():
+        lines.append(f"| {k} | {v.get('title', '')} | {v.get('status', 'active')} | {v.get('expires', '')} | {', '.join(lib.as_list(v.get('binds')))} | {'yes' if v.get('check') else ''} |")
+    out = root / lib.CHARTER_DIR / "decisions" / "INDEX.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"wrote {lib.rel(root, out)} ({len(decs)} decision(s))")
+    return 0
+
+
+# ---------------------------------------------------------------- log
+
+def cmd_log(a) -> int:
+    root = lib.repo_root(a.root)
+    logp = root / lib.STATE_DIR / "log.jsonl"
+    if not logp.exists():
+        print("no log")
+        return 0
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=a.days)).isoformat()
+    counts: dict[str, int] = {}
+    rows = []
+    for line in logp.read_text().splitlines():
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if r.get("ts", "") < since:
+            continue
+        rows.append(r)
+        k = f"{r.get('gate')}/{r.get('decision')}"
+        counts[k] = counts.get(k, 0) + 1
+    for k, v in sorted(counts.items()):
+        print(f"{k}: {v}")
+    if a.verbose:
+        for r in rows[-a.tail:]:
+            print(f"{r['ts']} {r.get('kind')} {r.get('gate')}/{r.get('decision')} {r.get('path', '')} {r.get('detail', '')[:100]}")
+    return 0
+
+
+def cmd_version(a) -> int:
+    root = lib.repo_root(a.root)
+    p = root / lib.CHARTER_DIR / "VERSION"
+    print(p.read_text().strip() if p.exists() else "not installed")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="charter", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--root", default=None, help="repository root (default: from cwd)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("check"); c.add_argument("--staged", action="store_true"); c.add_argument("--all", action="store_true")
+    c.add_argument("--strict", action="store_true", help="on --all, report every file over the size limit; on --staged, gate every done tasket")
+    c.add_argument("--ci", action="store_true")
+    c.add_argument("--base", default=None, help="on --all, the ref the change set is measured against (default: HEAD~1)")
+    for g in ("scope", "size", "done", "decisions", "memory", "perimeter", "changes"):
+        c.add_argument(f"--{g}", action="store_true")
+    c.set_defaults(fn=cmd_check)
+    an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40); an.set_defaults(fn=cmd_anchors)
+    s = sub.add_parser("synth"); s.add_argument("--write", action="store_true"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_synth)
+    l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None); l.set_defaults(fn=cmd_ledger)
+    u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?"); u.set_defaults(fn=cmd_unit)
+    d = sub.add_parser("decisions"); d.add_argument("action", choices=["index"]); d.set_defaults(fn=cmd_decisions)
+    lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
+    v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
+    a = ap.parse_args(argv)
+    return a.fn(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

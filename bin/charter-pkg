@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""charter-pkg: install, upgrade or uninstall the charter committed layer in a project.
+
+  charter-pkg install   <project> [--track client|prototype] [--dry-run] [--force]
+  charter-pkg upgrade   <project> [--dry-run] [--force]     shows the diff, then applies
+  charter-pkg uninstall <project> [--dry-run] [--force]
+  charter-pkg status    <project>
+
+Idempotent: a second install changes nothing. Files the package owns are listed with
+their hashes in <project>/.charter/manifest.json; a locally modified owned file is never
+overwritten without --force. Files the project owns (charter/scope.md, decisions, changes,
+config.json, ledger) are created when absent and never touched afterwards.
+Python 3 standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PKG = Path(__file__).resolve().parent.parent / "package"
+VERSION = (PKG / "VERSION").read_text().strip()
+
+# Files copied verbatim and owned by the package (relative to the package root).
+OWNED = [
+    ".charter/lib.py", ".charter/checks.py", ".charter/bin/charter",
+    ".charter/hooks/_common.py", ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py",
+    ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py",
+    ".charter/githooks/pre-commit", ".charter/githooks/README.md",
+    ".claude/rules/charter.md",
+    ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md", ".claude/skills/charter-progress/SKILL.md",
+    ".claude/agents/charter-reviewer.md",
+    ".github/workflows/charter.yml",
+    "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
+    "charter/templates/change.md", "charter/templates/unit.md",
+]
+# Created once from the package if absent; owned by the project afterwards.
+SEEDED = ["charter/config.json"]
+EXECUTABLE = {".charter/bin/charter", ".charter/githooks/pre-commit",
+              ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py", ".charter/hooks/stop_gate.py",
+              ".charter/hooks/session_start.py", ".charter/hooks/session_end.py"}
+HOOK_TAG = "/.charter/hooks/"
+AGENTS_BEGIN, AGENTS_END = "<!-- charter-section:begin -->", "<!-- charter-section:end -->"
+GITIGNORE_LINE = ".charter/state/"
+
+
+def sha(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def sha_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+class Plan:
+    def __init__(self, dry: bool):
+        self.dry = dry
+        self.steps: list[str] = []
+        self.changes = 0
+
+    def say(self, s: str, change: bool = True) -> None:
+        self.steps.append(s)
+        if change:
+            self.changes += 1
+        print(("would " if self.dry else "") + s)
+
+    def write(self, dest: Path, data: bytes, mode_exec: bool = False, what: str = "write") -> None:
+        self.say(f"{what} {dest}")
+        if self.dry:
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        if mode_exec:
+            dest.chmod(dest.stat().st_mode | 0o111)
+
+
+def load_manifest(project: Path) -> dict:
+    p = project / ".charter" / "manifest.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except json.JSONDecodeError:
+            pass
+    return {"version": None, "files": {}}
+
+
+def merge_settings(existing: dict, fragment: dict, project: Path) -> dict:
+    """Add the charter hook entries to a settings object, replacing any earlier charter entries."""
+    out = json.loads(json.dumps(existing))
+    hooks = out.setdefault("hooks", {})
+    for event, groups in fragment["hooks"].items():
+        cur = hooks.get(event, [])
+        cur = [g for g in cur if not any(HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", [])) for h in g.get("hooks", []))]
+        cur.extend(groups)
+        hooks[event] = cur
+    return out
+
+
+def strip_settings(existing: dict) -> dict:
+    out = json.loads(json.dumps(existing))
+    hooks = out.get("hooks", {})
+    for event in list(hooks):
+        hooks[event] = [g for g in hooks[event] if not any(HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", [])) for h in g.get("hooks", []))]
+        if not hooks[event]:
+            del hooks[event]
+    if not hooks and "hooks" in out:
+        del out["hooks"]
+    return out
+
+
+def do_install(project: Path, a, upgrade: bool = False) -> int:
+    plan = Plan(a.dry_run)
+    man = load_manifest(project)
+    installed = man.get("version")
+    if installed == VERSION and not a.force and not upgrade:
+        # idempotence: verify every owned file is present and unchanged; repair what is missing
+        missing = [rel for rel in OWNED if not (project / rel).exists()]
+        if not missing:
+            print(f"charter {VERSION} already installed in {project}; nothing to do")
+            return 0
+        print(f"charter {VERSION} recorded but {len(missing)} owned file(s) missing; repairing")
+    if upgrade and installed is None:
+        print(f"nothing installed in {project}; use install")
+        return 1
+    if upgrade:
+        print(f"upgrade {installed} -> {VERSION} in {project}")
+    new_files: dict[str, str] = {}
+    conflicts: list[str] = []
+    for rel in OWNED:
+        src = PKG / rel
+        data = src.read_bytes()
+        new_files[rel] = sha_bytes(data)
+        dest = project / rel
+        if dest.exists():
+            cur = sha(dest)
+            if cur == new_files[rel]:
+                continue
+            recorded = man["files"].get(rel)
+            locally_modified = recorded is not None and cur != recorded
+            if locally_modified and not a.force:
+                conflicts.append(rel)
+                print(f"KEEP (locally modified, use --force to overwrite) {rel}")
+                continue
+            if upgrade or a.show_diff:
+                diff = difflib.unified_diff(dest.read_text(errors="replace").splitlines(), data.decode(errors="replace").splitlines(),
+                                            fromfile=f"{rel} (installed)", tofile=f"{rel} ({VERSION})", lineterm="")
+                print("\n".join(list(diff)[:200]))
+            plan.write(dest, data, rel in EXECUTABLE, what="update")
+        else:
+            plan.write(dest, data, rel in EXECUTABLE, what="create")
+    for rel in SEEDED:
+        dest = project / rel
+        if not dest.exists():
+            data = (PKG / rel).read_bytes()
+            if rel == "charter/config.json" and a.track:
+                obj = json.loads(data)
+                obj["track"] = a.track
+                data = (json.dumps(obj, indent=2) + "\n").encode()
+            plan.write(dest, data, what="seed")
+    # directories the project owns
+    for d in ("charter/decisions", "charter/changes", ".taskets"):
+        p = project / d
+        if not p.exists():
+            plan.say(f"create {p}/")
+            if not a.dry_run:
+                p.mkdir(parents=True, exist_ok=True)
+                (p / ".gitkeep").touch()
+    # settings.json merge
+    sp = project / ".claude" / "settings.json"
+    frag = json.loads((PKG / ".claude" / "settings.json").read_text())
+    existing = json.loads(sp.read_text()) if sp.exists() else {}
+    merged = merge_settings(existing, frag, project)
+    if merged != existing:
+        plan.write(sp, (json.dumps(merged, indent=2) + "\n").encode(), what="merge hooks into")
+    # AGENTS.md section
+    ap = project / "AGENTS.md"
+    section = (PKG / "AGENTS.md").read_text()
+    cur = ap.read_text() if ap.exists() else ""
+    if AGENTS_BEGIN in cur:
+        head, rest = cur.split(AGENTS_BEGIN, 1)
+        _, tail = rest.split(AGENTS_END, 1)
+        newtxt = head + section.strip() + tail
+    else:
+        newtxt = (cur.rstrip() + "\n\n" if cur.strip() else "# Agents\n\n") + section.strip() + "\n"
+    if newtxt != cur:
+        plan.write(ap, newtxt.encode(), what="update charter section in")
+    # .gitignore
+    gp = project / ".gitignore"
+    gcur = gp.read_text() if gp.exists() else ""
+    if GITIGNORE_LINE not in gcur.splitlines():
+        plan.write(gp, (gcur.rstrip("\n") + "\n" if gcur else "") .encode() + (PKG / ".gitignore.fragment").read_bytes(), what="append state dir to")
+    # version + manifest
+    vp = project / "charter" / "VERSION"
+    if not vp.exists() or vp.read_text().strip() != VERSION:
+        plan.write(vp, (VERSION + "\n").encode(), what="record version in")
+    manifest = {"version": VERSION, "files": new_files, "seeded": SEEDED}
+    mp = project / ".charter" / "manifest.json"
+    if not mp.exists() or load_manifest(project) != manifest:
+        plan.write(mp, (json.dumps(manifest, indent=2) + "\n").encode(), what="write manifest")
+    # git hooks path
+    if (project / ".git").exists() or subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode == 0:
+        cur_path = subprocess.run(["git", "-C", str(project), "config", "--get", "core.hooksPath"], capture_output=True, text=True).stdout.strip()
+        if cur_path != ".charter/githooks":
+            plan.say(f"git config core.hooksPath .charter/githooks (was {cur_path or 'unset'})")
+            if not a.dry_run:
+                subprocess.run(["git", "-C", str(project), "config", "core.hooksPath", ".charter/githooks"], check=True)
+    print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s); charter {VERSION}" + (f"; {len(conflicts)} kept local file(s)" if conflicts else ""))
+    if conflicts and not a.dry_run:
+        print("Review the kept files against the package and re-run with --force to replace them.")
+    return 0
+
+
+def do_uninstall(project: Path, a) -> int:
+    plan = Plan(a.dry_run)
+    man = load_manifest(project)
+    if man.get("version") is None and not a.force:
+        print(f"nothing recorded as installed in {project} (no .charter/manifest.json)")
+        return 1
+    for rel, h in man.get("files", {}).items():
+        p = project / rel
+        if not p.exists():
+            continue
+        if sha(p) != h and not a.force:
+            print(f"KEEP (locally modified) {rel}")
+            continue
+        plan.say(f"remove {rel}")
+        if not a.dry_run:
+            p.unlink()
+    for rel in [".charter/manifest.json", "charter/VERSION"]:
+        p = project / rel
+        if p.exists():
+            plan.say(f"remove {rel}")
+            if not a.dry_run:
+                p.unlink()
+    sp = project / ".claude" / "settings.json"
+    if sp.exists():
+        existing = json.loads(sp.read_text())
+        stripped = strip_settings(existing)
+        if stripped != existing:
+            if stripped:
+                plan.write(sp, (json.dumps(stripped, indent=2) + "\n").encode(), what="remove charter hooks from")
+            else:
+                plan.say(f"remove {sp} (nothing left in it)")
+                if not a.dry_run:
+                    sp.unlink()
+    ap = project / "AGENTS.md"
+    if ap.exists() and AGENTS_BEGIN in ap.read_text():
+        cur = ap.read_text()
+        head, rest = cur.split(AGENTS_BEGIN, 1)
+        _, tail = rest.split(AGENTS_END, 1)
+        newtxt = (head.rstrip() + tail).strip() + "\n"
+        if newtxt.strip() in ("", "# Agents"):
+            plan.say(f"remove {ap} (only the charter section was in it)")
+            if not a.dry_run:
+                ap.unlink()
+        else:
+            plan.write(ap, newtxt.encode(), what="remove charter section from")
+    gp = project / ".gitignore"
+    if gp.exists():
+        lines = gp.read_text().splitlines()
+        keep = [l for l in lines if l.strip() != GITIGNORE_LINE and not l.startswith("# charter:")]
+        if keep != lines:
+            plan.write(gp, ("\n".join(keep) + "\n").encode(), what="remove state dir from")
+    # empty dirs the package created
+    for d in [".charter/hooks", ".charter/githooks", ".charter/bin", ".charter/state", ".charter",
+              ".claude/skills/charter-unit", ".claude/skills/charter-decision", ".claude/skills/charter-progress",
+              ".claude/skills", ".claude/rules", ".claude/agents", ".claude", ".github/workflows", ".github",
+              "charter/templates"]:
+        p = project / d
+        if p.is_dir():
+            if d == ".charter/state" and any(p.iterdir()):
+                if a.purge_state:
+                    plan.say(f"remove {d}/ (per-machine state)")
+                    if not a.dry_run:
+                        shutil.rmtree(p)
+                else:
+                    print(f"KEEP {d}/ (per-machine logs; --purge-state removes it)")
+                continue
+            if not any(x for x in p.rglob("*") if x.name != "__pycache__" and not x.suffix == ".pyc"):
+                plan.say(f"remove empty {d}/")
+                if not a.dry_run:
+                    shutil.rmtree(p)
+    cur_path = subprocess.run(["git", "-C", str(project), "config", "--get", "core.hooksPath"], capture_output=True, text=True).stdout.strip()
+    if cur_path == ".charter/githooks":
+        plan.say("git config --unset core.hooksPath")
+        if not a.dry_run:
+            subprocess.run(["git", "-C", str(project), "config", "--unset", "core.hooksPath"])
+    print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s). Kept: charter/scope.md, charter/decisions/, charter/changes/, charter/config.json, charter/ledger.jsonl, .taskets/ (project-owned).")
+    return 0
+
+
+def do_status(project: Path, a) -> int:
+    man = load_manifest(project)
+    print(f"package version: {VERSION}; installed: {man.get('version') or 'none'}")
+    if man.get("version"):
+        modified = [rel for rel, h in man["files"].items() if (project / rel).exists() and sha(project / rel) != h]
+        missing = [rel for rel in man["files"] if not (project / rel).exists()]
+        outdated = [rel for rel in OWNED if (project / rel).exists() and sha(project / rel) != sha(PKG / rel)]
+        print(f"owned files: {len(man['files'])}; locally modified: {len(modified)}; missing: {len(missing)}; differ from package: {len(outdated)}")
+        for rel in modified:
+            print(f"  modified: {rel}")
+        for rel in missing:
+            print(f"  missing: {rel}")
+    cur_path = subprocess.run(["git", "-C", str(project), "config", "--get", "core.hooksPath"], capture_output=True, text=True).stdout.strip()
+    print(f"git core.hooksPath: {cur_path or 'unset'}")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="charter-pkg", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("install", "upgrade", "uninstall", "status"):
+        s = sub.add_parser(name)
+        s.add_argument("project")
+        s.add_argument("--dry-run", action="store_true")
+        s.add_argument("--force", action="store_true")
+        s.add_argument("--track", choices=["client", "prototype"], default=None)
+        s.add_argument("--show-diff", action="store_true")
+        s.add_argument("--purge-state", action="store_true")
+    a = ap.parse_args(argv)
+    project = Path(a.project).resolve()
+    if not project.is_dir():
+        print(f"not a directory: {project}")
+        return 2
+    if a.cmd == "install":
+        return do_install(project, a)
+    if a.cmd == "upgrade":
+        return do_install(project, a, upgrade=True)
+    if a.cmd == "uninstall":
+        return do_uninstall(project, a)
+    return do_status(project, a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

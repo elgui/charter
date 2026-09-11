@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "track": "client",
+  "owner": "",
+  "limits": { "file_lines": 800, "governance_lines": 400 },
+  "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt", "*.html"],
+  "done_statuses": ["done"],
+  "prices_usd_per_mtok": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 }
+}

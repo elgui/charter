@@ -1,0 +1,2 @@
+# charter: per-machine state (logs, active unit, session records); never an input
+.charter/state/

@@ -1,0 +1,27 @@
+name: charter
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gates on the tree
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 .charter/bin/charter check --all --ci ${BASE:+--base "$BASE"}
+      - name: Anchors on charter documents and progress reports
+        run: |
+          set -e
+          files=$(git ls-files 'charter/*.md' 'charter/**/*.md' 'docs/progress*.md' 2>/dev/null | grep -v -E '^charter/(templates|README)' || true)
+          [ -z "$files" ] || python3 .charter/bin/charter anchors $files
+      - name: Anchors on the pull request description
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n' "$BODY" > /tmp/pr-body.md
+          python3 .charter/bin/charter anchors /tmp/pr-body.md
