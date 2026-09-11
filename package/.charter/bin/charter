@@ -120,6 +120,7 @@ def cmd_anchors(a) -> int:
     for f in a.files:
         p = Path(f)
         text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else sys.stdin.read()
+        checks.DOC_DIR = p.resolve().parent if p.exists() else None
         rep = checks.check_anchors(root, text, min_len=a.min_len)
         status = "ok" if rep.ok else "FAIL"
         print(f"{f}: {status} — {rep.claims} claim(s), {rep.anchored} anchored, {rep.admitted} admitted unverified, "

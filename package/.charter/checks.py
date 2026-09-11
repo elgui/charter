@@ -159,6 +159,9 @@ def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "") -> bool
     return False
 
 
+DOC_DIR: Path | None = None   # set by the anchors command: paths may be relative to the document
+
+
 def _abs(root: Path, value: str) -> Path:
     """Repo-relative by default; `~/` and `/` paths resolve on this machine (a report written
     here is checked here; CI sees them as unresolved, which is the honest reading)."""
@@ -166,6 +169,8 @@ def _abs(root: Path, value: str) -> Path:
         return Path(os.path.expanduser(value))
     if value.startswith("/"):
         return Path(value)
+    if not (root / value).exists() and DOC_DIR is not None and (DOC_DIR / value).exists():
+        return DOC_DIR / value
     return root / value
 
 

@@ -1,0 +1,89 @@
+2026-09-11T14:55:57.906209Z ERROR codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: {
+  "error": {
+    "message": "Your session has ended. Please log in again.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "refresh_token_invalidated"
+  }
+}
+2026-09-11T14:55:57.906718Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:57.933906Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.044064Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.127509Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.176163Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.210288Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.352631Z ERROR codex_models_manager::manager: failed to refresh available models: unexpected status 401 Unauthorized: Encountered invalidated oauth token for user, failing request, url: https://chatgpt.com/backend-api/codex/models?client_version=0.152.0, cf-ray: a3978434ffffdc72-FRA, request id: req_938065b298e54d21921c19318bb3bdfd, auth error: 401, auth error code: token_revoked
+2026-09-11T14:55:58.390578Z ERROR codex_models_manager::manager: failed to refresh available models: unexpected status 401 Unauthorized: Encountered invalidated oauth token for user, failing request, url: https://chatgpt.com/backend-api/codex/models?client_version=0.152.0, cf-ray: a397843538304d8f-FRA, request id: req_7bd2ad85cc3a46c8a97738b53c4374b7, auth error: 401, auth error code: token_revoked
+2026-09-11T14:55:58.421826Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.559254Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+OpenAI Codex v0.152.0
+--------
+workdir: /home/gui/Projects/methodo
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a090f7-ddb9-7ec1-8856-6a594acec7e8
+--------
+user
+You are an independent reviewer with no prior context. Below are twelve headline claims from a report, each with the evidence it cites. Your job: re-check each claim against the evidence by reading the files and running read-only commands (grep, sed -n, wc, git log, ls). Do not take the report's word for anything. Do not read the report itself. Do not read anything under ~/Projects/tcv2/docs/factory/ and do not check out any branch anywhere. Do not modify any file.
+
+For each claim return one row: claim id | verdict (CONFIRMED / DIFFERS / NOT FOUND) | what you actually found, with the command or file:line you used. Then list any claim you could not verify and why. Be terse. Quote at most one short phrase per row.
+
+Repository under review: /home/gui/Projects/methodo (branch fable/method-2026-09-11). Package code: package/.charter/checks.py, package/.charter/hooks/*.py, package/.charter/bin/charter, bin/charter-pkg. Tests: tests/. Trial artifacts: docs/trials/2026-09-11/*.summary.json.
+
+Claims:
+
+C1. tele-claude's tasket reader copies only an allowlist of frontmatter keys and leaves unknown keys on disk; a grouped tasket without `order:` is dropped from a group run. Evidence: ~/Projects/tele-claude/services/project_tasket_reader.py lines 230-234 and 315-327.
+
+C2. tcv2's CLAUDE.md is 873 lines, contains D-numbered rulings from D1 to D26 with D6 through D11 absent, and at least 14 occurrences of amended/superseded/struck. Evidence: ~/Projects/tcv2/CLAUDE.md (wc -l; grep -oE 'D[0-9]+' | sort -u; grep -ci 'amended\|superseded\|struck').
+
+C3. orqueveaux has 161 tracked files, 33 tracked root-level *.md files of which 14 have names starting with PHASE, a 462-line CLAUDE.md, 7 files in .taskets/, and no tracked file whose name contains "scope" or "devis". Evidence: git ls-files in ~/Projects/orqueveaux (read-only; do not checkout).
+
+C4. In ~/Projects/orqueveaux, tests/conftest.py lines 153-166 contain fallback values for STRIPE_SECRET_KEY and HUBSPOT_ACCESS_TOKEN via os.getenv with hardcoded defaults. Report only whether that is so; do not print the values.
+
+C5. Cursor's blog post https://cursor.com/blog/agent-swarm-model-economics contains the phrases "more than 70,000 conflicts", "compile-checked reference back to its doc", "neutral third-party agent", and "Field Guide". Anthropic's page https://www.anthropic.com/research/multiagent-systems contains "21 vulnerabilities over a 6.5 million token run" and "266 vulnerabilities". Evidence: fetch with curl -sL -A Mozilla and grep after stripping tags. If you have no network, say NOT VERIFIABLE.
+
+C6. The Claude Code hooks reference (https://code.claude.com/docs/en/hooks.md) states that `-p` sessions treat the folder as trusted so hooks in a repository's .claude/settings.json run there, and that Claude Code overrides a Stop hook after 8 consecutive blocks. If no network, check the copy at /tmp/claude-1001/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/scratchpad/docs/hooks.md (grep for "treats the folder as trusted" and "8 consecutive").
+
+C7. The package's PreToolUse hook denies a Write to a path listed under an out-of-scope item in charter/scope.md when no approved change request covers it, and the tests exercise this. Evidence: package/.charter/checks.py check_scope; package/.charter/hooks/pre_tool_gate.py; tests/test_gates.py ScopeGate. Run: cd tests && python3 -m unittest -q test_gates.ScopeGate.
+
+C8. The Stop hook blocks at most once per turn: it returns decision "block" for a completion claim without evidence and passes through when stop_hook_active is true. Evidence: package/.charter/hooks/stop_gate.py; tests/test_gates.py StopGate. Run: cd tests && python3 -m unittest -q test_gates.StopGate.
+
+C9. The full test suite has 36 tests and passes. Run: cd tests && python3 -m unittest -q test_gates test_installer.
+
+C10. The installer is idempotent and its dry run writes nothing. Evidence: tests/test_installer.py (test_dry_run_changes_nothing, test_install_is_idempotent). Run: cd tests && python3 -m unittest -q test_installer.
+
+C11. The thirteen trial sessions in docs/trials/2026-09-11/*.summary.json sum to about 1.04 USD of cost_usd, and the T5-done summary shows gate_denies 2 and stop_blocks 2 with a final_text beginning "Not done". Evidence: python3 -c over the json files.
+
+C12. The ISA format in upstream PAI states that a criterion is atomic when a single tool call returns yes/no, and that resume reads the ISA rather than the conversation. Evidence: /tmp/claude-1001/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/scratchpad/PAI-upstream/LifeOS/install/LIFEOS/DOCUMENTATION/ISA/ISAFormat.md around lines 606-608 and 703.
+
+2026-09-11T14:55:58.627274Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.686184Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.687806Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when UnexpectedServerResponse("HTTP 401: {\n  \"error\": {\n    \"message\": \"Encountered invalidated oauth token for user, failing request\",\n    \"type\": null,\n    \"code\": \"token_revoked\",\n    \"param\": null\n  },\n  \"status\": 401\n}")
+2026-09-11T14:55:58.735380Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when UnexpectedServerResponse("HTTP 401: {\n  \"error\": {\n    \"message\": \"Encountered invalidated oauth token for user, failing request\",\n    \"type\": null,\n    \"code\": \"token_revoked\",\n    \"param\": null\n  },\n  \"status\": 401\n}")
+2026-09-11T14:55:58.872191Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.898060Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:58.923093Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.106121Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://chatgpt.com/backend-api/codex/responses
+2026-09-11T14:55:59.155509Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.176750Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.200415Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.327623Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://chatgpt.com/backend-api/codex/responses
+2026-09-11T14:55:59.363839Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.494695Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.680441Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:55:59.815276Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.026277Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.051826Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.077298Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.277198Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://chatgpt.com/backend-api/codex/responses
+2026-09-11T14:56:00.335954Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.360505Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.386642Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.565089Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://chatgpt.com/backend-api/codex/responses
+ERROR: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+ERROR: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
+2026-09-11T14:56:00.591688Z ERROR codex_login::auth::manager: Failed to refresh token: Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.
