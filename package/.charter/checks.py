@@ -21,9 +21,9 @@ GOVERNANCE_GLOBS = [".claude/rules/*.md"]
 MARKER_RE = re.compile(r"charter:([a-z0-9][a-z0-9._-]*)", re.I)
 CHECKBOX_RE = re.compile(r"^\s*-\s*\[( |x|X)\]\s*(AC-\d+|[^\n]*)", re.M)
 SHA_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
-FILELINE_RE = re.compile(r"(?<![\w/])((?:[A-Za-z0-9_.\-]+/)*[A-Za-z0-9_.\-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?")
+FILELINE_RE = re.compile(r"(?<![\w/.~-])((?:~/|/)?(?:[A-Za-z0-9_.\-]+/)*[A-Za-z0-9_.\-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?")
 URL_RE = re.compile(r"https?://[^\s)>\]]+")
-PATH_RE = re.compile(r"(?<![\w/:.])((?:\.?[A-Za-z0-9_.\-]+/)+[A-Za-z0-9_.\-]*|[A-Za-z0-9_\-]+\.(?:md|py|json|jsonl|ya?ml|toml|txt|sh|ts|js|csv|html))(?![\w/])")
+PATH_RE = re.compile(r"(?<![\w/:.~-])((?:~/|/)?(?:\.?[A-Za-z0-9_.\-]+/)+[A-Za-z0-9_.\-]*|[A-Za-z0-9_\-]+\.(?:md|py|json|jsonl|ya?ml|toml|txt|sh|ts|js|csv|html))(?![\w/])")
 DONE_CLAIM_RE = re.compile(
     r"\b(done|complete[d]?|finished|implemented|fixed|resolved|shipped|all tests pass(?:ed|ing)?|ready to merge)\b"
     r"|✅|\[x\]", re.I)
@@ -147,16 +147,26 @@ def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "") -> bool
     if anchor_kind == "sha":
         return lib.git(root, "cat-file", "-e", f"{value}^{{commit}}").returncode == 0
     if anchor_kind == "fileline":
-        p = root / value
+        p = _abs(root, value)
         if not p.is_file():
             return False
         n = int(extra)
         return 1 <= n <= max(1, lib.count_lines(p))
     if anchor_kind == "path":
-        return (root / value).exists()
+        return _abs(root, value).exists()
     if anchor_kind == "url":
         return True
     return False
+
+
+def _abs(root: Path, value: str) -> Path:
+    """Repo-relative by default; `~/` and `/` paths resolve on this machine (a report written
+    here is checked here; CI sees them as unresolved, which is the honest reading)."""
+    if value.startswith("~/"):
+        return Path(os.path.expanduser(value))
+    if value.startswith("/"):
+        return Path(value)
+    return root / value
 
 
 def evidence_anchors(root: Path, text: str) -> tuple[list[str], list[str]]:
@@ -176,7 +186,7 @@ def evidence_anchors(root: Path, text: str) -> tuple[list[str], list[str]]:
         cand = m.group(1).rstrip("/.")
         if "*" in cand or not cand or cand.startswith("-"):
             continue
-        if (root / cand).exists():
+        if _abs(root, cand).exists():
             ok.append(cand)
     for line in text.splitlines():
         if line.strip().startswith("$ ") or line.strip().startswith("`$ "):
@@ -335,7 +345,7 @@ class AnchorReport:
         return not self.unanchored and not self.unresolved
 
 
-ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*)\)", re.I)
+ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
 
 
@@ -370,12 +380,13 @@ def check_anchors(root: Path, text: str, min_len: int = 40) -> AnchorReport:
             return
         rep.claims += 1
         n_ok, bad = _anchors_in(root, joined, evidence_ids)
-        if bad:
+        admitted = ADMIT_RE.search(joined) is not None
+        if bad and not admitted:
             rep.unresolved.append((first, ", ".join(bad[:4])))
-        if n_ok:
-            rep.anchored += 1
-        elif ADMIT_RE.search(joined):
+        if admitted:
             rep.admitted += 1
+        elif n_ok:
+            rep.anchored += 1
         else:
             rep.unanchored.append((first, joined[:90]))
         para.clear()
@@ -398,6 +409,8 @@ def check_anchors(root: Path, text: str, min_len: int = 40) -> AnchorReport:
             flush(); continue
         if re.match(r"^\|?\s*:?-{2,}", s):   # table separator
             flush(); continue
+        if s.startswith("|") and i < len(lines) and re.match(r"^\|?\s*:?-{2,}", lines[i].strip()):
+            flush(); continue            # table header row
         if s.startswith("|") or s.startswith("- ") or s.startswith("* ") or re.match(r"^\d+\.\s", s):
             flush()
             para.append((i, s))
