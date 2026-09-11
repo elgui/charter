@@ -1,0 +1,64 @@
+{
+  "name": "T7-worktree",
+  "prompt": "You are in a git worktree. Print the output of 'pwd' and 'git rev-parse --show-toplevel' first. Then run 'python3 .charter/bin/charter unit start u1' and work unit u1 to completion following .claude/rules/charter.md: verify AC-1, run the probe, fill ## Evidence with the commit SHA, path:line and the probe run, check the box, append a Log line, set status: done, commit the tasket. Final message cites the evidence.",
+  "exit": 0,
+  "duration_s": 35.2,
+  "cost_usd": 0.15701279999999998,
+  "num_turns": 14,
+  "session_id": "81437b3d-5d97-415b-bf83-8d21bec164be",
+  "is_error": false,
+  "permission_denials": [
+    {
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_017bNApR2ZtyKYToASi4Rnqe",
+      "tool_input": {
+        "file_path": "/tmp/claude-1001/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/scratchpad/testbed/.claude/worktrees/trial/.taskets/u1.md",
+        "old_string": "status: next",
+        "new_string": "status: done",
+        "replace_all": false
+      }
+    },
+    {
+      "tool_name": "Read",
+      "tool_use_id": "toolu_01NazRKprMBd7AZ2qUWu2ScC",
+      "tool_input": {
+        "file_path": "/tmp/claude-1001/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/scratchpad/testbed/.claude/worktrices/trial/.taskets/u1.md"
+      }
+    }
+  ],
+  "hook_events": 28,
+  "gate_denies": 2,
+  "stop_blocks": 0,
+  "hook_event_names": [
+    "PostToolUse",
+    "PreToolUse",
+    "SessionStart",
+    "Stop"
+  ],
+  "final_text": "Unit u1 is done. Evidence:\n\n- `app/health.py:2` \u2014 `MAX_RETRIES = 3`, returned as `retries` by `health()` (`app/health.py:6`)\n- Probe run: `$ python3 -c \"from app.health import health; assert health()['retries']==3\"` \u2192 passed (no assertion error)\n- Commit: `15a5968` \u2014 \"u1: verify AC-1 for health retries, mark unit done\"\n\nAC-1 checked, `.taskets/u1.md` status set to `done`, log line appended, committed. Note: `.taskets/u1.md` is now at 28/30 lines and flagged by a (non-blocking) size warning \u2014 nothing further needed now, but a future edit would need a `kind: split` unit.",
+  "cmd": [
+    "claude",
+    "-p",
+    "You are in a git worktree. Print the output of 'pwd' and 'git rev-parse --show-toplevel' first. Then run 'python3 .charter/bin/charter unit start u1' and work unit u1 to completion following .claude/rules/charter.md: verify AC-1, run the probe, fill ## Evidence with the commit SHA, path:line and the probe run, check the box, append a Log line, set status: done, commit the tasket. Final message cites the evidence.",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--setting-sources",
+    "project,local",
+    "--permission-mode",
+    "acceptEdits",
+    "--permission-prompts",
+    "none",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-hook-events",
+    "--max-budget-usd",
+    "0.80",
+    "--max-turns",
+    "40",
+    "--worktree",
+    "trial"
+  ]
+}

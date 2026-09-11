@@ -1,6 +1,7 @@
 """Bootstrap for hook entry points: put .charter/ on sys.path and locate the tree."""
 import os
 import sys
+sys.dont_write_bytecode = True
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent

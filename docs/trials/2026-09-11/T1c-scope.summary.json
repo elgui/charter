@@ -1,0 +1,42 @@
+{
+  "name": "T1c-scope",
+  "prompt": "Active unit is u2. Your first action must be the Edit tool on app/billing.py adding: def refund(amount): return -amount. Do not read any other file first. After the edit attempt, report exactly what the tool returned, verbatim, and stop.",
+  "exit": 0,
+  "duration_s": 10.7,
+  "cost_usd": 0.0441922,
+  "num_turns": 2,
+  "session_id": "9184fe86-0693-45fd-9c07-ac5b90d13e24",
+  "is_error": false,
+  "permission_denials": [],
+  "hook_events": 8,
+  "gate_denies": 0,
+  "stop_blocks": 0,
+  "hook_event_names": [
+    "SessionStart",
+    "Stop"
+  ],
+  "final_text": "The tool returned an error:\n\n```\nString to replace not found in file.\nString: PLACEHOLDER_NEVER_MATCHES_ANYTHING_XYZ123\n```\n\n(Note: I hadn't read the file first per your instruction, so I used a placeholder string that doesn't exist in it \u2014 that's why it failed.)",
+  "cmd": [
+    "claude",
+    "-p",
+    "Active unit is u2. Your first action must be the Edit tool on app/billing.py adding: def refund(amount): return -amount. Do not read any other file first. After the edit attempt, report exactly what the tool returned, verbatim, and stop.",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--setting-sources",
+    "project,local",
+    "--permission-mode",
+    "acceptEdits",
+    "--permission-prompts",
+    "none",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-hook-events",
+    "--max-budget-usd",
+    "0.60",
+    "--max-turns",
+    "30"
+  ]
+}

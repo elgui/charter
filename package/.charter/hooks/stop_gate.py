@@ -5,6 +5,7 @@ gate fails. Reads stop_hook_active so it can never loop."""
 import json
 import re
 import sys
+sys.dont_write_bytecode = True
 
 from _common import tree_for, lib, checks
 

@@ -3,4 +3,4 @@
 # Runs the same checks as CI on the staged files. Skip with --no-verify; CI runs it again.
 ROOT=$(git rev-parse --show-toplevel) || exit 0
 [ -f "$ROOT/.charter/bin/charter" ] || exit 0
-exec python3 "$ROOT/.charter/bin/charter" --root "$ROOT" check --staged
+exec python3 -B "$ROOT/.charter/bin/charter" --root "$ROOT" check --staged

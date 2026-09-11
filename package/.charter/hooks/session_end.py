@@ -4,6 +4,7 @@ Reads the transcript best-effort: the format is internal to Claude Code and may 
 so a failure here records the session with no token figures rather than nothing."""
 import json
 import sys
+sys.dont_write_bytecode = True
 import datetime as dt
 from pathlib import Path
 

@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-B",
+              "/home/gui/Projects/methodo/personal/claude-home/hooks/charter-personal.py"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

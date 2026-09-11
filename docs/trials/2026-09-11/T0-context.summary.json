@@ -1,0 +1,42 @@
+{
+  "name": "T0-context",
+  "prompt": "Answer with one word, yes or no: do your instructions mention VPS servers, Dokku, or a Telegram hook? Then on a second line, one word: did a system reminder at session start mention an active unit or charter?",
+  "exit": 0,
+  "duration_s": 3.7,
+  "cost_usd": 0.122439,
+  "num_turns": 1,
+  "session_id": "ef70b0a7-d97e-42cd-b744-0744d4dcd8ab",
+  "is_error": false,
+  "permission_denials": [],
+  "hook_events": 8,
+  "gate_denies": 0,
+  "stop_blocks": 0,
+  "hook_event_names": [
+    "SessionStart",
+    "Stop"
+  ],
+  "final_text": "No\nYes",
+  "cmd": [
+    "claude",
+    "-p",
+    "Answer with one word, yes or no: do your instructions mention VPS servers, Dokku, or a Telegram hook? Then on a second line, one word: did a system reminder at session start mention an active unit or charter?",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--setting-sources",
+    "project,local",
+    "--permission-mode",
+    "acceptEdits",
+    "--permission-prompts",
+    "none",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-hook-events",
+    "--max-budget-usd",
+    "0.20",
+    "--max-turns",
+    "3"
+  ]
+}

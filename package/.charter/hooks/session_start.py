@@ -3,6 +3,7 @@
 open criteria, active decisions, pending changes, recent gate activity (R5)."""
 import json
 import sys
+sys.dont_write_bytecode = True
 import datetime as dt
 
 from _common import tree_for, lib, checks

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Run one headless Claude Code session against a test bed and summarise what the gates did.
+
+  trial-run <name> <testbed> <outdir> [--settings FILE] [--worktree NAME] [--budget USD] [--turns N] -- <prompt>
+
+Writes <outdir>/<name>.jsonl (the stream-json output) and <outdir>/<name>.summary.json.
+Flags fixed by the brief: --model sonnet --effort low --setting-sources project,local
+--permission-mode acceptEdits --permission-prompts none --output-format stream-json --verbose --include-hook-events.
+"""
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def main(argv):
+    if "--" not in argv:
+        print(__doc__); return 2
+    i = argv.index("--")
+    opts, prompt = argv[:i], " ".join(argv[i + 1:])
+    name, testbed, outdir = opts[0], Path(opts[1]).resolve(), Path(opts[2]).resolve()
+    settings = worktree = None
+    budget, turns = "0.60", "30"
+    j = 3
+    while j < len(opts):
+        if opts[j] == "--settings": settings = opts[j + 1]; j += 2
+        elif opts[j] == "--worktree": worktree = opts[j + 1]; j += 2
+        elif opts[j] == "--budget": budget = opts[j + 1]; j += 2
+        elif opts[j] == "--turns": turns = opts[j + 1]; j += 2
+        else: print("unknown option", opts[j]); return 2
+    outdir.mkdir(parents=True, exist_ok=True)
+    cmd = ["claude", "-p", prompt, "--model", "sonnet", "--effort", "low", "--setting-sources", "project,local",
+           "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--output-format", "stream-json",
+           "--verbose", "--include-hook-events", "--max-budget-usd", budget, "--max-turns", turns]
+    if settings:
+        cmd += ["--settings", settings]
+    if worktree:
+        cmd += ["--worktree", worktree]
+    t0 = time.time()
+    r = subprocess.run(cmd, cwd=str(testbed), capture_output=True, text=True)
+    dur = time.time() - t0
+    (outdir / f"{name}.jsonl").write_text(r.stdout)
+    (outdir / f"{name}.stderr").write_text(r.stderr)
+    events, result, hooks, denies, blocks, texts = [], None, [], [], [], []
+    for line in r.stdout.splitlines():
+        try:
+            o = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        events.append(o)
+        t = o.get("type")
+        if t == "result":
+            result = o
+        if t == "system" and o.get("subtype", "").startswith("hook"):
+            hooks.append(o)
+        if t in ("hook_started", "hook_response", "hook_progress") or (t == "system" and "hook" in o.get("subtype", "")):
+            hooks.append(o)
+        s = json.dumps(o)
+        if '"permissionDecision": "deny"' in s or '"permissionDecision":"deny"' in s or "charter gate refused" in s:
+            denies.append(o)
+        if '"decision": "block"' in s or '"decision":"block"' in s or "charter stop gate" in s:
+            blocks.append(o)
+        if t == "assistant":
+            for c in (o.get("message", {}).get("content") or []):
+                if c.get("type") == "text":
+                    texts.append(c["text"])
+    summary = {
+        "name": name, "prompt": prompt, "exit": r.returncode, "duration_s": round(dur, 1),
+        "cost_usd": result.get("total_cost_usd") if result else None,
+        "num_turns": result.get("num_turns") if result else None,
+        "session_id": result.get("session_id") if result else None,
+        "is_error": result.get("is_error") if result else None,
+        "permission_denials": result.get("permission_denials") if result else None,
+        "hook_events": len(hooks), "gate_denies": len(denies), "stop_blocks": len(blocks),
+        "hook_event_names": sorted(set((h.get("hook_event") or h.get("hook_name") or h.get("subtype") or "") for h in hooks)),
+        "final_text": (texts[-1][:600] if texts else (result or {}).get("result", "")[:600]),
+        "cmd": cmd,
+    }
+    (outdir / f"{name}.summary.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps({k: v for k, v in summary.items() if k not in ("cmd", "prompt")}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

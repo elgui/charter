@@ -133,7 +133,8 @@ def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int) -
         su = split_unit_for(root, rp)
         if su:
             return [Finding("size", "warn", f"{rp} is over {limit} lines ({new_lines}); allowed because split unit {su} is open", path=rp)]
-        return [Finding("size", "block", f"{rp} would grow to {new_lines} lines, over the {limit}-line limit; the file is frozen",
+        verb = f"would grow to {new_lines} lines" if old_lines else f"is {new_lines} lines"
+        return [Finding("size", "block", f"{rp} {verb}, over the {limit}-line limit; the file is frozen for growth",
                         path=rp, override=f"create a unit with `kind: split` and `perimeter: [{rp}]` and split the file, or reduce it below {limit} lines")]
     if new_lines > int(limit * 0.8) and new_lines > old_lines:
         return [Finding("size", "warn", f"{rp} is at {new_lines} lines, {limit} is the limit; plan a split", path=rp)]

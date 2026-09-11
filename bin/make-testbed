@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Build the trial test bed at the given path (fresh), with the package installed,
+a scope, two decisions, one unit, and a local settings allow-list for headless runs."""
+import json
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
+import helpers  # noqa: E402
+
+
+def main(dest: str, track: str = "client") -> int:
+    dest = Path(dest).resolve()
+    if dest.exists():
+        shutil.rmtree(dest)
+    tmp = helpers.make_project(with_charter=True, track=track)
+    shutil.move(str(tmp), str(dest))
+    local = {"permissions": {"allow": ["Bash(python3 *)", "Bash(python *)", "Bash(git *)", "Bash(pytest *)", "Bash(cat *)", "Bash(ls *)",
+                                       "Bash(grep *)", "Bash(sed *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(echo *)"]}}
+    (dest / ".claude" / "settings.local.json").write_text(json.dumps(local, indent=2) + "\n")
+    cfg = json.loads((dest / "charter" / "config.json").read_text())
+    cfg["limits"]["file_lines"] = 30
+    cfg["owner"] = "Test Owner"
+    (dest / "charter" / "config.json").write_text(json.dumps(cfg, indent=2) + "\n")
+    helpers.git(dest, "add", "-A")
+    helpers.git(dest, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "trial baseline")
+    print(f"test bed at {dest}: {helpers.git(dest, 'rev-parse', '--short', 'HEAD').stdout.strip()}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(*sys.argv[1:]))

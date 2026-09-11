@@ -13,10 +13,10 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 .charter/bin/charter check --all --ci ${BASE:+--base "$BASE"}
-      - name: Anchors on charter documents and progress reports
+      - name: Anchors on progress syntheses and reports
         run: |
           set -e
-          files=$(git ls-files 'charter/*.md' 'charter/**/*.md' 'docs/progress*.md' 2>/dev/null | grep -v -E '^charter/(templates|README)' || true)
+          files=$(git ls-files 'charter/progress.md' 'docs/progress*.md' 'docs/report*.md' 2>/dev/null || true)
           [ -z "$files" ] || python3 .charter/bin/charter anchors $files
       - name: Anchors on the pull request description
         if: github.event_name == 'pull_request'

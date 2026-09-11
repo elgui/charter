@@ -1,0 +1,55 @@
+{
+  "name": "T6-wellformed",
+  "prompt": "Work the active unit u1 (.taskets/u1.md) to completion following .claude/rules/charter.md and the charter-unit skill: check the code satisfies AC-1 (edit app/health.py only if needed, keep the charter:retry-limit marker), run the probe, commit the code change if any, then fill ## Evidence with the commit SHA, path:line and the probe run, check the AC box, append a Log line, set status: done, and commit the tasket. Your final message must cite the same evidence.",
+  "exit": 0,
+  "duration_s": 39.4,
+  "cost_usd": 0.1171814,
+  "num_turns": 10,
+  "session_id": "cabe5626-4ba0-4c22-b941-d480977d5e16",
+  "is_error": false,
+  "permission_denials": [
+    {
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_01Ev22dBtcC4kaSPUWafwBGL",
+      "tool_input": {
+        "file_path": "/tmp/claude-1001/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/scratchpad/testbed/.taskets/u1.md",
+        "old_string": "status: next",
+        "new_string": "status: done",
+        "replace_all": false
+      }
+    }
+  ],
+  "hook_events": 28,
+  "gate_denies": 2,
+  "stop_blocks": 0,
+  "hook_event_names": [
+    "PostToolUse",
+    "PreToolUse",
+    "SessionStart",
+    "Stop"
+  ],
+  "final_text": "Unit u1 is done. No code change was needed \u2014 `app/health.py` already satisfies AC-1.\n\nEvidence:\n- `app/health.py:6` returns `retries: MAX_RETRIES` (with `MAX_RETRIES = 3` at `app/health.py:2`), keeping the `charter:retry-limit` marker at `app/health.py:1`.\n- Probe: `$ python3 -c \"from app.health import health; assert health()['retries']==3\"` \u2192 passed.\n- Commit `1812eae` \u2014 \"u1: verify health() retries AC-1, mark done\" \u2014 updates `.taskets/u1.md` with checked AC-1, evidence, and log line; `status: done`.",
+  "cmd": [
+    "claude",
+    "-p",
+    "Work the active unit u1 (.taskets/u1.md) to completion following .claude/rules/charter.md and the charter-unit skill: check the code satisfies AC-1 (edit app/health.py only if needed, keep the charter:retry-limit marker), run the probe, commit the code change if any, then fill ## Evidence with the commit SHA, path:line and the probe run, check the AC box, append a Log line, set status: done, and commit the tasket. Your final message must cite the same evidence.",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--setting-sources",
+    "project,local",
+    "--permission-mode",
+    "acceptEdits",
+    "--permission-prompts",
+    "none",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-hook-events",
+    "--max-budget-usd",
+    "0.80",
+    "--max-turns",
+    "40"
+  ]
+}

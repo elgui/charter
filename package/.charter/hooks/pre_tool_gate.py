@@ -4,6 +4,7 @@ scope (R6), size (R3), done-needs-evidence (R9) on taskets, retired-decision cit
 Denies with the override named; warns otherwise. Fails open on its own errors."""
 import json
 import sys
+sys.dont_write_bytecode = True
 
 from _common import tree_for, post_edit_text, lib, checks
 

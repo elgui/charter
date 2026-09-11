@@ -4,6 +4,7 @@ perimeter without a note (R4), decision `check:` commands bound to the file (R1)
 and a per-session record of edited paths for the Stop hook."""
 import json
 import sys
+sys.dont_write_bytecode = True
 from pathlib import Path
 
 from _common import tree_for, lib, checks
