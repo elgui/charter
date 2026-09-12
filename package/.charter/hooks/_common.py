@@ -1,4 +1,5 @@
 """Bootstrap for hook entry points: put .charter/ on sys.path and locate the tree."""
+import json
 import os
 import sys
 sys.dont_write_bytecode = True
@@ -21,6 +22,36 @@ def tree_for(data: dict) -> Path:
     # not a charter project at cwd; fall back to the project dir
     alt = lib.repo_root(os.environ.get("CLAUDE_PROJECT_DIR") or cwd)
     return alt
+
+
+def session_file(root: Path, sid: str) -> Path:
+    return lib.local_state_dir(root) / f"session-{sid}.json"
+
+
+def read_session(root: Path, sid: str) -> dict:
+    """Per-session scratch: `edited` (paths this session), `turn_edited` (since the last Stop),
+    `head` (HEAD at the last Stop or at session start)."""
+    p = session_file(root, sid)
+    try:
+        cur = json.loads(p.read_text()) if p.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        cur = {}
+    cur.setdefault("edited", [])
+    cur.setdefault("turn_edited", [])
+    return cur
+
+
+def write_session(root: Path, sid: str, cur: dict) -> None:
+    p = session_file(root, sid)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(cur))
+    except OSError:
+        pass
+
+
+def head(root: Path) -> str:
+    return lib.git(root, "rev-parse", "HEAD").stdout.strip()
 
 
 def post_edit_text(data: dict) -> str | None:

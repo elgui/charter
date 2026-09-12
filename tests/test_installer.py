@@ -2,10 +2,11 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import make_project, git, cleanup, INSTALLER, PKG
+from helpers import make_project, git, cleanup, INSTALLER, PKG, DECISION
 
 
 def pkg(*args):
@@ -73,6 +74,33 @@ class Installer(unittest.TestCase):
         self.assertEqual(git(self.root, "config", "--get", "core.hooksPath", check=False).stdout.strip(), "")
         self.assertFalse((self.root / "AGENTS.md").exists())
         self.assertNotIn(".charter/state/", (self.root / ".gitignore").read_text())
+
+    def test_upgrade_from_0_1_0_keeps_the_project_working(self):
+        old = Path(tempfile.mkdtemp(prefix="charter-pkg-0.1.0-"))
+        try:
+            arch = subprocess.run(["git", "-C", str(PKG.parent), "archive", "71ddc0b", "bin", "package"], capture_output=True)
+            if arch.returncode != 0:
+                self.skipTest("the 0.1.0 package is not in this checkout's history")
+            subprocess.run(["tar", "-x", "-C", str(old)], input=arch.stdout, check=True)
+            (self.root / ".taskets").mkdir()
+            (self.root / ".taskets" / "old.md").write_text("---\nid: old\ntitle: Old\nstatus: next\n---\n")
+            (self.root / "charter" / "decisions").mkdir(parents=True)
+            (self.root / "charter" / "decisions" / "retry-limit.md").write_text(DECISION)   # app/health.py cites it
+            r = subprocess.run([sys.executable, str(old / "bin" / "charter-pkg"), "install", str(self.root)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            git(self.root, "add", "-A")
+            git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "charter 0.1.0")
+            r = pkg("upgrade", str(self.root))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual((self.root / "charter" / "VERSION").read_text().strip(), (PKG / "VERSION").read_text().strip())
+            self.assertIn("old", (self.root / "charter" / "legacy-taskets.txt").read_text().split())
+            git(self.root, "add", "-A")
+            git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "charter upgrade")
+            r = subprocess.run([sys.executable, str(self.root / ".charter" / "bin" / "charter"), "--root", str(self.root), "check", "--all"],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        finally:
+            cleanup(old)
 
     def test_status_reports_versions(self):
         pkg("install", str(self.root))

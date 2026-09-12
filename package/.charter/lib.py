@@ -5,32 +5,56 @@ without network access. It is imported by the hooks, the git hooks and the CLI.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import fnmatch
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 CHARTER_DIR = "charter"
 TOOL_DIR = ".charter"
-STATE_DIR = ".charter/state"
+STATE_DIR = ".charter/state"      # the 0.1.0 location; `charter setup` moves what it finds there
 TASKETS_DIR = ".taskets"
+LEGACY_FILE = "charter/legacy-taskets.txt"
+
+# Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).
+TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "deferred")
+# Statuses of a unit still being planned: its acceptance criteria may change without a log line.
+PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.1.0",
+    "version": "0.2.0",
     "track": "client",            # "client" | "prototype"
-    "owner": "",                  # git author name that approves change requests
+    "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
         "file_lines": 800,        # rule 3: freeze-and-split threshold
         "governance_lines": 400,  # CLAUDE.md, rules, scope, decisions index
     },
     "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt"],
     "done_statuses": ["done"],
-    "prices_usd_per_mtok": {      # estimates for the ledger; update when Anthropic does
-        "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75
+    "probes": {                   # re-run acceptance probes of units that close in a change set
+        "at_commit": False, "in_ci": False, "timeout_s": 120,
+    },
+    # estimates for the ledger, USD per million tokens; keys are model-id prefixes (the longest match
+    # wins), "default" for the rest; cache_write is the 5-minute TTL, cache_write_1h the 1-hour one
+    "prices_usd_per_mtok": {
+        "_source": "https://platform.claude.com/docs/en/about-claude/pricing, read 2026-09-11; estimates, update when Anthropic does",
+        "default": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6.0},
+        "claude-fable-5-1": {"input": 10.0, "output": 50.0, "cache_read": 0.25, "cache_write": 12.5, "cache_write_1h": 20.0},
+        "claude-fable-5": {"input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_write": 12.5, "cache_write_1h": 20.0},
+        "claude-opus-5": {"input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10.0},
+        "claude-opus-4-8": {"input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10.0},
+        "claude-opus-4-7": {"input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10.0},
+        "claude-opus-4-6": {"input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10.0},
+        "claude-sonnet-5": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5, "cache_write_1h": 4.0},
+        "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6.0},
+        "claude-haiku-4-5": {"input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25, "cache_write_1h": 2.0},
     },
 }
 
@@ -50,22 +74,91 @@ def repo_root(start: str | os.PathLike | None = None) -> Path:
 
 def load_config(root: Path) -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
-    p = root / CHARTER_DIR / "config.json"
+    p = artifact_root(root) / CHARTER_DIR / "config.json"
     if p.exists():
         try:
             user = json.loads(p.read_text())
         except json.JSONDecodeError as e:
             raise SystemExit(f"charter/config.json is not valid JSON: {e}")
         for k, v in user.items():
-            if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+            if k == "prices_usd_per_mtok" and isinstance(v, dict):
+                # a project's rows override the package's; the 0.1.0 flat form is its "default" row
+                cfg[k].update(v if any(isinstance(x, dict) for x in v.values()) else {"default": v})
+            elif isinstance(v, dict) and isinstance(cfg.get(k), dict):
                 cfg[k].update(v)
             else:
                 cfg[k] = v
     return cfg
 
 
+def owner_session() -> bool:
+    """True when Claude Code (or the committing shell) was started with CHARTER_OWNER=1.
+    Hook processes inherit Claude Code's environment; a Bash command's exports do not reach them."""
+    return os.environ.get("CHARTER_OWNER", "") == "1"
+
+
+def in_claude_code() -> bool:
+    """True inside a process started by Claude Code (it sets CLAUDECODE=1 for its tools)."""
+    return os.environ.get("CLAUDECODE", "") == "1"
+
+
 def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check)
+
+
+_GIT_DIRS: dict[tuple[str, str], Path | None] = {}
+
+
+def _git_path(root: Path, which: str) -> Path | None:
+    """Absolute `git rev-parse --git-dir` or `--git-common-dir` for the checkout at root."""
+    key = (str(root), which)
+    if key not in _GIT_DIRS:
+        r = git(root, "rev-parse", "--path-format=absolute", which)
+        if r.returncode != 0:   # git older than 2.31: the answer is relative to root
+            r = git(root, "rev-parse", which)
+        out = r.stdout.strip()
+        _GIT_DIRS[key] = ((root / out).resolve() if out else None) if r.returncode == 0 else None
+    return _GIT_DIRS[key]
+
+
+def shared_state_dir(root: Path) -> Path:
+    """The gate log and session records: in the git common directory, so every worktree of a
+    repository writes to one place, the records outlive a removed worktree, and nothing commits them."""
+    d = _git_path(root, "--git-common-dir")
+    return d / "charter" if d else root / STATE_DIR
+
+
+def local_state_dir(root: Path) -> Path:
+    """The active unit and per-session scratch: in this worktree's own git directory."""
+    d = _git_path(root, "--git-dir")
+    return d / "charter" if d else root / STATE_DIR
+
+
+# ---------------------------------------------------------------- the staged view
+
+_VIEW: Path | None = None
+
+
+def artifact_root(root: Path) -> Path:
+    """Where the charter artifacts are read from: the tree, or the index while `index_view` is open."""
+    return _VIEW if _VIEW is not None else root
+
+
+@contextlib.contextmanager
+def index_view(root: Path):
+    """Read charter/ and .taskets/ as staged, so the pre-commit judges the commit, not the working tree."""
+    global _VIEW
+    tmp = Path(tempfile.mkdtemp(prefix="charter-index-"))
+    try:
+        listed = git(root, "ls-files", "-z", "--", CHARTER_DIR, TASKETS_DIR).stdout
+        if listed.strip("\0"):
+            subprocess.run(["git", "-C", str(root), "checkout-index", "-f", "-z", "--stdin", f"--prefix={tmp}/"],
+                           input=listed, capture_output=True, text=True)
+        _VIEW = tmp
+        yield tmp
+    finally:
+        _VIEW = None
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def rel(root: Path, path: str | os.PathLike) -> str:
@@ -101,34 +194,73 @@ _FM_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.S)
 def split_frontmatter(text: str) -> tuple[dict, str, str]:
     """Return (fields, raw_frontmatter, body). Flat `key: value` and simple
     `key: [a, b]` / `key:\n  - a` lists are parsed; anything else is kept as a string.
-    Unknown keys are preserved verbatim, which is what the tasket parsers require."""
+    A `#` at the start of a value or after whitespace, outside quotes, starts a comment,
+    as in YAML. Unknown keys are preserved verbatim, which is what the tasket parsers require."""
     m = _FM_RE.match(text)
     if not m:
         return {}, "", text
     raw = m.group(1)
     fields: dict = {}
     current_list_key = None
+    blank: set[str] = set()
     for line in raw.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if current_list_key and re.match(r"^\s+-\s+", line):
-            fields[current_list_key].append(_scalar(line.split("-", 1)[1].strip()))
+            fields[current_list_key].append(_scalar(strip_comment(line.split("-", 1)[1].strip())))
             continue
         current_list_key = None
         if ":" not in line:
             continue
         key, _, val = line.partition(":")
         key = key.strip()
-        val = val.strip()
+        val = strip_comment(val.strip())
         if val == "":
             fields[key] = []
             current_list_key = key
+            blank.add(key)
         elif val.startswith("[") and val.endswith("]"):
             inner = val[1:-1].strip()
             fields[key] = [_scalar(x.strip()) for x in inner.split(",")] if inner else []
         else:
             fields[key] = _scalar(val)
+    for key in blank:   # `key:` with no list under it is empty, as YAML reads it, not an empty list
+        if fields.get(key) == []:
+            fields[key] = ""
     return fields, raw, text[m.end():]
+
+
+def strip_comment(v: str) -> str:
+    """Drop a trailing comment: `#` at the start or after whitespace, outside quotes. Quotes are
+    honoured anywhere in the value, so a quoted `#` inside a `check:` command survives."""
+    quote = None
+    for i, ch in enumerate(v):
+        prev = v[i - 1] if i else " "
+        if quote:
+            if ch == quote and not (quote == '"' and prev == "\\"):
+                quote = None
+        elif ch in "\"'" and (prev.isspace() or prev in "[,"):
+            quote = ch
+        elif ch == "#" and prev.isspace():
+            return v[:i].rstrip()
+    return v
+
+
+def inline_comments(text: str) -> list[str]:
+    """Frontmatter keys whose value carries a trailing comment. tcv2's reader keeps such comments
+    as part of the value (~/Projects/tcv2/services/tasket_routing.py:707-732), so an engine can
+    read `status: done  # x` as a status it does not know."""
+    m = _FM_RE.match(text)
+    if not m:
+        return []
+    out = []
+    for line in m.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#") or line[:1].isspace() or ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        if strip_comment(val.strip()) != val.strip():
+            out.append(key.strip())
+    return out
 
 
 def _scalar(v: str):
@@ -153,27 +285,45 @@ def as_list(v) -> list[str]:
 # ---------------------------------------------------------------- artifacts
 
 def scope(root: Path) -> dict:
-    """Parse charter/scope.md. Items are headings `### S1 — title` (in scope) under
-    `## In scope`, `## Out of scope`, `## Assumptions`; each item may carry a
-    `paths:` line listing globs. Returns {"in": {id: {...}}, "out": {...}, "assumptions": [...], "text": str}"""
-    p = root / CHARTER_DIR / "scope.md"
-    result = {"in": {}, "out": {}, "assumptions": [], "exists": p.exists(), "path": p}
-    if not p.exists():
-        return result
-    section = None
-    current = None
-    for line in p.read_text(encoding="utf-8").splitlines():
+    """Parse charter/scope.md (see `parse_scope`), adding "exists" and "path"."""
+    p = artifact_root(root) / CHARTER_DIR / "scope.md"
+    result = parse_scope(p.read_text(encoding="utf-8")) if p.exists() else parse_scope("")
+    result.update(exists=p.exists(), path=p)
+    return result
+
+
+def _heading(t: str) -> str:
+    return re.sub(r"[\s_-]+", " ", t.strip().lower())
+
+
+def parse_scope(text: str) -> dict:
+    """Items are `###` headings under `## In scope` and `## Out of scope` (hyphens, underscores and
+    case are ignored, so `## Out-of-Scope` counts); each may carry a `paths:` line of globs. An item
+    heading without an id (`### Invoicing`) is still read, keyed by its heading, so its paths are
+    still gated. Returns {"in": {id: {...}}, "out": {...}, "assumptions": [...], "problems": [...]};
+    "problems" lists what makes a gate fail open, in words for `charter check --scope`."""
+    result: dict = {"in": {}, "out": {}, "assumptions": [], "problems": []}
+    section, unknown, current = None, None, None
+    for line in text.splitlines():
         h2 = re.match(r"^##\s+(.*)", line)
-        if h2 and not line.startswith("###"):
-            t = h2.group(1).strip().lower()
-            section = "in" if t.startswith("in scope") else "out" if t.startswith("out of scope") else \
-                "assumptions" if t.startswith("assumption") else None
+        if h2:
+            t = _heading(h2.group(1))
+            section = ("in" if t.startswith("in scope") else
+                       "out" if t.startswith(("out of scope", "not in scope")) else
+                       "assumptions" if t.startswith("assumption") else None)
+            unknown = h2.group(1).strip() if section is None else None
             current = None
             continue
-        h3 = re.match(r"^###\s+([A-Za-z]+[-_]?\d+)\b\s*[—:-]?\s*(.*)", line)
-        if h3 and section in ("in", "out"):
-            current = h3.group(1)
-            result[section][current] = {"title": h3.group(2).strip(), "paths": []}
+        h3 = re.match(r"^###\s+(.*)", line)
+        if h3:
+            current = None
+            head = h3.group(1).strip()
+            if section in ("in", "out"):
+                m = re.match(r"([A-Za-z]+[-_]?\d+)\b\s*[—–:-]?\s*(.*)", head)
+                current = m.group(1) if m else head
+                result[section][current] = {"title": (m.group(2).strip() if m else head), "paths": [], "has_id": bool(m)}
+            elif unknown is not None:
+                result["problems"].append(f"`### {head}` sits under `## {unknown}`, which is not In scope, Out of scope or Assumptions; it is not read")
             continue
         if section == "assumptions" and line.strip().startswith("-"):
             result["assumptions"].append(line.strip()[1:].strip())
@@ -181,13 +331,23 @@ def scope(root: Path) -> dict:
         if pm and current and section in ("in", "out"):
             val = pm.group(1).strip().strip("`")
             result[section][current]["paths"] = [x.strip().strip("`") for x in re.split(r"[,\s]+", val) if x.strip()]
+    if text.strip() and not result["in"]:
+        result["problems"].append("no item under `## In scope`; units have nothing to cite")
+    for sec, label in (("in", "in-scope"), ("out", "out-of-scope")):
+        for iid, item in result[sec].items():
+            if not item["has_id"]:
+                result["problems"].append(f"{label} item `### {iid}` has no id (write `### {'S' if sec == 'in' else 'X'}<n> — title`); "
+                                          + ("its paths are gated under its heading" if sec == "out" else "units cannot cite it by a stable id"))
+            if sec == "out" and not item["paths"]:
+                result["problems"].append(f"out-of-scope item {iid} ({item['title']}) has no paths: line, so the scope gate refuses nothing for it")
     return result
 
 
 def decisions(root: Path) -> dict[str, dict]:
     """charter/decisions/*.md → {id: fields+body}. id = filename stem unless `id:` set."""
     out = {}
-    d = root / CHARTER_DIR / "decisions"
+    base = artifact_root(root)
+    d = base / CHARTER_DIR / "decisions"
     if not d.is_dir():
         return out
     for p in sorted(d.glob("*.md")):
@@ -195,7 +355,7 @@ def decisions(root: Path) -> dict[str, dict]:
             continue
         fields, body = read_md(p)
         did = str(fields.get("id") or p.stem)
-        fields["_path"] = rel(root, p)
+        fields["_path"] = rel(base, p)
         fields["_body"] = body
         fields.setdefault("status", "active")
         out[did] = fields
@@ -204,7 +364,8 @@ def decisions(root: Path) -> dict[str, dict]:
 
 def change_requests(root: Path) -> dict[str, dict]:
     out = {}
-    d = root / CHARTER_DIR / "changes"
+    base = artifact_root(root)
+    d = base / CHARTER_DIR / "changes"
     if not d.is_dir():
         return out
     for p in sorted(d.glob("*.md")):
@@ -212,7 +373,7 @@ def change_requests(root: Path) -> dict[str, dict]:
             continue
         fields, body = read_md(p)
         cid = str(fields.get("id") or p.stem)
-        fields["_path"] = rel(root, p)
+        fields["_path"] = rel(base, p)
         fields["_body"] = body
         fields.setdefault("status", "proposed")
         out[cid] = fields
@@ -221,24 +382,48 @@ def change_requests(root: Path) -> dict[str, dict]:
 
 def taskets(root: Path) -> dict[str, dict]:
     out = {}
-    d = root / TASKETS_DIR
+    base = artifact_root(root)
+    d = base / TASKETS_DIR
     if not d.is_dir():
         return out
     for p in sorted(d.glob("*.md")):
         fields, body = read_md(p)
-        fields["_path"] = rel(root, p)
+        fields["_path"] = rel(base, p)
         fields["_body"] = body
         fields["_id"] = str(fields.get("id") or p.stem)
         out[fields["_id"]] = fields
     return out
 
 
+def approved_changes(root: Path) -> dict[str, dict]:
+    """Change requests that count as approved: status approved, with who and when recorded (R7)."""
+    return {cid: c for cid, c in change_requests(root).items()
+            if str(c.get("status")) == "approved" and c.get("approved_by") and c.get("approved_on")}
+
+
+def legacy_taskets(root: Path) -> set[str]:
+    """Ids listed in charter/legacy-taskets.txt: taskets the installer found before charter."""
+    p = artifact_root(root) / LEGACY_FILE
+    if not p.exists():
+        return set()
+    return {x for x in (line.split("#", 1)[0].strip() for line in p.read_text().splitlines()) if x}
+
+
+def is_charter_unit(text: str) -> bool:
+    """A tasket that took up the method: it cites a scope item or carries an acceptance section."""
+    fields, _, body = split_frontmatter(text)
+    return bool(fields.get("scope")) or bool(section(body, "Acceptance"))
+
+
 def active_unit(root: Path) -> str | None:
-    p = root / STATE_DIR / "active"
+    """CHARTER_UNIT from the environment (engines export it), else `charter unit start`'s choice."""
+    env = os.environ.get("CHARTER_UNIT", "").strip()
+    if env:
+        return env
+    p = local_state_dir(root) / "active"
     if p.exists():
-        v = p.read_text().strip()
-        return v or None
-    return os.environ.get("CHARTER_UNIT") or None
+        return p.read_text().strip() or None
+    return None
 
 
 def section(body: str, title: str) -> str:
@@ -261,9 +446,9 @@ def section(body: str, title: str) -> str:
 # ---------------------------------------------------------------- log
 
 def log_event(root: Path, kind: str, gate: str, decision: str, detail: str, **extra) -> None:
-    """Append one JSON line to .charter/state/log.jsonl. Every gate and warning
-    writes here; the log is how a warning earns promotion to a gate."""
-    d = root / STATE_DIR
+    """Append one JSON line to log.jsonl in the shared state directory. Every gate and
+    warning writes here; the log is how a warning earns promotion to a gate."""
+    d = shared_state_dir(root)
     try:
         d.mkdir(parents=True, exist_ok=True)
         rec = {"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
@@ -286,7 +471,7 @@ def read_hook_input() -> dict:
 
 
 def deny(reason: str) -> None:
-    """PreToolUse: deny the tool call. Exit 2 with stderr is what Claude sees."""
+    """PreToolUse: deny the tool call. Prints the JSON decision and exits 0; the reason reaches Claude."""
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                              "permissionDecision": "deny",
                                              "permissionDecisionReason": reason}}))
@@ -301,6 +486,11 @@ def allow_with_context(event: str, context: str) -> None:
 def block_stop(reason: str) -> None:
     print(json.dumps({"decision": "block", "reason": reason}))
     sys.exit(0)
+
+
+def line_count(text: str) -> int:
+    """Lines in a text, counting a last line without a newline, as `count_lines` does for a file."""
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
 
 
 def count_lines(path: Path) -> int:

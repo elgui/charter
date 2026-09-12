@@ -9,18 +9,18 @@ description: Start, resume or finish a unit of work under the charter method. US
 
 1. `python3 .charter/bin/charter unit start <tasket-id>`. If the tasket does not exist, create it from `charter/templates/unit.md` into `.taskets/` (keep the engines' keys: `id`, `title`, `status`, `priority`, `group`, `group_order`, `order` when grouped).
 2. Read the unit. Its `## Log` is the state; the transcript is not. Say in one line where it stands.
-3. Check the unit cites a scope item (`scope:`) on the client track, and that every `## Acceptance` line names a probe you can run. Fix the unit before touching code.
-4. Run the baseline probes and append the results as the first `## Log` line of this session.
+3. Check the unit cites a scope item (`scope:`) on the client track, and that every `## Acceptance` line names a probe you can run. Fix the unit before touching code; once it leaves `next` or `later`, a changed criterion needs a `## Log` line saying why.
+4. Run the baseline probes (`python3 .charter/bin/charter probe <id>`) and append the results as the first `## Log` line of this session.
 
 ## While working
 
 - Stay inside `perimeter:`; note any excursion under `## Outside perimeter` before committing.
 - Cite decisions in code with `charter:<id>`; create a decision record when you settle something other code will depend on (`/charter-decision`).
-- Append a dated `## Log` line when something lands.
+- Append a dated `## Log` line when something lands. After a turn that committed, the Stop hook reminds you if the unit's log did not move.
 
 ## Finish
 
-1. Run every probe; check each `- [x] AC-n` only after its probe passed.
-2. Under `## Evidence`: the commit SHA(s), the `path:line` of the change, each probe as a `$ command` line with its result.
-3. Set `status: done`. The gate refuses it if a box is unchecked or the evidence does not resolve; the refusal names what to add.
-4. Your final message cites the same evidence. A done claim without anchors is blocked once by the Stop hook.
+1. `python3 .charter/bin/charter probe <id>`; check each `- [x] AC-n` only after its probe passed.
+2. Under `## Evidence`: the commit SHA(s), the `path:line` of the change, and the `$ command` lines `charter probe` printed. A path or a URL alone is refused.
+3. Set `status: done`. The gate refuses it if a box is unchecked, no commit or run is cited, or an anchor does not resolve; the refusal names what to add. A project with `probes.at_commit` or `probes.in_ci` set re-runs the probes when the unit closes.
+4. Your final message cites the same evidence. A done claim without a commit, a `path:line` or a run is blocked once by the Stop hook.

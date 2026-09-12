@@ -26,6 +26,9 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent / "package"
 VERSION = (PKG / "VERSION").read_text().strip()
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(PKG / ".charter"))
+import lib as charter_lib  # noqa: E402  the package's own parser decides what counts as a charter unit
 
 # Files copied verbatim and owned by the package (relative to the package root).
 OWNED = [
@@ -48,6 +51,10 @@ EXECUTABLE = {".charter/bin/charter", ".charter/githooks/pre-commit",
 HOOK_TAG = "/.charter/hooks/"
 AGENTS_BEGIN, AGENTS_END = "<!-- charter-section:begin -->", "<!-- charter-section:end -->"
 GITIGNORE_LINE = ".charter/state/"
+LEGACY = "charter/legacy-taskets.txt"
+LEGACY_HEADER = ("# Taskets that existed when charter was installed and carry no `## Acceptance` section.\n"
+                 "# The done gate lets them close with a warning; every other tasket needs acceptance and evidence.\n"
+                 "# One id per line. Removing a line is safe; adding one is the owner's act.\n")
 
 
 def sha(p: Path) -> str:
@@ -118,13 +125,8 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
     plan = Plan(a.dry_run)
     man = load_manifest(project)
     installed = man.get("version")
-    if installed == VERSION and not a.force and not upgrade:
-        # idempotence: verify every owned file is present and unchanged; repair what is missing
-        missing = [rel for rel in OWNED if not (project / rel).exists()]
-        if not missing:
-            print(f"charter {VERSION} already installed in {project}; nothing to do")
-            return 0
-        print(f"charter {VERSION} recorded but {len(missing)} owned file(s) missing; repairing")
+    # Every run reconciles everything below, so a fresh clone (whose manifest is tracked) still gets
+    # its git hook path, which is repository config and is not cloned. Idempotent: no change, no write.
     if upgrade and installed is None:
         print(f"nothing installed in {project}; use install")
         return 1
@@ -163,6 +165,16 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
                 obj["track"] = a.track
                 data = (json.dumps(obj, indent=2) + "\n").encode()
             plan.write(dest, data, what="seed")
+    # taskets that predate charter close without acceptance (done gate); every later one is gated
+    lp = project / LEGACY
+    if not lp.exists():
+        td = project / ".taskets"
+        legacy = []
+        for p in sorted(td.glob("*.md")) if td.is_dir() else []:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            if not charter_lib.is_charter_unit(text):
+                legacy.append(str(charter_lib.split_frontmatter(text)[0].get("id") or p.stem))
+        plan.write(lp, (LEGACY_HEADER + "".join(f"{i}\n" for i in legacy)).encode(), what=f"seed ({len(legacy)} legacy tasket(s))")
     # directories the project owns
     for d in ("charter/decisions", "charter/changes", ".taskets"):
         p = project / d
@@ -210,6 +222,9 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
             plan.say(f"git config core.hooksPath .charter/githooks (was {cur_path or 'unset'})")
             if not a.dry_run:
                 subprocess.run(["git", "-C", str(project), "config", "core.hooksPath", ".charter/githooks"], check=True)
+    if plan.changes == 0 and not conflicts:
+        print(f"charter {VERSION} already installed in {project}; nothing to do")
+        return 0
     print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s); charter {VERSION}" + (f"; {len(conflicts)} kept local file(s)" if conflicts else ""))
     if conflicts and not a.dry_run:
         print("Review the kept files against the package and re-run with --force to replace them.")
@@ -286,12 +301,22 @@ def do_uninstall(project: Path, a) -> int:
                 plan.say(f"remove empty {d}/")
                 if not a.dry_run:
                     shutil.rmtree(p)
+    # state kept in the git directory: the shared log and session records, and each worktree's own
+    shared = charter_lib.shared_state_dir(project)
+    state_dirs = [shared] + sorted(shared.parent.glob("worktrees/*/charter")) if shared.name == "charter" else []
+    for sd in [s for s in state_dirs if s.is_dir()]:
+        if a.purge_state:
+            plan.say(f"remove {sd}/ (per-machine state)")
+            if not a.dry_run:
+                shutil.rmtree(sd)
+        else:
+            print(f"KEEP {sd}/ (gate log and session records; --purge-state removes it)")
     cur_path = subprocess.run(["git", "-C", str(project), "config", "--get", "core.hooksPath"], capture_output=True, text=True).stdout.strip()
     if cur_path == ".charter/githooks":
         plan.say("git config --unset core.hooksPath")
         if not a.dry_run:
             subprocess.run(["git", "-C", str(project), "config", "--unset", "core.hooksPath"])
-    print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s). Kept: charter/scope.md, charter/decisions/, charter/changes/, charter/config.json, charter/ledger.jsonl, .taskets/ (project-owned).")
+    print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s). Kept: charter/scope.md, charter/decisions/, charter/changes/, charter/config.json, {LEGACY}, charter/ledger.jsonl, .taskets/ (project-owned).")
     return 0
 
 

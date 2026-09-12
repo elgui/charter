@@ -4,22 +4,37 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 
 ## Before you change code
 
-- Start the unit you are working on: `python3 .charter/bin/charter unit start <tasket-id>`. Edits without an active unit are logged as unattributed.
+- Start the unit you are working on: `python3 .charter/bin/charter unit start <tasket-id>`. Edits without an active unit are logged as unattributed. An engine sets `CHARTER_UNIT=<id>` instead; the environment wins over the file.
 - Read the unit's `## Acceptance` list. Each line is a probe you will run. If a probe cannot be named, write it before coding.
 - On the client track, the unit's `scope:` must name an item in `charter/scope.md`. Work outside the scope is a change request in `charter/changes/`, not a commit.
+- If the session banner says the git hook is not active, run `python3 .charter/bin/charter setup` once.
 
 ## While you work
 
 - Code that depends on a decision carries `charter:<decision-id>` in a comment. A decision with `check:` is verified at every commit.
 - Stay inside the unit's `perimeter:`. If you must touch a file outside it, add `- <path>: <why>` under `## Outside perimeter` in the unit before committing.
-- A file over the size limit is frozen. Create a unit with `kind: split` to split it; do not grow it.
+- A file over the size limit is frozen. Move code out of it into a new file (shrinking is always allowed); a `kind: split` unit that lets it grow is opened by the owner.
+- Once a unit has left `next` or `later`, changing or removing an acceptance line needs a dated `## Log` line in the same edit.
 - Append a dated line to the unit's `## Log` when something lands or when you stop. A resumed session reads the unit, not the transcript.
+- Keep comments in frontmatter on their own lines: an engine reads `status: done  # x` as the status `done  # x`.
 
 ## Before you say done
 
-- `done` is refused without: every acceptance box checked, and `## Evidence` holding a commit SHA, a `path:line`, or a `$ command` run that resolves.
-- A final message that claims completion cites its evidence or says plainly what is not done. The Stop hook blocks such a message once.
-- Reports, PR descriptions and syntheses are checked by `python3 .charter/bin/charter anchors <file>`: every claim line needs an anchor or an explicit `(unverified)`.
+- `done` is refused without: every acceptance box checked, and `## Evidence` naming a commit SHA that resolves or a `$ command` run. A path or a URL alone is not evidence. `python3 .charter/bin/charter probe <id>` runs the probes and prints the `$ command` lines.
+- A final message after a turn that edited files or committed, and that claims completion, cites a commit, a `path:line` or a `$ command` run, or says plainly what is not done. The Stop hook blocks such a message once.
+- Reports and syntheses are checked by `python3 .charter/bin/charter anchors <file>`: every claim line needs an anchor or an explicit `(unverified)`. A pull-request description is checked with `--pr`, as a warning.
+
+## What only the owner changes
+
+These are refused to an agent's Edit and Write, and CI checks that the owner authored them. Propose instead: a change request, a new decision that supersedes, a note in your final message.
+
+- `charter/scope.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`.
+- In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
+- In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
+- Opening or widening a `kind: split` unit.
+- Setting `CHARTER_OWNER` anywhere.
+
+The owner edits these by hand or in a Claude Code session started with `CHARTER_OWNER=1`.
 
 ## Decisions and memory
 
@@ -29,8 +44,10 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 
 ## Commands
 
-    python3 .charter/bin/charter check --all      # run every gate on the tree
+    python3 .charter/bin/charter check --all      # run every gate on the change set since HEAD~1 (--base REF, --strict)
+    python3 .charter/bin/charter probe <id>       # run a unit's acceptance probes, print evidence lines
     python3 .charter/bin/charter synth            # progress synthesis, anchored
     python3 .charter/bin/charter anchors <file>   # anchoring check on a deliverable
     python3 .charter/bin/charter decisions index  # regenerate the decision index
     python3 .charter/bin/charter log              # what the gates did lately
+    python3 .charter/bin/charter setup            # activate the git hook in this clone

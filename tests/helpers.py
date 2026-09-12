@@ -101,8 +101,16 @@ Client wants retries in /health.
 """
 
 
-def git(root, *args, check=True):
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check)
+def clean_env(**extra):
+    """The test process may itself run inside Claude Code; keep its markers out of the hooks."""
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CHARTER_OWNER", "CHARTER_UNIT")}
+    env.update(extra)
+    return env
+
+
+def git(root, *args, check=True, env=None):
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check,
+                          env=env or clean_env())
 
 
 def make_project(with_charter=True, track="client"):
@@ -131,9 +139,9 @@ def make_project(with_charter=True, track="client"):
     return d
 
 
-def run_hook(root, name, payload):
+def run_hook(root, name, payload, env=None):
     """Run a hook script the way Claude Code does: JSON on stdin, cwd at the project."""
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    env = clean_env(CLAUDE_PROJECT_DIR=str(root), **(env or {}))
     payload = dict({"session_id": "test-session", "cwd": str(root), "hook_event_name": name}, **payload)
     r = subprocess.run([sys.executable, str(root / ".charter" / "hooks" / f"{name}.py")], input=json.dumps(payload),
                        capture_output=True, text=True, cwd=str(root), env=env)
@@ -145,9 +153,9 @@ def run_hook(root, name, payload):
     return r.returncode, out, r.stdout, r.stderr
 
 
-def charter(root, *args):
+def charter(root, *args, env=None):
     return subprocess.run([sys.executable, str(root / ".charter" / "bin" / "charter"), "--root", str(root), *args],
-                          capture_output=True, text=True, cwd=str(root))
+                          capture_output=True, text=True, cwd=str(root), env=clean_env(**(env or {})))
 
 
 def cleanup(d):

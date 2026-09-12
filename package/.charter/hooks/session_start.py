@@ -6,7 +6,7 @@ import sys
 sys.dont_write_bytecode = True
 import datetime as dt
 
-from _common import tree_for, lib, checks
+from _common import tree_for, read_session, write_session, head, lib, checks
 
 
 def main() -> int:
@@ -16,8 +16,20 @@ def main() -> int:
         if not (root / lib.TOOL_DIR).is_dir():
             return 0
         cfg = lib.load_config(root)
+        sid = data.get("session_id", "")
+        cur = read_session(root, sid)   # the Stop gate compares HEAD against this to see a commit land
+        cur["head"] = head(root)
+        write_session(root, sid, cur)
         ver = (root / lib.CHARTER_DIR / "VERSION").read_text().strip() if (root / lib.CHARTER_DIR / "VERSION").exists() else "?"
         out = [f"charter {ver}, track {cfg.get('track')}. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help"]
+        if lib.git(root, "config", "--get", "core.hooksPath").stdout.strip() != ".charter/githooks":
+            out.append("The charter git hook is not active in this clone, so commits are not gated until CI. "
+                       "Run `python3 .charter/bin/charter setup` once (it sets core.hooksPath), or tell the owner.")
+        if cfg.get("track") == "client" and not lib.as_list(cfg.get("owner")):
+            out.append("charter/config.json names no owner, so CI cannot tell the owner's commits from anyone else's; "
+                       "the owner sets `owner` to their git author name.")
+        if lib.owner_session():
+            out.append("Owner session (CHARTER_OWNER=1): owner-only files and fields may be edited.")
         units = lib.taskets(root)
         aid = lib.active_unit(root)
         if aid and aid in units:
@@ -43,7 +55,7 @@ def main() -> int:
         chg = [(k, v) for k, v in lib.change_requests(root).items() if str(v.get("status")) == "proposed"]
         if chg:
             out.append("Change requests waiting on the owner: " + ", ".join(k for k, _ in chg))
-        logp = root / lib.STATE_DIR / "log.jsonl"
+        logp = lib.shared_state_dir(root) / "log.jsonl"
         if logp.exists():
             since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat()
             counts = {}

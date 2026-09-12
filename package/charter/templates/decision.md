@@ -1,15 +1,21 @@
 ---
 id: <slug-same-as-filename>
 title: <one line>
-status: active            # proposed | active | superseded | retired
+# status: proposed | active | superseded | retired (changing it on an existing decision is the owner's act)
+status: active
 date: <YYYY-MM-DD>
 owner: <who settles it>
-kind: design              # design | lesson
-binds: [<glob>, <glob>]   # files that must carry `charter:<id>`; optional
-check: <shell command that exits 0 while the decision holds>   # optional
+# kind: design | lesson
+kind: design
+# binds: files that must carry `charter:<id>`; optional
+binds: [<glob>, <glob>]
+# check: a shell command that exits 0 while the decision holds; optional; it runs at every commit and in CI
+check: <shell command that exits 0 while the decision holds>
 expires: <YYYY-MM-DD or a condition in words>
-supersedes:               # id of the decision this replaces, if any
-superseded_by:            # set when status becomes superseded
+# supersedes: the id of the decision this one replaces, if any
+supersedes:
+# superseded_by: set by the owner when this decision is superseded
+superseded_by:
 ---
 
 ## Decision

@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """charter: the committed-layer CLI. Python 3 standard library only.
 
-  check     run the gates on the tree (--all) or the staged files (--staged)
+  check     run the gates on the change set (--all) or the staged files (--staged)
+  probe     run a unit's acceptance probes and print them as evidence lines
   anchors   check that every claim in a markdown deliverable is anchored
   synth     produce the progress synthesis from repository state
-  ledger    fold session records into charter/ledger.jsonl; add headless results
+  ledger    fold session records into charter/ledger.jsonl; add headless results or human time
   unit      start | stop | show the active unit of work
   decisions regenerate charter/decisions/INDEX.md
-  log       summarise .charter/state/log.jsonl
+  log       summarise the gate log (in the git directory, shared by worktrees)
+  setup     activate the git hook in this clone; move 0.1.0 state out of .charter/state/
   version   print the installed version
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -31,75 +35,17 @@ def today() -> str:
 
 # ---------------------------------------------------------------- check
 
+GATES = ("scope", "size", "done", "decisions", "memory", "perimeter", "changes", "protected")
+
+
 def cmd_check(a) -> int:
     root = lib.repo_root(a.root)
-    cfg = lib.load_config(root)
     rep = checks.Report()
-    gates = {g for g in ("scope", "size", "done", "decisions", "memory", "perimeter", "changes") if getattr(a, g, False)}
-    if not gates:
-        gates = {"scope", "size", "done", "decisions", "memory", "perimeter", "changes"}
-    decs = checks.decision_index(root)
-    if a.staged:
-        paths = checks.staged_paths(root)
-        texts = {p: checks.staged_text(root, p) for p in paths}
-    else:
-        r = lib.git(root, "ls-files")
-        paths = [p for p in r.stdout.splitlines() if p.strip()]
-        texts = {}
-    units = lib.taskets(root)
-    unit = units.get(lib.active_unit(root) or "")
-    if "scope" in gates:
-        if a.staged:
-            rep.add(*checks.check_scope(root, cfg, paths))
-        else:
-            changed = checks.changed_paths(root, a.base)
-            rep.add(*checks.check_scope(root, cfg, changed))
-            legacy = [f for f in checks.check_scope(root, cfg, [p for p in paths if p not in changed]) if f.level == "block"]
-            for f in legacy:
-                rep.add(checks.Finding("scope", "warn", f"legacy: {f.message.split(' and no approved')[0]} (present before this change set; retire, move, or cover it by a change request)", path=f.path))
-        for u in units.values():
-            rep.add(*checks.check_unit_scope(root, cfg, u))
-    if "changes" in gates:
-        rep.add(*checks.check_changes(root))
-    if "size" in gates:
-        for p in paths:
-            if a.staged:
-                new_lines = texts[p].count("\n")
-                old_lines = checks.head_text(root, p).count("\n")
-            else:
-                new_lines = lib.count_lines(root / p)
-                old_lines = 0 if a.strict else new_lines   # --all only reports growth in --strict
-            rep.add(*checks.check_size(root, cfg, p, new_lines, old_lines))
-    if "done" in gates:
-        for p in paths:
-            if p.startswith(lib.TASKETS_DIR + "/") and p.endswith(".md"):
-                text = texts.get(p) if a.staged else (root / p).read_text(encoding="utf-8", errors="replace")
-                if text is None:
-                    continue
-                if a.staged and not a.strict:
-                    # at commit, only gate taskets whose status *changes* to done
-                    f, _, _ = lib.split_frontmatter(text)
-                    if str(f.get("status")) in lib.as_list(cfg.get("done_statuses")) and checks.head_status_of_unit(root, p) == str(f.get("status")):
-                        continue
-                rep.add(*checks.check_unit_done(root, cfg, text, p))
-    if "decisions" in gates:
-        for p in paths:
-            if p.startswith(".charter/") or p.startswith("charter/decisions/"):
-                continue
-            text = texts.get(p) if a.staged else None
-            if text is None:
-                try:
-                    text = (root / p).read_text(encoding="utf-8", errors="replace")
-                except (OSError, UnicodeDecodeError):
-                    continue
-            if "\x00" in text[:4096]:
-                continue
-            rep.add(*checks.check_decisions_text(root, decs, p, text))
-        rep.add(*checks.run_decision_checks(root, decs, only_bound_to=None if not a.staged else paths))
-    if "perimeter" in gates and a.staged:
-        rep.add(*checks.check_perimeter(root, cfg, unit, [p for p in paths if not p.startswith((lib.TASKETS_DIR, lib.CHARTER_DIR, lib.TOOL_DIR, ".claude/", ".github/"))], at_commit=True))
-    if "memory" in gates:
-        rep.add(*checks.check_memory(root, cfg, today()))
+    gates = {g for g in GATES if getattr(a, g, False)} or set(GATES)
+    # at commit the artifacts are read as staged: the gates judge the commit, not the working tree
+    with (lib.index_view(root) if a.staged else contextlib.nullcontext()):
+        cfg = lib.load_config(root)
+        _check(a, root, cfg, gates, rep)
     for f in rep.findings:
         lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all")
     for f in rep.findings:
@@ -112,24 +58,152 @@ def cmd_check(a) -> int:
     return 0
 
 
+def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
+    done_st = lib.as_list(cfg.get("done_statuses"))
+    decs = checks.decision_index(root)
+    tracked = [p for p in lib.git(root, "ls-files").stdout.splitlines() if p.strip()]
+    base = None
+    if a.staged:
+        paths = checks.staged_paths(root)
+        texts = {p: checks.staged_text(root, p) for p in paths}
+        changed = paths
+
+        def old(p):
+            r = lib.git(root, "show", f"HEAD:{p}")
+            return r.stdout if r.returncode == 0 else None
+
+        def new(p):
+            return texts.get(p, "")
+    else:
+        paths = tracked
+        base = checks.usable_base(root, a.base)
+        changed = checks.changed_paths(root, a.base) if base else None
+        if changed is None:
+            changed = list(tracked)
+            rep.add(checks.Finding("error", "warn", f"base {a.base or 'HEAD~1'} is not usable in this clone (an all-zero SHA, a SHA a force-push removed, "
+                                   "or no parent commit); every tracked path is treated as changed"))
+
+        def old(p):
+            return checks.base_text(root, base, p) if base else None
+
+        def new(p):
+            try:
+                return (root / p).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return ""
+    changed_set = set(changed)
+    units = lib.taskets(root)
+    unit = units.get(lib.active_unit(root) or "")
+    probes_on = a.probe if a.probe is not None else bool(
+        (cfg.get("probes") or {}).get("at_commit" if a.staged else "in_ci" if a.ci else "", False))
+
+    if "scope" in gates:
+        rep.add(*checks.check_scope(root, cfg, changed))
+        if not a.staged:
+            for f in checks.check_scope(root, cfg, [p for p in paths if p not in changed_set]):
+                if f.level == "block":
+                    rep.add(checks.Finding("scope", "warn", f"legacy: {f.message.split(' and no approved')[0]} (present before this change set; retire, move, or cover it by a change request)", path=f.path))
+        for u in units.values():
+            rep.add(*checks.check_unit_scope(root, cfg, u))
+        rep.add(*checks.check_scope_file(root, cfg))
+    if "changes" in gates:
+        rep.add(*checks.check_changes(root))
+        rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "changes"])
+    if "size" in gates:
+        for p in paths:
+            if not a.staged and not a.strict and p not in changed_set:
+                continue   # untouched in this change set: a file already over the limit is not refused again
+            prev = old(p)
+            new_lines = lib.line_count(new(p))
+            old_lines = 0 if (a.strict or prev is None) else lib.line_count(prev)
+            rep.add(*checks.check_size(root, cfg, p, new_lines, old_lines))
+    if "done" in gates:
+        closing = []
+        for p in paths:
+            if not (p.startswith(lib.TASKETS_DIR + "/") and p.endswith(".md")):
+                continue
+            if not a.strict and p not in changed_set:
+                continue   # judged when its status changed; a unit accepted earlier is not judged again
+            text, prev = new(p), old(p)
+            status = str(lib.split_frontmatter(text)[0].get("status", ""))
+            prev_status = str(lib.split_frontmatter(prev or "")[0].get("status", ""))
+            rep.add(*checks.check_acceptance_change(prev or "", text, p))
+            if status not in done_st or (prev_status == status and not a.strict):
+                continue
+            found = checks.check_unit_done(root, cfg, text, p)
+            rep.add(*found)
+            if lib.section(lib.split_frontmatter(text)[2], "Acceptance") and not any(f.level == "block" for f in found):
+                closing.append((p, text))
+        if probes_on and closing:
+            dirty = checks.unstaged_paths(root) if a.staged else []
+            if dirty:
+                rep.add(checks.Finding("probe", "block", f"probes run in the working tree, which differs from the index for {', '.join(dirty[:5])}",
+                                       override="stage everything, or `git stash --keep-index`, commit, `git stash pop`"))
+            else:
+                timeout = int((cfg.get("probes") or {}).get("timeout_s", 120))
+                for p, text in closing:
+                    rep.add(*checks.run_probes(root, text, p, timeout)[0])
+    if "decisions" in gates:
+        for p in paths:
+            if p.startswith(".charter/") or p.startswith("charter/decisions/"):
+                continue
+            text = new(p)
+            if not text or "\x00" in text[:4096]:
+                continue
+            rep.add(*checks.check_decisions_text(root, decs, p, text))
+        rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "decisions"])
+        for u in units.values():
+            if str(u.get("status", "")) not in done_st and str(u.get("status", "")) not in lib.TERMINAL_STATUSES:
+                rep.add(*checks.check_unit_decisions(root, decs, u))
+        bound = [d for d in decs.values() if d.get("check") and str(d.get("status", "active")) == "active"
+                 and (not a.staged or any(lib.matches_any(p, lib.as_list(d.get("binds"))) for p in paths))]
+        dirty = checks.unstaged_paths(root) if (a.staged and bound) else []
+        if dirty:
+            rep.add(checks.Finding("decisions", "block", f"decision `check:` commands run in the working tree, which differs from the index for {', '.join(dirty[:5])}; "
+                                   "they would judge files this commit does not contain",
+                                   override="stage everything, or `git stash --keep-index`, commit, `git stash pop`"))
+        else:
+            rep.add(*checks.run_decision_checks(root, decs, only_bound_to=None if not a.staged else paths))
+    if "perimeter" in gates and a.staged:
+        rep.add(*checks.check_perimeter(root, cfg, unit, [p for p in paths if not p.startswith((lib.TASKETS_DIR, lib.CHARTER_DIR, lib.TOOL_DIR, ".claude/", ".github/"))], at_commit=True))
+    if "memory" in gates:
+        rep.add(*checks.check_memory(root, cfg, today()))
+    if "protected" in gates:
+        if a.staged:
+            rep.add(*checks.check_owner_only_staged(root, cfg, paths))
+        else:
+            rep.add(*checks.check_manifest(root))
+            if base:
+                rep.add(*checks.check_owner_commits(root, cfg, base))
+
+
 # ---------------------------------------------------------------- anchors
 
 def cmd_anchors(a) -> int:
+    """Exit 1 on any unanchored claim or unresolved anchor. With --pr (a pull-request description),
+    `#123` counts as an anchor and the result is a warning: the method's posture for a check whose
+    false positives have not yet been measured. On the prototype track every result is a warning
+    (docs/method.md, Two tracks)."""
     root = lib.repo_root(a.root)
+    warn_only = a.pr or lib.load_config(root).get("track") == "prototype"
     rc = 0
     for f in a.files:
         p = Path(f)
         text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else sys.stdin.read()
         checks.DOC_DIR = p.resolve().parent if p.exists() else None
-        rep = checks.check_anchors(root, text, min_len=a.min_len)
-        status = "ok" if rep.ok else "FAIL"
+        rep = checks.check_anchors(root, text, min_len=a.min_len, issues=a.pr)
+        status = "ok" if rep.ok else ("WARN" if warn_only else "FAIL")
         print(f"{f}: {status} — {rep.claims} claim(s), {rep.anchored} anchored, {rep.admitted} admitted unverified, "
               f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved anchor(s)")
+        if a.pr and not text.strip():
+            print("  warning: the description is empty; say what changed and cite the commits, the unit or the issue")
         for ln, t in rep.unanchored:
             print(f"  unanchored L{ln}: {t}")
         for ln, t in rep.unresolved:
             print(f"  unresolved L{ln}: {t}")
-        if not rep.ok:
+        lib.log_event(root, "cli", "anchors", "ok" if rep.ok else "warn" if warn_only else "block",
+                      f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved", path=f, mode="pr" if a.pr else "doc")
+        if not rep.ok and not warn_only:
             rc = 1
     return rc
 
@@ -137,21 +211,41 @@ def cmd_anchors(a) -> int:
 # ---------------------------------------------------------------- synth
 
 def _unit_state(root: Path, cfg: dict, u: dict) -> tuple[str, dict]:
+    """The unit's state now. A commit SHA in the evidence of a unit whose done status is committed,
+    and that this clone cannot resolve, is "historical": it resolved when the done gate judged it,
+    and a squash or rebase merge has since removed it from the history."""
     status = str(u.get("status", ""))
     body = u.get("_body", "")
     acc = lib.section(body, "Acceptance")
     boxes = checks.CHECKBOX_RE.findall(acc)
-    ev = lib.section(body, "Evidence")
-    ok, bad = checks.evidence_anchors(root, ev) if ev else ([], [])
+    k = checks.classify_anchors(root, lib.section(body, "Evidence"))
+    done = status in lib.as_list(cfg.get("done_statuses"))
+    historical = []
+    if done and k["bad"]:
+        committed = str(lib.split_frontmatter(checks.head_text(root, u["_path"]))[0].get("status", ""))
+        if committed == status:
+            historical = [b for b in k["bad"] if checks.SHA_RE.fullmatch(b)]
+    bad = [b for b in k["bad"] if b not in historical]
+    ok = k["fileline"] + k["sha"] + k["run"] + k["url"] + k["path"]
     log = [l.strip() for l in lib.section(body, "Log").splitlines() if l.strip()]
-    info = {"boxes": len(boxes), "open": sum(1 for b in boxes if b[0] == " "), "evidence": ok, "bad": bad, "log": log}
-    if status in lib.as_list(cfg.get("done_statuses")):
-        return ("accepted" if boxes and info["open"] == 0 and ok and not bad else "done-unaccepted"), info
+    info = {"boxes": len(boxes), "open": sum(1 for b in boxes if b[0] == " "), "evidence": ok, "bad": bad,
+            "historical": historical, "log": log}
+    if done:
+        ran = k["sha"] or k["run"] or historical
+        return ("accepted" if boxes and info["open"] == 0 and ran and not bad else "done-unaccepted"), info
     if status == "blocked":
         return "blocked", info
-    if status in ("deleted", "superseded", "parked", "skipped", "realized", "deferred"):
+    if status in lib.TERMINAL_STATUSES:
         return "closed", info
     return ("in-progress" if log else "open"), info
+
+
+def _first_done(root: Path, cfg: dict, u: dict) -> dt.datetime | None:
+    """Commit time of the first commit that set the unit's status to a done value."""
+    alts = "|".join(re.escape(s) for s in lib.as_list(cfg.get("done_statuses")))
+    r = lib.git(root, "log", "--reverse", "--format=%cI", "-G", f"^status:[[:space:]]*({alts})([[:space:]]|#|$)", "--", u["_path"])
+    first = r.stdout.split()[:1]
+    return dt.datetime.fromisoformat(first[0]) if first else None
 
 
 def cmd_synth(a) -> int:
@@ -185,8 +279,9 @@ def cmd_synth(a) -> int:
 
     def unit_line(uid: str, u: dict, st: str, info: dict) -> str:
         ev = ", ".join(info["evidence"][:3]) if info["evidence"] else "no evidence anchors"
+        hist = f"; {len(info['historical'])} historical commit(s) not reachable in this clone" if info["historical"] else ""
         extra = f"; last log: {info['log'][-1][:80]}" if info["log"] else ""
-        return f"- {uid} — {u.get('title', '')} [{u.get('status')}]: {info['boxes'] - info['open']}/{info['boxes']} criteria closed; evidence: {ev}{extra} ({u['_path']})"
+        return f"- {uid} — {u.get('title', '')} [{u.get('status')}]: {info['boxes'] - info['open']}/{info['boxes']} criteria closed; evidence: {ev}{hist}{extra} ({u['_path']})"
 
     for title, want in (("Done and accepted", "accepted"), ("Done but not accepted (evidence or criteria missing)", "done-unaccepted"),
                         ("In progress", "in-progress"), ("Open, not started", "open"), ("Blocked", "blocked")):
@@ -211,22 +306,26 @@ def cmd_synth(a) -> int:
     L.append("")
 
     L.append("## Gate activity, last 30 days")
-    logp = root / lib.STATE_DIR / "log.jsonl"
-    counts: dict[str, int] = {}
-    if logp.exists():
-        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).isoformat()
-        for line in logp.read_text().splitlines():
-            try:
-                r = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if r.get("ts", "") >= since:
-                k = f"{r.get('gate')}/{r.get('decision')}"
-                counts[k] = counts.get(k, 0) + 1
-        for k, v in sorted(counts.items()):
-            L.append(f"- {k}: {v} (.charter/state/log.jsonl, this machine only)")
-    if not counts:
-        L.append("- no gate events recorded on this machine yet; the gates in .charter/bin/charter and .charter/hooks/ write them as they fire")
+    if a.write:
+        # the log is per machine; a committed synthesis would carry claims no clone can check
+        L.append("- gate activity is recorded per machine and is not part of a written synthesis; `charter log` or `charter synth` prints it (.charter/bin/charter)")
+    else:
+        logp = lib.shared_state_dir(root) / "log.jsonl"
+        counts: dict[str, int] = {}
+        if logp.exists():
+            since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).isoformat()
+            for line in logp.read_text().splitlines():
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if r.get("ts", "") >= since:
+                    k = f"{r.get('gate')}/{r.get('decision')}"
+                    counts[k] = counts.get(k, 0) + 1
+            for k, v in sorted(counts.items()):
+                L.append(f"- {k}: {v} (outside this repository: the gate log in this machine's git directory)")
+        if not counts:
+            L.append("- no gate events recorded on this machine yet; the gates in .charter/bin/charter and .charter/hooks/ write them as they fire")
     L.append("")
 
     L.append("## Cost per accepted result")
@@ -238,15 +337,25 @@ def cmd_synth(a) -> int:
                 r = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            d = per_unit.setdefault(r.get("unit") or "(none)", {"sessions": 0, "usd": 0.0, "accepted": False})
+            d = per_unit.setdefault(r.get("unit") or "(none)", {"sessions": 0, "usd": 0.0, "human_min": 0, "ended": []})
+            if r.get("source") == "human":
+                d["human_min"] += int(r.get("human_minutes") or 0)
+                continue
             d["sessions"] += 1
             d["usd"] += float(r.get("est_usd") or 0)
-            d["accepted"] = d["accepted"] or bool(r.get("accepted"))
-        acc = [k for k, v in per_unit.items() if v["accepted"]]
+            d["ended"].append(r.get("ts", ""))
+        # acceptance is the unit's state now, not what it was when the session was folded
+        acc = [k for k in per_unit if k in states and states[k][0] == "accepted"]
         total = sum(v["usd"] for v in per_unit.values())
-        L.append(f"- {len(per_unit)} unit(s) with ledger records, {len(acc)} accepted, estimated total {total:.2f} USD (estimate from charter/config.json prices; charter/ledger.jsonl)")
+        human = sum(v["human_min"] for v in per_unit.values())
+        per_acc = f"{total / len(acc):.2f} USD per accepted unit" if acc else "no accepted unit yet"
+        L.append(f"- {len(per_unit)} unit(s) with ledger records, {len(acc)} accepted, estimated total {total:.2f} USD, {per_acc}, "
+                 f"{human} human min recorded (estimate from charter/config.json prices; charter/ledger.jsonl)")
         for k, v in per_unit.items():
-            L.append(f"- {k}: {v['sessions']} session(s), {v['usd']:.2f} USD estimated, {'accepted' if v['accepted'] else 'not accepted'} (charter/ledger.jsonl)")
+            first = _first_done(root, cfg, units[k]) if k in units else None
+            rework = sum(1 for t in v["ended"] if first and t and dt.datetime.fromisoformat(t) > first)
+            L.append(f"- {k}: {v['sessions']} session(s), {v['usd']:.2f} USD estimated, {rework} after the first done, "
+                     f"{v['human_min']} human min, {'accepted' if k in acc else 'not accepted'} (charter/ledger.jsonl)")
     else:
         L.append("- no ledger yet: run `python3 .charter/bin/charter ledger fold` after sessions end to create charter/ledger.jsonl")
     text = "\n".join(L) + "\n"
@@ -269,12 +378,30 @@ def cmd_synth(a) -> int:
 
 # ---------------------------------------------------------------- ledger
 
+def _price(cfg: dict, model: str) -> dict:
+    """The price row for a model id: the longest key it starts with, else "default"."""
+    table = cfg.get("prices_usd_per_mtok") or {}
+    keys = [k for k, v in table.items() if isinstance(v, dict) and k != "default" and model.startswith(k)]
+    if keys:
+        return table[max(keys, key=len)]
+    if isinstance(table.get("default"), dict):
+        return table["default"]
+    if "input" in table:
+        return table
+    return lib.DEFAULT_CONFIG["prices_usd_per_mtok"]["default"]
+
+
 def _est_usd(cfg: dict, usage: dict | None) -> float | None:
+    """Estimated cost of a session from its token counts, priced per model when the record has them."""
     if not usage:
         return None
-    p = cfg["prices_usd_per_mtok"]
-    return round((usage["input"] * p["input"] + usage["output"] * p["output"] + usage["cache_read"] * p["cache_read"]
-                  + usage["cache_write"] * p["cache_write"]) / 1_000_000, 4)
+    rows = usage.get("by_model") or {"": usage}
+    total = 0.0
+    for model, u in rows.items():
+        p = dict(_price(cfg, model))
+        p.setdefault("cache_write_1h", 2 * float(p.get("input", 0)))   # the documented 1-hour multiplier
+        total += sum(float(u.get(k, 0) or 0) * float(p.get(k, 0)) for k in ("input", "output", "cache_read", "cache_write", "cache_write_1h"))
+    return round(total / 1_000_000, 4)
 
 
 def cmd_ledger(a) -> int:
@@ -288,9 +415,9 @@ def cmd_ledger(a) -> int:
         return bool(u) and _unit_state(root, cfg, u)[0] == "accepted"
 
     if a.action == "fold":
-        src = root / lib.STATE_DIR / "sessions.jsonl"
+        src = lib.shared_state_dir(root) / "sessions.jsonl"
         if not src.exists():
-            print("nothing to fold (.charter/state/sessions.jsonl absent)")
+            print(f"nothing to fold ({src} absent)")
             return 0
         have = set()
         if ledger.exists():
@@ -315,6 +442,13 @@ def cmd_ledger(a) -> int:
                 n += 1
         print(f"folded {n} session record(s) into {lib.rel(root, ledger)}")
         return 0
+    if a.action == "add" and a.human_minutes is not None:
+        rec = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "session": "", "source": "human",
+               "unit": a.unit or lib.active_unit(root) or "", "human_minutes": a.human_minutes, "note": a.note or ""}
+        with ledger.open("a", encoding="utf-8") as out:
+            out.write(json.dumps(rec) + "\n")
+        print(f"recorded {a.human_minutes} human min for unit {rec['unit'] or '(none)'}")
+        return 0
     if a.action == "add":
         data = json.loads(Path(a.result).read_text()) if a.result else json.loads(sys.stdin.read())
         if isinstance(data, list):   # stream-json: take the result line
@@ -333,7 +467,8 @@ def cmd_ledger(a) -> int:
             return 0
         for line in ledger.read_text().splitlines():
             r = json.loads(line)
-            print(f"{r['ts']} {r['session'][:8]} unit={r.get('unit') or '-'} {r.get('source')} est_usd={r.get('est_usd')} accepted={r.get('accepted')}")
+            what = f"human_min={r.get('human_minutes')}" if r.get("source") == "human" else f"est_usd={r.get('est_usd')} accepted_at_fold={r.get('accepted')}"
+            print(f"{r['ts']} {r.get('session', '')[:8] or '-'} unit={r.get('unit') or '-'} {r.get('source')} {what}")
         return 0
     return 2
 
@@ -342,7 +477,7 @@ def cmd_ledger(a) -> int:
 
 def cmd_unit(a) -> int:
     root = lib.repo_root(a.root)
-    st = root / lib.STATE_DIR
+    st = lib.local_state_dir(root)
     st.mkdir(parents=True, exist_ok=True)
     if a.action == "start":
         units = lib.taskets(root)
@@ -351,8 +486,11 @@ def cmd_unit(a) -> int:
             return 1
         (st / "active").write_text(a.id + "\n")
         cfg = lib.load_config(root)
-        for f in checks.check_unit_scope(root, cfg, units[a.id]):
+        for f in checks.check_unit_scope(root, cfg, units[a.id]) + checks.check_unit_decisions(root, checks.decision_index(root), units[a.id]):
             print(f.line())
+        env = os.environ.get("CHARTER_UNIT", "").strip()
+        if env and env != a.id:
+            print(f"note: CHARTER_UNIT={env} in the environment takes precedence over this choice")
         print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
         return 0
     if a.action == "stop":
@@ -386,7 +524,7 @@ def cmd_decisions(a) -> int:
 
 def cmd_log(a) -> int:
     root = lib.repo_root(a.root)
-    logp = root / lib.STATE_DIR / "log.jsonl"
+    logp = lib.shared_state_dir(root) / "log.jsonl"
     if not logp.exists():
         print("no log")
         return 0
@@ -411,6 +549,51 @@ def cmd_log(a) -> int:
     return 0
 
 
+def cmd_setup(a) -> int:
+    """What a clone needs beyond the tracked files: the git hook path, which is repository config and
+    is not cloned. Also moves state a 0.1.0 install left in .charter/state/. Safe to run again."""
+    root = lib.repo_root(a.root)
+    cur = lib.git(root, "config", "--get", "core.hooksPath").stdout.strip()
+    if cur != ".charter/githooks":
+        lib.git(root, "config", "core.hooksPath", ".charter/githooks", check=True)
+        print(f"git config core.hooksPath .charter/githooks (was {cur or 'unset'}); worktrees of this clone share it")
+    else:
+        print("git hook already active (core.hooksPath = .charter/githooks)")
+    old = root / lib.STATE_DIR
+    moves = (("log.jsonl", lib.shared_state_dir(root)), ("sessions.jsonl", lib.shared_state_dir(root)), ("active", lib.local_state_dir(root)))
+    for name, dest in moves:
+        src = old / name
+        if not src.exists():
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        if name == "active":
+            if not (dest / name).exists():
+                (dest / name).write_text(src.read_text())
+        else:
+            with (dest / name).open("a", encoding="utf-8") as f:
+                f.write(src.read_text())
+        src.unlink()
+        print(f"moved {lib.rel(root, src)} to {dest / name}")
+    return 0
+
+
+def cmd_probe(a) -> int:
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    units = lib.taskets(root)
+    u = units.get(a.id)
+    if u is None:
+        print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/")
+        return 1
+    text = (root / u["_path"]).read_text(encoding="utf-8")
+    found, lines = checks.run_probes(root, text, u["_path"], a.timeout or int((cfg.get("probes") or {}).get("timeout_s", 120)))
+    print("\n".join(lines))
+    for f in found:
+        print(f.line(), file=sys.stderr)
+    lib.log_event(root, "cli", "probe", "block" if found else "passed", f"{len(lines)} probe(s) of {a.id}", path=u["_path"])
+    return 1 if found else 0
+
+
 def cmd_version(a) -> int:
     root = lib.repo_root(a.root)
     p = root / lib.CHARTER_DIR / "VERSION"
@@ -423,18 +606,26 @@ def main(argv=None) -> int:
     ap.add_argument("--root", default=None, help="repository root (default: from cwd)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check"); c.add_argument("--staged", action="store_true"); c.add_argument("--all", action="store_true")
-    c.add_argument("--strict", action="store_true", help="on --all, report every file over the size limit; on --staged, gate every done tasket")
+    c.add_argument("--strict", action="store_true", help="report every file over the size limit and gate every done tasket, changed or not")
     c.add_argument("--ci", action="store_true")
     c.add_argument("--base", default=None, help="on --all, the ref the change set is measured against (default: HEAD~1)")
-    for g in ("scope", "size", "done", "decisions", "memory", "perimeter", "changes"):
+    for g in GATES:
         c.add_argument(f"--{g}", action="store_true")
+    c.add_argument("--probe", dest="probe", action="store_true", default=None,
+                   help="re-run the acceptance probes of units that close in the change set (default: charter/config.json `probes`)")
+    c.add_argument("--no-probe", dest="probe", action="store_false")
     c.set_defaults(fn=cmd_check)
-    an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40); an.set_defaults(fn=cmd_anchors)
+    pr = sub.add_parser("probe"); pr.add_argument("id"); pr.add_argument("--timeout", type=int, default=None); pr.set_defaults(fn=cmd_probe)
+    an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40)
+    an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn"); an.set_defaults(fn=cmd_anchors)
     s = sub.add_parser("synth"); s.add_argument("--write", action="store_true"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_synth)
-    l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None); l.set_defaults(fn=cmd_ledger)
+    l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None)
+    l.add_argument("--human-minutes", type=int, default=None, help="with add: record time a person spent on the unit"); l.add_argument("--note", default=None)
+    l.set_defaults(fn=cmd_ledger)
     u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?"); u.set_defaults(fn=cmd_unit)
     d = sub.add_parser("decisions"); d.add_argument("action", choices=["index"]); d.set_defaults(fn=cmd_decisions)
     lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
+    st = sub.add_parser("setup"); st.set_defaults(fn=cmd_setup)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
     return a.fn(a)

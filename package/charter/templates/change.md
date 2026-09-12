@@ -1,11 +1,13 @@
 ---
 id: <slug-same-as-filename>
 title: <one line>
-status: proposed          # proposed | approved | rejected | folded
+# status: proposed | approved | rejected | folded (anything but proposed is set by the owner)
+status: proposed
 date: <YYYY-MM-DD>
 paths: [<globs this change may touch>]
-approved_by:              # the owner's name, set by the owner
-approved_on:              # YYYY-MM-DD, set by the owner
+# approved_by, approved_on: the owner's name and the date, set by the owner
+approved_by:
+approved_on:
 ---
 
 ## What is asked

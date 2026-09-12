@@ -7,7 +7,9 @@ A working method for client projects run alone with agents. One written charter 
 - `docs/package.md`: layout, commands, versioning, install and upgrade.
 - `docs/migration.md`: a path for each starting point, orqueveaux as the worked example.
 - `docs/trials/`: what the trial did, per gate, with costs.
+- `docs/method-visual.html`: the method in diagrams (open it in a browser; offline, one file).
 - `docs/report-2026-09-11.md`: the report of the session that built it, with decisions for the owner and the evidence index.
+- `docs/review/2026-09-11-weakness-evaluation.md`: the fourteen weaknesses found after the build, which ones 0.2.0 fixes, and what remains.
 - `package/`: the committed layer. `personal/`: the personal layer. `bin/charter-pkg`: the installer. `tests/`: the tests.
 
 Install on a project:
@@ -17,4 +19,6 @@ Install on a project:
 
 Tests:
 
-    cd tests && python3 -m unittest -q test_gates test_installer
+    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions
+
+In a clone of a project that already has the package: `python3 .charter/bin/charter setup` once.

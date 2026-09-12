@@ -5,9 +5,8 @@ and a per-session record of edited paths for the Stop hook."""
 import json
 import sys
 sys.dont_write_bytecode = True
-from pathlib import Path
 
-from _common import tree_for, lib, checks
+from _common import tree_for, read_session, write_session, lib, checks
 
 
 def main() -> int:
@@ -23,17 +22,12 @@ def main() -> int:
         if rp.startswith(lib.STATE_DIR):
             return 0
         sid = data.get("session_id", "")
-        # remember what this session edited (for the Stop hook and the ledger)
-        st = root / lib.STATE_DIR
-        st.mkdir(parents=True, exist_ok=True)
-        rec = st / f"session-{sid}.json"
-        try:
-            cur = json.loads(rec.read_text()) if rec.exists() else {"edited": []}
-        except json.JSONDecodeError:
-            cur = {"edited": []}
-        if rp not in cur["edited"]:
-            cur["edited"].append(rp)
-        rec.write_text(json.dumps(cur))
+        # remember what this session and this turn edited (for the Stop hook and the ledger)
+        cur = read_session(root, sid)
+        for key in ("edited", "turn_edited"):
+            if rp not in cur[key]:
+                cur[key].append(rp)
+        write_session(root, sid, cur)
 
         units = lib.taskets(root)
         unit = units.get(lib.active_unit(root) or "")

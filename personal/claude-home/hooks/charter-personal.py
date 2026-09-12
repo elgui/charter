@@ -34,10 +34,14 @@ def main() -> int:
         out.append(f"  package {latest} available, {installed} installed: python3 {PKG_DIR}/bin/charter-pkg upgrade {root} --dry-run")
     else:
         out.append(f"  package {installed} is current")
-    sess = root / ".charter" / "state" / "sessions.jsonl"
+    common = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True).stdout.strip()
+    sess = Path(common) / "charter" / "sessions.jsonl" if common else root / ".charter" / "state" / "sessions.jsonl"
+    if not sess.exists():
+        sess = root / ".charter" / "state" / "sessions.jsonl"   # a 0.1.0 install
     led = root / "charter" / "ledger.jsonl"
     n_s = sum(1 for _ in sess.open()) if sess.exists() else 0
-    n_l = sum(1 for _ in led.open()) if led.exists() else 0
+    n_l = sum(1 for line in led.open() if '"source": "human"' not in line) if led.exists() else 0
     if n_s > n_l:
         out.append(f"  {n_s - n_l} ended session(s) not yet in the ledger: python3 .charter/bin/charter ledger fold")
     props = []

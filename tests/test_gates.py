@@ -200,6 +200,7 @@ class StopGate(unittest.TestCase):
         cleanup(self.root)
 
     def test_done_claim_without_evidence_is_blocked_once(self):
+        run_hook(self.root, "post_tool_gate", write_call(self.root, "app/health.py", "x"))   # the turn edited a file
         rc, out, so, se = run_hook(self.root, "stop_gate", {"last_assistant_message": "All done, the feature is implemented and tests pass.", "stop_hook_active": False})
         self.assertEqual(out.get("decision"), "block", so + se)
         rc, out, so, se = run_hook(self.root, "stop_gate", {"last_assistant_message": "All done, the feature is implemented and tests pass.", "stop_hook_active": True})
@@ -277,7 +278,7 @@ class SessionHooks(unittest.TestCase):
                  json.dumps({"type": "user", "message": {}})]
         tr.write_text("\n".join(lines) + "\n")
         rc, out, so, se = run_hook(self.root, "session_end", {"transcript_path": str(tr), "reason": "exit"})
-        rec = json.loads((self.root / ".charter" / "state" / "sessions.jsonl").read_text().splitlines()[-1])
+        rec = json.loads((self.root / ".git" / "charter" / "sessions.jsonl").read_text().splitlines()[-1])
         self.assertEqual(rec["usage"]["output"], 20, "duplicate message ids must be counted once")
         self.assertEqual(rec["usage"]["turns"], 1)
         r = charter(self.root, "ledger", "fold")

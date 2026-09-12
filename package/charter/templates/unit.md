@@ -1,14 +1,18 @@
 ---
 id: <YYYYMMDD-HHMMSS-xxxxx>
 title: <one deliverable, in one line>
-status: next              # now | next | later | blocked | done (engines: keep these values)
+# status: now | next | later | blocked | done (the engines read these values; keep comments on their own lines)
+status: next
 priority: p1
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-scope: S1                 # scope item or approved change id (client track)
+# scope: an in-scope item or an approved change id (client track)
+scope: S1
 perimeter: [app/<area>/**, tests/unit/**]
-decisions: []             # decision ids this unit relies on
-kind: work                # work | split
+# decisions: ids of the decisions this unit relies on; `charter check --decisions` warns when one is retired
+decisions: []
+# kind: work | split (a split unit is opened by the owner)
+kind: work
 ---
 
 ## Context
@@ -22,7 +26,7 @@ kind: work                # work | split
 
 ## Evidence
 
-<Filled as work lands: commit SHAs, path:line of the change, `$ command` runs with their result.>
+<Filled as work lands: commit SHAs and each probe as a `$ command` line with its result (`charter probe <id>` prints them).>
 
 ## Log
 
