@@ -113,8 +113,11 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         for p in paths:
             if not a.staged and not a.strict and p not in changed_set:
                 continue   # untouched in this change set: a file already over the limit is not refused again
+            text = new(p)
+            if lib.is_binary(text):
+                continue   # a line count means nothing for binary content
             prev = old(p)
-            new_lines = lib.line_count(new(p))
+            new_lines = lib.line_count(text)
             old_lines = 0 if (a.strict or prev is None) else lib.line_count(prev)
             rep.add(*checks.check_size(root, cfg, p, new_lines, old_lines))
     if "done" in gates:
@@ -148,7 +151,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             if p.startswith(".charter/") or p.startswith("charter/decisions/"):
                 continue
             text = new(p)
-            if not text or "\x00" in text[:4096]:
+            if not text or lib.is_binary(text):
                 continue
             rep.add(*checks.check_decisions_text(root, decs, p, text))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "decisions"])
@@ -331,31 +334,72 @@ def cmd_synth(a) -> int:
     L.append("## Cost per accepted result")
     ledger = root / lib.CHARTER_DIR / "ledger.jsonl"
     if ledger.exists():
+        # an unknown cost stays unknown: never added as zero, and every figure over it says it is a lower bound
         per_unit: dict[str, dict] = {}
         for line in ledger.read_text().splitlines():
             try:
                 r = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            d = per_unit.setdefault(r.get("unit") or "(none)", {"sessions": 0, "usd": 0.0, "human_min": 0, "ended": []})
+            d = per_unit.setdefault(r.get("unit") or "(none)", {"sessions": 0, "unknown": 0, "no_children": 0, "usd": 0.0,
+                                                               "sub_usd": 0.0, "human_min": 0, "human_rows": 0, "ended": []})
             if r.get("source") == "human":
                 d["human_min"] += int(r.get("human_minutes") or 0)
+                d["human_rows"] += 1
                 continue
             d["sessions"] += 1
-            d["usd"] += float(r.get("est_usd") or 0)
             d["ended"].append(r.get("ts", ""))
+            if r.get("est_usd") is None:
+                d["unknown"] += 1
+                continue
+            d["usd"] += float(r["est_usd"])
+            if r.get("subagent_est_usd") is None:
+                d["no_children"] += 1
+            else:
+                d["sub_usd"] += float(r["subagent_est_usd"])
         # acceptance is the unit's state now, not what it was when the session was folded
         acc = [k for k in per_unit if k in states and states[k][0] == "accepted"]
         total = sum(v["usd"] for v in per_unit.values())
         human = sum(v["human_min"] for v in per_unit.values())
-        per_acc = f"{total / len(acc):.2f} USD per accepted unit" if acc else "no accepted unit yet"
-        L.append(f"- {len(per_unit)} unit(s) with ledger records, {len(acc)} accepted, estimated total {total:.2f} USD, {per_acc}, "
-                 f"{human} human min recorded (estimate from charter/config.json prices; charter/ledger.jsonl)")
+        n = sum(v["sessions"] for v in per_unit.values())
+        unknown = sum(v["unknown"] for v in per_unit.values())
+        no_children = sum(v["no_children"] for v in per_unit.values())
+        complete = not unknown and not no_children
+        none_known = bool(n) and unknown == n
+        bound = "" if complete else "at least "
+        total_txt = "no session cost known" if none_known else f"estimated total {bound}{total:.2f} USD"
+        if not acc:
+            per_acc = "no accepted unit yet"
+        elif none_known:
+            per_acc = "cost per accepted unit unknown"
+        else:
+            per_acc = f"{bound}{total / len(acc):.2f} USD per accepted unit" + ("" if complete else " (incomplete)")
+        L.append(f"- {len(per_unit)} unit(s) with ledger records, {len(acc)} accepted, {total_txt}, {per_acc}, {human} human min recorded for "
+                 f"{sum(1 for v in per_unit.values() if v['human_rows'])} of them (estimate from charter/config.json prices; charter/ledger.jsonl)")
+        if not n:
+            L.append("- cost coverage: no session recorded, only human time (charter/ledger.jsonl)")
+        elif complete:
+            L.append(f"- cost coverage: all {n} session(s) have a cost, subagents counted (charter/ledger.jsonl)")
+        else:
+            gaps = [f"{n - unknown} of {n} session(s) have a cost"]
+            if no_children:
+                gaps.append(f"{no_children} of those do not record subagent usage (recorded before charter 0.2.1, or a headless result)")
+            L.append(f"- cost coverage: {'; '.join(gaps)}; the total and the cost per accepted unit are lower bounds (charter/ledger.jsonl)")
         for k, v in per_unit.items():
             first = _first_done(root, cfg, units[k]) if k in units else None
             rework = sum(1 for t in v["ended"] if first and t and dt.datetime.fromisoformat(t) > first)
-            L.append(f"- {k}: {v['sessions']} session(s), {v['usd']:.2f} USD estimated, {rework} after the first done, "
-                     f"{v['human_min']} human min, {'accepted' if k in acc else 'not accepted'} (charter/ledger.jsonl)")
+            gaps = [f"{c} {what}" for c, what in ((v["unknown"], "without a cost"), (v["no_children"], "without subagents counted")) if c]
+            if not v["sessions"]:
+                usd = "no session recorded"
+            elif v["unknown"] == v["sessions"]:
+                usd = "cost unknown"
+            elif gaps:
+                usd = f"{', '.join(gaps)}, at least {v['usd']:.2f} USD estimated"
+            else:
+                usd = f"{v['usd']:.2f} USD estimated, {v['sub_usd']:.2f} of it by subagents"
+            hm = f"{v['human_min']} human min" if v["human_rows"] else "no human time recorded"
+            L.append(f"- {k}: {v['sessions']} session(s), {usd}, {rework} after the first done, "
+                     f"{hm}, {'accepted' if k in acc else 'not accepted'} (charter/ledger.jsonl)")
     else:
         L.append("- no ledger yet: run `python3 .charter/bin/charter ledger fold` after sessions end to create charter/ledger.jsonl")
     text = "\n".join(L) + "\n"
@@ -435,8 +479,12 @@ def cmd_ledger(a) -> int:
                     continue
                 if r.get("session") in have:
                     continue
+                usage = r.get("usage")
                 rec = {"ts": r["ts"], "session": r["session"], "unit": r.get("unit", ""), "source": "interactive",
-                       "usage": r.get("usage"), "est_usd": _est_usd(cfg, r.get("usage")), "accepted": accepted(r.get("unit", "")),
+                       "usage": usage, "est_usd": _est_usd(cfg, usage),
+                       # the subagents' share of est_usd; null when the record predates counting them
+                       "subagent_est_usd": _est_usd(cfg, (usage or {}).get("subagents")) if (usage or {}).get("children_included") else None,
+                       "accepted": accepted(r.get("unit", "")),
                        "note": r.get("note", "") + " est_usd is an estimate from charter/config.json prices"}
                 out.write(json.dumps(rec) + "\n")
                 n += 1
@@ -601,6 +649,24 @@ def cmd_version(a) -> int:
     return 0
 
 
+GATE_COMMANDS = ("check", "anchors")
+
+
+def _fail_open(a, e: BaseException) -> int:
+    """A gate that crashes allows: it logs decision=error, says so on stderr and exits 0 (docs/method.md,
+    The hard gates). A gate that breaks the tool is worse than a gate that misses once."""
+    msg = f"charter {a.cmd}: internal error, so this gate allows (gates fail open; see `charter log`): {e!r}"
+    try:
+        lib.log_event(lib.repo_root(a.root), "ci" if getattr(a, "ci", False) else "cli", "error", "error", msg[:500],
+                      mode="staged" if getattr(a, "staged", False) else a.cmd)
+    except Exception:
+        pass
+    print(msg, file=sys.stderr)
+    if os.environ.get("GITHUB_ACTIONS") == "true":   # the job passes, so put the error on the run's summary
+        print("::warning title=charter gate error::" + msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="charter", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=None, help="repository root (default: from cwd)")
@@ -628,7 +694,16 @@ def main(argv=None) -> int:
     st = sub.add_parser("setup"); st.set_defaults(fn=cmd_setup)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
-    return a.fn(a)
+    if a.cmd not in GATE_COMMANDS:
+        return a.fn(a)
+    try:
+        return a.fn(a)
+    except SystemExit as e:
+        if isinstance(e.code, str):   # lib.load_config refusing a config.json that is not JSON: a parse error
+            return _fail_open(a, e)
+        raise
+    except Exception as e:
+        return _fail_open(a, e)
 
 
 if __name__ == "__main__":

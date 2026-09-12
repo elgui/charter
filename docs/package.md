@@ -1,6 +1,6 @@
 # The package
 
-Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.2.0. Python 3 standard library only; no dependency is installed in a project.
+Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.2.1. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -16,7 +16,7 @@ Repository `methodo` (working name; see decision `package-name` in the report). 
 | `bin/charter-pkg` | Installer: `install`, `upgrade`, `uninstall`, `status`; `--dry-run`, `--force`, `--track` |
 | `bin/make-testbed`, `bin/trial-run` | Trial tooling |
 | `personal/` | The personal layer, not installed by the installer (`personal/README.md`) |
-| `tests/` | `python3 -B -m unittest -q test_gates test_installer test_review_regressions` from `tests/`; `test_review_regressions.py` holds one class per finding of the 2026-09-11 review |
+| `tests/` | `python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions` from `tests/`; `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found |
 | `docs/` | `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `trials/`, `review/`, `report-2026-09-11.md`, `session-log.md` |
 
 ## What lands in a project

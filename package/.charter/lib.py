@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.2.0",
+    "version": "0.2.1",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -66,8 +66,8 @@ def repo_root(start: str | os.PathLike | None = None) -> Path:
     start = Path(start or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     try:
         out = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, check=True).stdout.strip()
-        return Path(out)
+                             capture_output=True, check=True).stdout
+        return Path(os.fsdecode(out).strip())   # a path: decoded as the filesystem does, never raises
     except (subprocess.CalledProcessError, FileNotFoundError):
         return start
 
@@ -103,7 +103,8 @@ def in_claude_code() -> bool:
 
 
 def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check)
+    """Output decoded as UTF-8, undecodable bytes replaced: `git show` of a binary file must not raise."""
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8", errors="replace", check=check)
 
 
 _GIT_DIRS: dict[tuple[str, str], Path | None] = {}
@@ -150,10 +151,11 @@ def index_view(root: Path):
     global _VIEW
     tmp = Path(tempfile.mkdtemp(prefix="charter-index-"))
     try:
-        listed = git(root, "ls-files", "-z", "--", CHARTER_DIR, TASKETS_DIR).stdout
-        if listed.strip("\0"):
+        # paths pass from one git command to the other as bytes, so no file name is ever decoded
+        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", CHARTER_DIR, TASKETS_DIR], capture_output=True).stdout
+        if listed.strip(b"\0"):
             subprocess.run(["git", "-C", str(root), "checkout-index", "-f", "-z", "--stdin", f"--prefix={tmp}/"],
-                           input=listed, capture_output=True, text=True)
+                           input=listed, capture_output=True)
         _VIEW = tmp
         yield tmp
     finally:
@@ -486,6 +488,11 @@ def allow_with_context(event: str, context: str) -> None:
 def block_stop(reason: str) -> None:
     print(json.dumps({"decision": "block", "reason": reason}))
     sys.exit(0)
+
+
+def is_binary(text: str) -> bool:
+    """A NUL in the first 8,000 characters: the test git itself uses to call a file binary."""
+    return "\x00" in text[:8000]
 
 
 def line_count(text: str) -> int:

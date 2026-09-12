@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """SessionEnd. Records tokens for the session, per model, into sessions.jsonl in the shared state directory (R11).
-Reads the transcript best-effort: the format is internal to Claude Code and may change,
+Subagents count: Claude Code writes each subagent's transcript to `<session id>/subagents/*.jsonl` beside the
+session's own, and the main transcript holds none of their usage.
+Reads the transcripts best-effort: the format is internal to Claude Code and may change,
 so a failure here records the session with no token figures rather than nothing."""
 import json
 import sys
@@ -10,10 +12,18 @@ from pathlib import Path
 
 from _common import tree_for, lib
 
+FIELDS = (("input", "input_tokens"), ("output", "output_tokens"),
+          ("cache_read", "cache_read_input_tokens"), ("cache_write", "cache_creation_input_tokens"))
 
-def sum_usage(transcript: Path) -> dict:
-    tot = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "turns": 0, "subagent_output": 0, "models": {}, "by_model": {}}
-    seen = set()
+
+def _totals() -> dict:
+    return {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "turns": 0, "by_model": {}}
+
+
+def _responses(transcript: Path, rows: dict, subagent_file: bool) -> None:
+    """One row per API response, keyed by (message id, request id). Claude Code stores a response once per
+    content block; in a subagent's transcript the early blocks carry the usage streamed so far (4 output
+    tokens on a thinking block, 778 on the last), so each counter keeps its largest value."""
     for line in transcript.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             o = json.loads(line)
@@ -25,25 +35,36 @@ def sum_usage(transcript: Path) -> dict:
         u = m.get("usage")
         if not u:
             continue
-        key = (m.get("id"), o.get("requestId"))
-        if key in seen:      # one API response is stored once per content block
-            continue
-        seen.add(key)
-        tot["turns"] += 1
-        mdl = m.get("model") or "?"
-        per = tot["by_model"].setdefault(mdl, {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cache_write_1h": 0})
-        for k, src in (("input", "input_tokens"), ("output", "output_tokens"),
-                       ("cache_read", "cache_read_input_tokens"), ("cache_write", "cache_creation_input_tokens")):
-            n = int(u.get(src, 0) or 0)
-            tot[k] += n
-            per[k] += n
+        r = rows.setdefault((m.get("id"), o.get("requestId")),
+                            dict({k: 0 for k, _ in FIELDS}, model=m.get("model") or "?", one_h=0, sub=False))
+        r["sub"] = r["sub"] or subagent_file or bool(o.get("isSidechain"))
+        for k, src in FIELDS:
+            r[k] = max(r[k], int(u.get(src, 0) or 0))
         # Claude Code writes much of its cache with the 1-hour TTL, priced at 2x input instead of 1.25x
-        one_h = int((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0) or 0)
-        per["cache_write"] -= one_h
-        per["cache_write_1h"] += one_h
-        if o.get("isSidechain"):
-            tot["subagent_output"] += int(u.get("output_tokens", 0))
-        tot["models"][mdl] = tot["models"].get(mdl, 0) + 1
+        r["one_h"] = max(r["one_h"], int((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0) or 0))
+
+
+def sum_usage(transcript: Path) -> dict:
+    """The session's usage: its own transcript plus every subagent transcript, per model. `subagents` is
+    the subagents' share, already included in the totals; `children_included` says the files were read."""
+    rows: dict = {}
+    _responses(transcript, rows, subagent_file=False)
+    files = sorted((transcript.with_suffix("") / "subagents").glob("*.jsonl"))
+    for p in files:
+        _responses(p, rows, subagent_file=True)
+    tot = dict(_totals(), models={})
+    sub = _totals()
+    for r in rows.values():
+        for t in ((tot, sub) if r["sub"] else (tot,)):
+            t["turns"] += 1
+            per = t["by_model"].setdefault(r["model"], {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cache_write_1h": 0})
+            for k, _ in FIELDS:
+                t[k] += r[k]
+                per[k] += r[k]
+            per["cache_write"] -= r["one_h"]
+            per["cache_write_1h"] += r["one_h"]
+        tot["models"][r["model"]] = tot["models"].get(r["model"], 0) + 1
+    tot.update(subagent_output=sub["output"], subagents=sub, children_included=True, subagent_files=len(files))
     return tot
 
 

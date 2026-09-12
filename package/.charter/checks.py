@@ -313,7 +313,7 @@ def run_probes(root: Path, text: str, path: str, timeout: int) -> tuple[list[Fin
                            override="name a command for each criterion: `- [ ] AC-1: ... — probe: `<command>``"))
     for ac, cmd in probes:
         try:
-            r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, timeout=timeout)
+            r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
             code, tail = r.returncode, ((r.stdout + r.stderr).strip().splitlines() or [""])[-1][:100]
         except subprocess.TimeoutExpired:
             code, tail = None, f"timed out after {timeout} s"
@@ -412,7 +412,7 @@ def run_decision_checks(root: Path, decs: dict[str, dict], only_bound_to: list[s
             if not binds or not any(lib.matches_any(rp, binds) for rp in only_bound_to):
                 continue
         try:
-            r = subprocess.run(str(cmd), shell=True, cwd=str(root), capture_output=True, text=True, timeout=60)
+            r = subprocess.run(str(cmd), shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=60)
         except subprocess.TimeoutExpired:
             out.append(Finding("decisions", "warn", f"decision `{did}` check timed out: {cmd}", path=d["_path"]))
             continue

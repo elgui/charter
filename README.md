@@ -19,6 +19,6 @@ Install on a project:
 
 Tests:
 
-    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions
+    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions
 
 In a clone of a project that already has the package: `python3 .charter/bin/charter setup` once.
