@@ -75,7 +75,7 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ### Memory (R8)
 
-- Checks: an active decision without `## Because`, without `expires:`, or past a dated `expires:`; a `kind: lesson` without `owner:`.
+- Checks: an active decision without `## Because` or without `expires:`; a dated `expires:` on or before today, because expiry is exclusive and a decision stops applying at the start of that date; a dated `expires:` that is not later than the decision's `date:`; a `kind: lesson` without `owner:`. The boundary is the one tcv2's HARNESS.md uses for `expires_on` (https://github.com/elgui/tcv2/blob/936cb5618bdb98453b4a73e167670bccc74a27a5/services/harness_evidence.py).
 - Warning only, in `charter check --memory` and CI output.
 
 ### Stop gate (R9/R10 in the session)
@@ -86,7 +86,7 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ### Anchors (R10)
 
-- Command: `charter anchors <file>...`, exit 1 on any unanchored claim line or unresolved anchor. Definitions in `docs/method.md` § Accepted results. Exempt sections: `<!-- charter: opinion -->` ... `<!-- charter: /opinion -->`. Admitted claims: `(unverified)`, `(reported in ...)`, `(estimate ...)`, `(to be confirmed)`, `(outside this repository ...)`.
+- Command: `charter anchors <file>...`, exit 1 on any unanchored claim line or unresolved anchor. Definitions in `docs/method.md` § Accepted results. Exempt sections: `<!-- charter: opinion -->` ... `<!-- charter: /opinion -->`. Admitted claims, by evidence class (`docs/method.md` § Evidence classes): reported `(reported in ...)`, `(operator report ...)`, `(claimed by ...)`, `(outside this repository ...)`, `(in the scratchpad ...)`, `(in the clone ...)`, `(on the test bed ...)`; inference `(inference ...)`, `(unverified)`, `(not verified)`, `(estimate ...)`, `(to be confirmed)`.
 - `charter anchors --pr <file>` is the pull-request mode: `#123` and `owner/repo#123` count as anchors, an empty description is reported, and the result is a warning (exit 0). On the prototype track every anchors result is a warning.
 - Runs in CI on `charter/progress.md`, `docs/progress*.md`, `docs/report*.md` (hard), and on the PR body in `--pr` mode, re-run when the body is edited. Not on decisions or the scope, whose statements are normative.
 - `charter synth` runs it on its own output and refuses to write on failure. The written synthesis leaves out gate activity, which lives on one machine.
@@ -111,3 +111,4 @@ A gate that crashes in CI fails open as it does at commit: the step passes, so a
 - The scope gate matches paths. Work that is out of scope but lands in an in-scope path is invisible to it; the unit's `scope:` and the owner's review carry that.
 - A permission denial (`--permission-prompts none`) and a gate denial read alike to the agent. The log distinguishes them.
 - A `check:` is a shell command read from a markdown file and run at every commit and in CI. That is the feature; the SessionStart banner lists every one.
+- Most of R7's operational commitments are actions, not files: a deployment, a change to production data or schema, a purchase, a public release, another person's work, a merge into main. No gate sees them; the rules file carries them. Widening a permission is gated where it is a file, since `.claude/settings.json` and `.claude/settings.local.json` are owner-only.

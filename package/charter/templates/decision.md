@@ -11,6 +11,7 @@ kind: design
 binds: [<glob>, <glob>]
 # check: a shell command that exits 0 while the decision holds; optional; it runs at every commit and in CI
 check: <shell command that exits 0 while the decision holds>
+# expires: a date or a condition in words; a date is exclusive (the decision counts as expired from the start of that day) and must be later than `date:`
 expires: <YYYY-MM-DD or a condition in words>
 # supersedes: the id of the decision this one replaces, if any
 supersedes:

@@ -1,6 +1,6 @@
 ---
 name: charter-reviewer
-description: Independent reviewer that wrote neither side. Use to settle a conflict between two changes, to verify a done claim against its evidence, or to review a unit before merge. Read-only.
+description: Independent reviewer that wrote neither side. Use to settle a conflict between two changes, to verify a done claim against its evidence, or to review a unit before merge. It has no Edit or Write tool; it keeps Bash to run probes, so it is not read-only.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 permissionMode: default

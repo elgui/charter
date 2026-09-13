@@ -8,9 +8,9 @@ description: Record a design decision, a lesson, or a change request under the c
 ## A design decision
 
 1. Copy `charter/templates/decision.md` to `charter/decisions/<slug>.md`. The slug is the id.
-2. Fill `## Decision` (current state, one paragraph), `## Because` (the case: incident, measurement or constraint, with anchors) and `## Stops applying when`. Set `expires:` to a date or a condition.
+2. Fill `## Decision` (current state, one paragraph), `## Because` (the case: incident, measurement or constraint, with anchors) and `## Stops applying when`. Set `expires:` to a date or a condition. A date is exclusive, so the decision counts as expired from the start of that day, and it must be later than `date:`.
 3. If files must cite it, set `binds:` to their globs and add `charter:<slug>` in a comment in each. If it can be checked by a command, set `check:`.
-4. Status `proposed` when the owner must settle it (commitments, anything touching the scope, price or dates); `active` otherwise. Never edit an active decision: write a new file with `supersedes: <old-id>` and tell the owner, who sets the old one's `status: superseded` and `superseded_by:`. Changing the `status`, `check:` or `binds:` of an existing decision is refused to an agent. Each decision needs its own id; a file that takes another's id is refused.
+4. Status `proposed` when the owner must settle it (a commitment, as `.claude/rules/charter.md` § Decisions and memory lists them); `active` otherwise. Never edit an active decision: write a new file with `supersedes: <old-id>` and tell the owner, who sets the old one's `status: superseded` and `superseded_by:`. Changing the `status`, `check:` or `binds:` of an existing decision is refused to an agent. Each decision needs its own id; a file that takes another's id is refused.
 5. `python3 .charter/bin/charter decisions index`.
 
 ## A lesson

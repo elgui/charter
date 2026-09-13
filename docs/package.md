@@ -1,6 +1,6 @@
 # The package
 
-Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.2.1. Python 3 standard library only; no dependency is installed in a project.
+Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.2.2. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 

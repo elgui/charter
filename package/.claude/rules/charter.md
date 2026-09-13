@@ -22,7 +22,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 
 - `done` is refused without: every acceptance box checked, and `## Evidence` naming a commit SHA that resolves or a `$ command` run. A path or a URL alone is not evidence. `python3 .charter/bin/charter probe <id>` runs the probes and prints the `$ command` lines.
 - A final message after a turn that edited files or committed, and that claims completion, cites a commit, a `path:line` or a `$ command` run, or says plainly what is not done. The Stop hook blocks such a message once.
-- Reports and syntheses are checked by `python3 .charter/bin/charter anchors <file>`: every claim line needs an anchor or an explicit `(unverified)`. A pull-request description is checked with `--pr`, as a warning.
+- Reports and syntheses are checked by `python3 .charter/bin/charter anchors <file>`: every claim line needs an anchor, or a marker that admits it as reported or inference: `(reported in ...)`, `(operator report ...)`, `(inference ...)`, `(unverified)`, `(estimate ...)`. A pull-request description is checked with `--pr`, as a warning.
 
 ## What only the owner changes
 
@@ -40,7 +40,13 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
 
 - A design decision that other code depends on goes in `charter/decisions/<slug>.md` (template in `charter/templates/decision.md`), with the case that justified it and when it stops applying. Do not put it in `CLAUDE.md`.
 - A lesson that should bind this project is a decision with `kind: lesson`. Personal auto-memory is for your own habits, never for project rules.
-- Commitments to the client (scope, price, dates) are the owner's alone: propose a change request, do not decide.
+- Commitments are the owner's alone. A commitment is anything that changes an external obligation: what is sold, price, dates, deployment, production data or schema, purchase or budget, public release, another person's work, widening a permission, merging into main. Propose it and wait for the owner's word; an instruction from the owner in this session is that word. For what is sold, price or dates, the proposal is a change request in `charter/changes/`.
+
+## Subagents
+
+- Staff a subagent where a real wait disappears, such as independent reads in parallel; do not staff a step whose inputs still move.
+- Subagents read; the parent writes. A subagent that can run Bash is not read-only, so give it no task that edits, commits or deploys, and make every change in the parent session.
+- Say in the unit's `## Log` why a subagent was used. `charter synth` shows the subagents' share of each unit's cost.
 
 ## Commands
 

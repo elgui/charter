@@ -457,10 +457,14 @@ def check_memory(root: Path, cfg: dict, today: str) -> list[Finding]:
         if not lib.section(d.get("_body", ""), "Because") and not d.get("because"):
             out.append(Finding("memory", "warn", f"decision `{did}` records no case that justified it (`## Because`)", path=d["_path"]))
         exp = str(d.get("expires", "")).strip()
+        dated = re.fullmatch(r"\d{4}-\d{2}-\d{2}", exp)
         if not exp:
             out.append(Finding("memory", "warn", f"decision `{did}` has no `expires:` (a date or a condition)", path=d["_path"]))
-        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", exp) and exp < today:
+        elif dated and exp <= today:   # exclusive: a decision stops applying at the start of its `expires:` date
             out.append(Finding("memory", "warn", f"decision `{did}` expired on {exp}; renew it or retire it", path=d["_path"]))
+        taken = str(d.get("date", "")).strip()
+        if dated and re.fullmatch(r"\d{4}-\d{2}-\d{2}", taken) and exp <= taken:
+            out.append(Finding("memory", "warn", f"decision `{did}` expires on {exp}, not later than its date {taken}", path=d["_path"]))
         if str(d.get("kind", "")) == "lesson" and not d.get("owner"):
             out.append(Finding("memory", "warn", f"lesson `{did}` has no owner", path=d["_path"]))
     return out
@@ -636,7 +640,10 @@ class AnchorReport:
         return not self.unanchored and not self.unresolved
 
 
-ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
+# The admitted markers, by evidence class (docs/method.md § Evidence classes): reported is `reported in`,
+# `operator report` (also tcv2's `operator_report`), `claimed by`, `outside this repository` and the
+# scratch locations; inference is `inference`, `unverified`, `not verified`, `estimate` and `to be confirmed`.
+ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|operator[ _-]report[^)]*|inference[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
 
 
