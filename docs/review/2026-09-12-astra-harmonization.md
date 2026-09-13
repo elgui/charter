@@ -173,7 +173,7 @@ The cause is that the output of `git show` is decoded as text (package/.charter/
 The synthesis prints an "estimated total" and a figure per accepted unit (package/.charter/bin/charter:351-353). Both figures have three gaps:
 
 - Every session without usage adds zero (package/.charter/bin/charter:345).
-- Subagent tokens are absent. Claude Code writes each subagent's transcript to `<session>/subagents/agent-*.jsonl`, and the `SessionEnd` hook reads only `transcript_path` (package/.charter/hooks/session_end.py:59; E-17). The main transcripts of the five sessions in this project contain no `isSidechain` line, while one subagent file of the session that built charter holds 75 assistant usage records and 23,524 output tokens (E-17).
+- Subagent tokens are absent. Claude Code writes each subagent's transcript to `<session>/subagents/agent-*.jsonl`, and the `SessionEnd` hook reads only `transcript_path` (package/.charter/hooks/session_end.py:59; E-17). The main transcripts of the five sessions in this project contain no `isSidechain` line, while one subagent file of the session that built charter holds 33 API responses and 23,310 output tokens (E-17).
 - Neither figure says how many sessions lacked usage, so a reader cannot tell a complete total from a lower bound (package/.charter/bin/charter:351-353).
 
 ## Where the two conflict
@@ -301,7 +301,7 @@ These are follow-ups for tcv2, written as proposals. None of them is an edit mad
 ## Proposed changes to methodo, ranked
 
 <!-- charter: opinion -->
-Effort: XS is under an hour, S a few hours, M a day. Reversibility is scored 1 to 5, where 5 means easily reversed. Nothing here is implemented yet.
+Effort: XS is under an hour, S a few hours, M a day. Reversibility is scored 1 to 5, where 5 means easily reversed. Changes 1 to 3 are built in 7ece80d (charter 0.2.1), and changes 6, 7, 10, 11 and 12 in 6384d3c (charter 0.2.2). Changes 4, 5, 8, 9 and 13 are not built.
 
 | # | Change | Effort | Reversibility | Motivating evidence | Where |
 |---|---|---|---|---|---|
@@ -420,6 +420,23 @@ Each entry gives an id and the question, the stake in one sentence, the options 
 The E.2 and E.4 ordering is Gui's `factory-order` decision in tcv2, and this document does not decide it. The only charter-side consequence is this: if E.2 reads charter's acceptance format, change 5 should land first, so that the criterion revision and the reviewer line mean the same thing in both repositories.
 <!-- charter: /opinion -->
 
+## Decisions taken
+
+The owner settled two decisions in the message that asked for the fixes, and the other seven on a Slate, each with the recommended option (reported in the owner's Slate answers of 2026-09-12, stored outside this repository in ~/.crossroads/answers/slate-astra-harmonization-2026-09-12-kP5NPKEW.json).
+
+| Decision | Answer | Why | What it unblocks |
+|---|---|---|---|
+| charter-defects-now | Fix changes 1 to 3 now, each with a regression test | They are defects, not design | Done in 7ece80d, charter 0.2.1 |
+| branch-order | Merge the fix branch into `main` first, then cut change branches from it | The review and change branches sit on top of it | Done: `main` holds ab0a8b1 and this document, e76b003 |
+| harmonization-shape | Two methods, a shared vocabulary and interoperable files | The two do different jobs, and one short spec is enough (reported in the Slate answers) | Changes 8 and 11 as an interface spec for both repositories, 11 built in 6384d3c; the tcv2 follow-ups |
+| size-rule | Named exceptions, a 32 KiB governance byte budget and a configurable governance set; 800 lines stays for code | One mechanism fits tcv2's governance-only freeze and a small client repository's code freeze (reported in the Slate answers) | Change 4; the tests question of `size-limits` stays separate |
+| accepted-word | "Accepted by the gate" and "reviewed", plus a reviewer evidence line | "Reviewed" then means the same in both repositories (reported in the Slate answers) | Change 5 |
+| charter-on-tcv2 | Not now; a prototype-track trial on a tcv2 clone once changes 1 to 4 land | A cheap trial replaces a guess with a log (reported in the Slate answers) | The trial, after change 4 |
+| tasket-keys-writer | tcv2's `tasket_ops create` passes optional keys through verbatim; a tcv2 ruling under D23 | D23 guards ordering, which a copied key does not touch (reported in the Slate answers) | A tcv2 change, then a trial with `perimeter:` |
+| decisions-home-in-tcv2 | One file per D-ruling, the D-number in the slug, charter's fields; a tcv2 ruling | It meets Astra's naming rule and gets charter's validator (reported in the Slate answers) | tcv2's split of `CLAUDE.md` |
+| cross-review | Both: Codex reviews charter with `docs/review/prompt-2026-09-11.md`, and Claude reviews PR #24 | Cheap, and it closes a gap both reports admit (reported in the Slate answers) | Nothing waits. The Claude review of PR #24 ran in a tcv2 session after the PR merged; the Codex review of charter has not run (reported by the owner on 2026-09-12) |
+| This document | Into `main`, by fast-forward | (reported in the Slate answers) | Done in e76b003 |
+
 ## Limits of this evaluation
 
 - Astra's work was read at the PR head only. Its runtime claims about the VPS, Omnigent and the deployed configuration were not re-verified here, and are cited as Astra's (E-2 L333-334).
@@ -456,7 +473,7 @@ The E.2 and E.4 ordering is Gui's `factory-order` decision in tcv2, and this doc
   Nothing under `~/Projects/tcv2` was written.
 - E-17 Claude Code's transcript layout in this project: `~/.claude/projects/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/subagents/` holds 14 files. The measurement:
   - `$ grep -c '"isSidechain":true' <each main transcript>` → 0 for all five;
-  - in ~/.claude/projects/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/subagents/agent-a07c5299d3ca0976b.jsonl: 319 sidechain lines, 75 assistant usage records, 23,524 output tokens.
+  - in ~/.claude/projects/-home-gui-Projects-methodo/8ac70e2b-aca6-4baa-8d95-ef0b955f4546/subagents/agent-a07c5299d3ca0976b.jsonl: 319 sidechain lines, and 75 assistant usage records for 33 API responses with 23,310 output tokens. Each response counts once, at its largest usage: its early content blocks carry the usage streamed so far, so summing all 75 records gives 23,524 (`sum_usage` in package/.charter/hooks/session_end.py).
 - E-18 The PR's changes to existing tcv2 files, `$ git diff baf75af...HEAD -- CLAUDE.md services/tasket_routing.py docs/omnigent-pivot-roadmap-2026-07-06.md` (in the scratchpad clone of tcv2):
   - a pointer line and a blank line in `CLAUDE.md` (in the scratchpad clone of tcv2);
   - a 24-line advisory block in `validate_group` (in the scratchpad clone of tcv2);
