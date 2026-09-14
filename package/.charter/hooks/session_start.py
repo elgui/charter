@@ -22,9 +22,15 @@ def main() -> int:
         write_session(root, sid, cur)
         ver = (root / lib.CHARTER_DIR / "VERSION").read_text().strip() if (root / lib.CHARTER_DIR / "VERSION").exists() else "?"
         out = [f"charter {ver}, track {cfg.get('track')}. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help"]
-        if lib.git(root, "config", "--get", "core.hooksPath").stdout.strip() != ".charter/githooks":
-            out.append("The charter git hook is not active in this clone, so commits are not gated until CI. "
-                       "Run `python3 .charter/bin/charter setup` once (it sets core.hooksPath), or tell the owner.")
+        if lib.hooks_path(root) != lib.CHARTER_HOOKS_PATH and not lib.hook_wired_by(root):
+            others = lib.other_hooks(root)
+            if others:
+                out.append(f"The charter git hook is not wired in this clone, which runs other git hooks ({', '.join(others[:4])}), "
+                           "so commits are not gated until CI. `charter setup` would stop those hooks: add "
+                           f"`python3 -B {lib.CHARTER_HOOK_COMMAND}` to their pre-commit (.charter/githooks/README.md), or tell the owner.")
+            else:
+                out.append("The charter git hook is not active in this clone, so commits are not gated until CI. "
+                           "Run `python3 .charter/bin/charter setup` once (it sets core.hooksPath), or tell the owner.")
         if cfg.get("track") == "client" and not lib.as_list(cfg.get("owner")):
             out.append("charter/config.json names no owner, so CI cannot tell the owner's commits from anyone else's; "
                        "the owner sets `owner` to their git author name.")
@@ -34,7 +40,7 @@ def main() -> int:
         aid = lib.active_unit(root)
         if aid and aid in units:
             u = units[aid]
-            acc = lib.section(u.get("_body", ""), "Acceptance")
+            acc = lib.acceptance(u.get("_body", ""))
             boxes = checks.CHECKBOX_RE.findall(acc)
             open_n = sum(1 for b in boxes if b[0] == " ")
             per = ", ".join(lib.as_list(u.get("perimeter"))) or "(none declared)"

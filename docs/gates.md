@@ -55,10 +55,10 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ### Done needs evidence (R9)
 
-- Checks: a tasket whose `status` is in `done_statuses` must have a `## Acceptance` checklist with every box checked and a `## Evidence` section that names a commit `git cat-file -e` finds or a `$ command` run; a path or a URL alone is refused. Anchors that do not resolve are refused. A unit that has left `next` or `later` cannot remove or rewrite an acceptance line without a new `## Log` line in the same change.
+- Checks: a tasket whose `status` is in `done_statuses` must have a `## Acceptance` checklist (`## Done When`, the Tasket skill's heading, counts too) with every box checked and a `## Evidence` section that names a commit `git cat-file -e` finds or a `$ command` run; a path or a URL alone is refused. Anchors that do not resolve are refused. A unit that has left `next` or `later` cannot remove or rewrite an acceptance line without a new `## Log` line in the same change.
 - Blocks: `PreToolUse` deny on the tasket edit; pre-commit and CI for a tasket whose status changes to done in the change set (with `--strict`, every done tasket).
 - Probes: with `--probe`, or `probes.at_commit` / `probes.in_ci` in `charter/config.json`, the probes of each unit that closes in the change set are run from the repository root with `probes.timeout_s`; a non-zero exit blocks. At commit they run only when the working tree matches the index. `charter probe <id>` runs them on demand and prints the `$ command` lines to paste as evidence.
-- Legacy: a tasket listed in `charter/legacy-taskets.txt` (written by the installer from the taskets it found) and without `## Acceptance` closes with a warning.
+- Legacy: a tasket listed in `charter/legacy-taskets.txt` (written by the installer from the taskets it found) and without `## Acceptance` closes with a warning, even when it has `## Done When`.
 - Override: none by flag. Keep the status open, or add the evidence. A tasket that must be closed without evidence is `parked` or `skipped`, both terminal for the engines and both honest.
 
 ### Decisions (R1)
@@ -93,7 +93,7 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ## Git hook
 
-`package/.charter/githooks/pre-commit` runs `python3 -B .charter/bin/charter check --staged`. It reads `charter/` and `.taskets/` from the index (`lib.index_view`), so the commit is judged, not the working tree. Activated by `git config core.hooksPath .charter/githooks`, which is repository config and is not cloned: `python3 .charter/bin/charter setup` sets it in a clone, the installer sets it on every run, and the SessionStart banner says when it is missing. A relative `core.hooksPath` resolves inside linked worktrees, verified in the trial (G7). `git commit --no-verify` skips it; CI runs the same checks.
+`package/.charter/githooks/pre-commit` runs `python3 -B .charter/bin/charter check --staged`. It reads `charter/` and `.taskets/` from the index (`lib.index_view`), so the commit is judged, not the working tree. Activated by `git config core.hooksPath .charter/githooks`, which is repository config and is not cloned: `python3 .charter/bin/charter setup` sets it in a clone, the installer sets it on every run, and the SessionStart banner says when it is missing. A project that already runs git hooks (lefthook, pre-commit, husky, scripts in `.git/hooks`) keeps them: the installer and `setup` then leave `core.hooksPath` alone unless `--replace-hooks`, and the gate runs as `python3 -B .charter/bin/charter check --staged` from the existing framework (`package/.charter/githooks/README.md`). A relative `core.hooksPath` resolves inside linked worktrees, verified in the trial (G7). `git commit --no-verify` skips it; CI runs the same checks.
 
 The gate fails open on its own errors. `charter check` and `charter anchors` catch any unexpected exception, and a `charter/config.json` that is not JSON: they print one line to stderr, log `error/error` (`charter log`), and exit 0, so the commit goes through ungated. Binary files are read without decoding errors and skipped by the size and decision checks.
 

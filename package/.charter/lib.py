@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.2.2",
+    "version": "0.3.0",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -73,21 +73,26 @@ def repo_root(start: str | os.PathLike | None = None) -> Path:
 
 
 def load_config(root: Path) -> dict:
-    cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     p = artifact_root(root) / CHARTER_DIR / "config.json"
-    if p.exists():
-        try:
-            user = json.loads(p.read_text())
-        except json.JSONDecodeError as e:
-            raise SystemExit(f"charter/config.json is not valid JSON: {e}")
-        for k, v in user.items():
-            if k == "prices_usd_per_mtok" and isinstance(v, dict):
-                # a project's rows override the package's; the 0.1.0 flat form is its "default" row
-                cfg[k].update(v if any(isinstance(x, dict) for x in v.values()) else {"default": v})
-            elif isinstance(v, dict) and isinstance(cfg.get(k), dict):
-                cfg[k].update(v)
-            else:
-                cfg[k] = v
+    if not p.exists():
+        return config_from({})
+    try:
+        return config_from(json.loads(p.read_text()))
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"charter/config.json is not valid JSON: {e}")
+
+
+def config_from(user: dict) -> dict:
+    """DEFAULT_CONFIG with a project's charter/config.json laid over it."""
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+    for k, v in user.items():
+        if k == "prices_usd_per_mtok" and isinstance(v, dict):
+            # a project's rows override the package's; the 0.1.0 flat form is its "default" row
+            cfg[k].update(v if any(isinstance(x, dict) for x in v.values()) else {"default": v})
+        elif isinstance(v, dict) and isinstance(cfg.get(k), dict):
+            cfg[k].update(v)
+        else:
+            cfg[k] = v
     return cfg
 
 
@@ -412,9 +417,24 @@ def legacy_taskets(root: Path) -> set[str]:
 
 
 def is_charter_unit(text: str) -> bool:
-    """A tasket that took up the method: it cites a scope item or carries an acceptance section."""
+    """A tasket that took up the method: it cites a scope item or carries `## Acceptance`. `## Done When`
+    does not count here, so the installer lists a tasket that has only that heading as legacy."""
     fields, _, body = split_frontmatter(text)
     return bool(fields.get("scope")) or bool(section(body, "Acceptance"))
+
+
+# The headings that hold a unit's acceptance checklist, in the order they are read. The Tasket skill
+# writes `## Done When` for the same checklist.
+ACCEPTANCE_HEADINGS = ("Acceptance", "Done When")
+
+
+def acceptance(body: str) -> str:
+    """The acceptance checklist: the first of ACCEPTANCE_HEADINGS the body has."""
+    for h in ACCEPTANCE_HEADINGS:
+        s = section(body, h)
+        if s:
+            return s
+    return ""
 
 
 def active_unit(root: Path) -> str | None:
@@ -429,20 +449,70 @@ def active_unit(root: Path) -> str | None:
 
 
 def section(body: str, title: str) -> str:
-    """Text of the markdown section whose heading (any level) starts with `title`, case-insensitive."""
+    """Text of the markdown section whose heading starts with the word(s) `title`, case-insensitive:
+    `## Acceptance criteria` counts, `## Logging` does not. A level-1 heading is the document's title,
+    never a section, so a tasket titled `# Log emails to the timeline` has no Log section."""
     lines = body.splitlines()
     out, level, on = [], None, False
+    want = title.lower()
     for line in lines:
         m = re.match(r"^(#{1,6})\s+(.*)", line)
         if m:
             if on and len(m.group(1)) <= level:
                 break
-            if m.group(2).strip().lower().startswith(title.lower()):
+            head = m.group(2).strip().lower()
+            if len(m.group(1)) > 1 and head.startswith(want) and not head[len(want):len(want) + 1].isalnum():
                 on, level = True, len(m.group(1))
                 continue
         if on:
             out.append(line)
     return "\n".join(out).strip()
+
+
+# ---------------------------------------------------------------- git hooks
+
+CHARTER_HOOKS_PATH = ".charter/githooks"
+CHARTER_HOOK_COMMAND = ".charter/bin/charter check --staged"
+# Tracked files that make a hook framework install its own hooks in each clone.
+HOOK_FRAMEWORK_FILES = ("lefthook.yml", ".lefthook.yml", "lefthook.yaml", ".lefthook.yaml",
+                        ".pre-commit-config.yaml", ".husky/pre-commit")
+
+
+def hooks_path(root: Path) -> str:
+    return git(root, "config", "--get", "core.hooksPath").stdout.strip()
+
+
+def other_hooks(root: Path) -> list[str]:
+    """Git hooks the project runs that are not charter's: executable files in the clone's hook directory
+    other than the `*.sample` files git ships, and hook frameworks configured by a tracked file (the
+    owner's other clones run them even where this one has not installed them). Pointing core.hooksPath
+    at .charter/githooks stops every one of them."""
+    out: list[str] = []
+    cur = hooks_path(root)
+    if cur != CHARTER_HOOKS_PATH:
+        common = _git_path(root, "--git-common-dir")
+        d = (root / cur) if cur else (common / "hooks" if common else None)
+        if d is not None and d.is_dir():
+            out += [rel(root, p) for p in sorted(d.iterdir())
+                    if p.is_file() and not p.name.endswith(".sample") and os.access(p, os.X_OK)]
+    out += [f for f in HOOK_FRAMEWORK_FILES if (root / f).is_file()]
+    pj = root / "package.json"
+    if pj.is_file():
+        try:
+            keys = json.loads(pj.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            keys = {}
+        out += [f"package.json ({k})" for k in ("husky", "simple-git-hooks") if isinstance(keys, dict) and k in keys]
+    return out
+
+
+def hook_wired_by(root: Path) -> str | None:
+    """The tracked hook-framework file whose hooks run the charter gate, if one does."""
+    for f in HOOK_FRAMEWORK_FILES:
+        p = root / f
+        if p.is_file() and CHARTER_HOOK_COMMAND in p.read_text(encoding="utf-8", errors="replace"):
+            return f
+    return None
 
 
 # ---------------------------------------------------------------- log

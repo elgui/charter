@@ -5,9 +5,9 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 ## Before you change code
 
 - Start the unit you are working on: `python3 .charter/bin/charter unit start <tasket-id>`. Edits without an active unit are logged as unattributed. An engine sets `CHARTER_UNIT=<id>` instead; the environment wins over the file.
-- Read the unit's `## Acceptance` list. Each line is a probe you will run. If a probe cannot be named, write it before coding.
+- Read the unit's `## Acceptance` list (`## Done When` in a tasket the Tasket skill wrote). Each line is a probe you will run. If a probe cannot be named, write it before coding.
 - On the client track, the unit's `scope:` must name an item in `charter/scope.md`. Work outside the scope is a change request in `charter/changes/`, not a commit.
-- If the session banner says the git hook is not active, run `python3 .charter/bin/charter setup` once.
+- If the session banner says the git hook is not active, run `python3 .charter/bin/charter setup` once. If it says the clone runs other git hooks, tell the owner instead; `setup` would stop them.
 
 ## While you work
 

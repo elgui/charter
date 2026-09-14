@@ -249,13 +249,14 @@ def check_unit_done(root: Path, cfg: dict, unit_text: str, path: str) -> list[Fi
     if status not in lib.as_list(cfg.get("done_statuses")):
         return []
     uid = str(fields.get("id") or Path(path).stem)
+    # strict on purpose: a legacy tasket keeps its warning until it gains `## Acceptance`, even with `## Done When`
     if uid in lib.legacy_taskets(root) and not lib.section(body, "Acceptance"):
         return [Finding("done", "warn", f"legacy tasket {uid} set to {status} without acceptance criteria (listed in {lib.LEGACY_FILE})", path=path)]
     out: list[Finding] = []
-    acc = lib.section(body, "Acceptance")
+    acc = lib.acceptance(body)
     boxes = CHECKBOX_RE.findall(acc)
     if not boxes:
-        out.append(Finding("done", "block", "status is done but there is no `## Acceptance` checklist", path=path,
+        out.append(Finding("done", "block", "status is done but there is no `## Acceptance` checklist (`## Done When` counts too)", path=path,
                            override="add `## Acceptance` with `- [x] AC-n: ... — probe: <command>` lines, or keep the status open"))
     else:
         unchecked = [b for b in boxes if b[0] == " "]
@@ -275,7 +276,7 @@ def check_unit_done(root: Path, cfg: dict, unit_text: str, path: str) -> list[Fi
 
 def acceptance_items(body: str) -> list[str]:
     """Acceptance lines with the tick normalised, so ticking a box is not a change."""
-    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.section(body, "Acceptance").splitlines() if CHECKBOX_RE.match(l)]
+    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).splitlines() if CHECKBOX_RE.match(l)]
 
 
 def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Finding]:
@@ -299,9 +300,9 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
 
 
 def unit_probes(text: str) -> list[tuple[str, str]]:
-    """(criterion id, command) for each `probe: `cmd`` in a unit's acceptance section."""
+    """(criterion id, command) for each `probe: `cmd`` in a unit's acceptance checklist."""
     _, _, body = lib.split_frontmatter(text)
-    return [(m.group(1) or f"line {i + 1}", m.group(2).strip()) for i, m in enumerate(PROBE_RE.finditer(lib.section(body, "Acceptance")))]
+    return [(m.group(1) or f"line {i + 1}", m.group(2).strip()) for i, m in enumerate(PROBE_RE.finditer(lib.acceptance(body)))]
 
 
 def run_probes(root: Path, text: str, path: str, timeout: int) -> tuple[list[Finding], list[str]]:

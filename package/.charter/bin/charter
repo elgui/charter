@@ -135,7 +135,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 continue
             found = checks.check_unit_done(root, cfg, text, p)
             rep.add(*found)
-            if lib.section(lib.split_frontmatter(text)[2], "Acceptance") and not any(f.level == "block" for f in found):
+            if lib.acceptance(lib.split_frontmatter(text)[2]) and not any(f.level == "block" for f in found):
                 closing.append((p, text))
         if probes_on and closing:
             dirty = checks.unstaged_paths(root) if a.staged else []
@@ -219,7 +219,7 @@ def _unit_state(root: Path, cfg: dict, u: dict) -> tuple[str, dict]:
     and a squash or rebase merge has since removed it from the history."""
     status = str(u.get("status", ""))
     body = u.get("_body", "")
-    acc = lib.section(body, "Acceptance")
+    acc = lib.acceptance(body)
     boxes = checks.CHECKBOX_RE.findall(acc)
     k = checks.classify_anchors(root, lib.section(body, "Evidence"))
     done = status in lib.as_list(cfg.get("done_statuses"))
@@ -601,12 +601,20 @@ def cmd_setup(a) -> int:
     """What a clone needs beyond the tracked files: the git hook path, which is repository config and
     is not cloned. Also moves state a 0.1.0 install left in .charter/state/. Safe to run again."""
     root = lib.repo_root(a.root)
-    cur = lib.git(root, "config", "--get", "core.hooksPath").stdout.strip()
-    if cur != ".charter/githooks":
-        lib.git(root, "config", "core.hooksPath", ".charter/githooks", check=True)
-        print(f"git config core.hooksPath .charter/githooks (was {cur or 'unset'}); worktrees of this clone share it")
-    else:
+    cur = lib.hooks_path(root)
+    wired = lib.hook_wired_by(root)
+    others = lib.other_hooks(root)
+    if cur == lib.CHARTER_HOOKS_PATH:
         print("git hook already active (core.hooksPath = .charter/githooks)")
+    elif wired and not a.replace_hooks:
+        print(f"git hook: {wired} runs the charter gate; core.hooksPath left {cur or 'unset'}")
+    elif others and not a.replace_hooks:
+        print(f"KEEP git hooks: this clone runs {', '.join(others)}; pointing core.hooksPath at .charter/githooks would stop them. "
+              f"Add `python3 -B {lib.CHARTER_HOOK_COMMAND}` to their pre-commit (.charter/githooks/README.md), "
+              "or re-run with --replace-hooks to stop them.")
+    else:
+        lib.git(root, "config", "core.hooksPath", lib.CHARTER_HOOKS_PATH, check=True)
+        print(f"git config core.hooksPath .charter/githooks (was {cur or 'unset'}); worktrees of this clone share it")
     old = root / lib.STATE_DIR
     moves = (("log.jsonl", lib.shared_state_dir(root)), ("sessions.jsonl", lib.shared_state_dir(root)), ("active", lib.local_state_dir(root)))
     for name, dest in moves:
@@ -691,7 +699,8 @@ def main(argv=None) -> int:
     u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?"); u.set_defaults(fn=cmd_unit)
     d = sub.add_parser("decisions"); d.add_argument("action", choices=["index"]); d.set_defaults(fn=cmd_decisions)
     lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
-    st = sub.add_parser("setup"); st.set_defaults(fn=cmd_setup)
+    st = sub.add_parser("setup"); st.add_argument("--replace-hooks", action="store_true", help="point core.hooksPath at .charter/githooks even though other git hooks run")
+    st.set_defaults(fn=cmd_setup)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
     if a.cmd not in GATE_COMMANDS:

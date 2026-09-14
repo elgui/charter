@@ -5,7 +5,7 @@ What belongs in `~/.claude` on Gui's machines and nowhere else. The committed la
 | File | Goes to | Why personal |
 |---|---|---|
 | `claude-home/hooks/charter-personal.py` | the directory `~/.claude/hooks` resolves to | Reads `~/Projects/methodo` and points at Crossroads/Slate |
-| `claude-home/Skills/CharterAdmin/SKILL.md` | the directory `~/.claude/Skills` resolves to | Operates across `~/Projects/*` |
+| `claude-home/Skills/CharterAdmin/` (`SKILL.md`, `workflows/Migrate.md`, `tools/Survey.help.md`) | the directory `~/.claude/Skills` resolves to | Operates across `~/Projects/*`; `Migrate` calls this repository's installer and survey |
 | `settings.fragment.json` | merged into `~/.claude/settings.json` (`hooks.SessionStart`) | User-level hook |
 | `settings.trial.json` | nothing; used by the trial through `--settings` | Absolute path to this checkout |
 
@@ -15,7 +15,7 @@ What belongs in `~/.claude` on Gui's machines and nowhere else. The committed la
 
     HOOKS=$(readlink -f ~/.claude/hooks); SKILLS=$(readlink -f ~/.claude/Skills)
     cp ~/Projects/methodo/personal/claude-home/hooks/charter-personal.py "$HOOKS/"
-    mkdir -p "$SKILLS/CharterAdmin" && cp ~/Projects/methodo/personal/claude-home/Skills/CharterAdmin/SKILL.md "$SKILLS/CharterAdmin/"
+    mkdir -p "$SKILLS/CharterAdmin" && cp -R ~/Projects/methodo/personal/claude-home/Skills/CharterAdmin/. "$SKILLS/CharterAdmin/"
     # then add the SessionStart entry from settings.fragment.json to ~/.claude/settings.json
 
 ## Option B: symlink from this checkout (manifest lines)

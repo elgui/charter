@@ -5,20 +5,25 @@ A working method for client projects run alone with agents. One written charter 
 - `docs/method.md`: the method, artifacts, rules table, hard gates, accepted results, synthesis, tracks, cost, seams.
 - `docs/gates.md`: every hook and gate, what it checks, what it blocks, the legitimate override and where it is recorded.
 - `docs/package.md`: layout, commands, versioning, install and upgrade.
-- `docs/migration.md`: a path for each starting point, orqueveaux as the worked example.
+- `docs/migration.md`: a path for each starting point, and what to check after a migration.
+- `docs/design/migration-workflow.md`: the survey, the generated plan and the `Migrate` skill, with the leCRM rehearsal.
 - `docs/trials/`: what the trial did, per gate, with costs.
 - `docs/method-visual.html`: the method in diagrams (open it in a browser; offline, one file).
 - `docs/report-2026-09-11.md`: the report of the session that built it, with decisions for the owner and the evidence index.
 - `docs/review/2026-09-11-weakness-evaluation.md`: the fourteen weaknesses found after the build, which ones 0.2.0 fixes, and what remains.
-- `package/`: the committed layer. `personal/`: the personal layer. `bin/charter-pkg`: the installer. `tests/`: the tests.
+- `package/`: the committed layer. `personal/`: the personal layer. `bin/charter-pkg`: the installer and the survey. `tests/`: the tests.
 
-Install on a project:
+A project that already has code, taskets or documents: survey it first, read-only, and follow the generated plan:
+
+    python3 ~/Projects/methodo/bin/charter-pkg survey <project> --out <dir>
+
+Install on a new project:
 
     python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client --dry-run
     python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client
 
 Tests:
 
-    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions
+    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration
 
 In a clone of a project that already has the package: `python3 .charter/bin/charter setup` once.

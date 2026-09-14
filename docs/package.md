@@ -1,6 +1,6 @@
 # The package
 
-Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.2.2. Python 3 standard library only; no dependency is installed in a project.
+Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.3.0. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -13,11 +13,12 @@ Repository `methodo` (working name; see decision `package-name` in the report). 
 | `package/charter/` | `README.md`, `config.json` (seeded once), `templates/` (scope, decision, change, unit) |
 | `package/AGENTS.md` | The section appended to a project's `AGENTS.md` for Codex and pi |
 | `package/.gitignore.fragment` | The line appended to a project's `.gitignore` (`.charter/state/`) |
-| `bin/charter-pkg` | Installer: `install`, `upgrade`, `uninstall`, `status`; `--dry-run`, `--force`, `--track` |
+| `bin/charter-pkg` | Installer: `install`, `upgrade`, `uninstall`, `status`; `--dry-run`, `--force`, `--track`, `--replace-hooks`. And `survey`, which measures a project before a migration |
+| `bin/charter_survey.py`, `bin/charter_plan.py` | The survey: the facts, read-only on the project, and the report and plan rendered from them (`docs/design/migration-workflow.md`) |
 | `bin/make-testbed`, `bin/trial-run` | Trial tooling |
 | `personal/` | The personal layer, not installed by the installer (`personal/README.md`) |
-| `tests/` | `python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions` from `tests/`; `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found |
-| `docs/` | `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `trials/`, `review/`, `report-2026-09-11.md`, `session-log.md` |
+| `tests/` | `python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration` from `tests/`; `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found, `test_migration.py` the survey and the defects the 2026-09-13 leCRM rehearsal found |
+| `docs/` | `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `design/`, `trials/`, `review/`, `report-2026-09-11.md`, `session-log.md` |
 
 ## What lands in a project
 
@@ -43,10 +44,12 @@ Owned files (22, listed in `bin/charter-pkg` `OWNED`) are recorded with their SH
 Installer, run from this repository:
 
 ```
-python3 ~/Projects/methodo/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force]
+python3 ~/Projects/methodo/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--replace-hooks]
 python3 ~/Projects/methodo/bin/charter-pkg upgrade   <project> [--dry-run] [--force]
 python3 ~/Projects/methodo/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
 python3 ~/Projects/methodo/bin/charter-pkg status    <project>
+python3 ~/Projects/methodo/bin/charter-pkg survey    <project> [--track T] [--out DIR | --plan | --json] [--test-cmd CMD]
+                                                     [--ref BRANCH] [--keep-clone] [--no-rehearse] [--offline]
 ```
 
 In a project (`python3 .charter/bin/charter ...`):
@@ -61,7 +64,7 @@ ledger fold | add --result <json> [--unit ID] | add --human-minutes N [--unit ID
 unit start <id> | stop | show
 decisions index
 log [--days N] [--verbose]
-setup
+setup [--replace-hooks]
 version
 ```
 
@@ -69,6 +72,8 @@ version
 
 - `package/VERSION` is the package version; `charter/VERSION` in a project records what is installed; `.charter/manifest.json` records the hashes.
 - `install` reconciles on every run: missing owned files, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`. On a project where all of that already holds it changes nothing. Because `.charter/manifest.json` is tracked, a fresh clone looks installed; running `install` there, or `python3 .charter/bin/charter setup` without this repository, sets the hook path the clone lacks.
+- `core.hooksPath` replaces the clone's hook directory, so `install` and `setup` leave it alone when the project already runs git hooks: an executable non-sample file in the hook directory, or a tracked `lefthook.yml`, `.pre-commit-config.yaml`, `.husky/pre-commit` or husky entry in `package.json`. They print what they kept and how to run `charter check --staged` from that framework (`package/.charter/githooks/README.md`); `--replace-hooks` overrides. A framework file that already runs the gate counts as wired, for them and for the SessionStart banner.
+- `install` names every path it wrote that the project's `.gitignore` matches, because a commit will not carry it.
 - `upgrade` prints a unified diff for every owned file that would change, keeps any owned file the project modified locally (unless `--force`), rewrites the manifest and the version, and re-merges the hook entries (entries whose command contains `/.charter/hooks/` are replaced; other hooks are kept).
 - `uninstall` removes owned files whose hash matches the manifest, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`; keeps project files, and the state in the git directory and in `.charter/state/` unless `--purge-state`.
 - A new version reaches a project by `upgrade` from a checkout of this repository at the new version, on a branch, committed by the owner like any change (the commit touches `.charter/`, which CI checks against `owner`). Nothing pulls automatically. The personal-layer SessionStart hook says when a project is behind. After an upgrade from 0.1.0, `python3 .charter/bin/charter setup` moves the old state out of `.charter/state/`.

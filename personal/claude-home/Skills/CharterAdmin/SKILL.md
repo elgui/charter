@@ -1,11 +1,57 @@
 ---
 name: CharterAdmin
-description: Administer the charter method across Gui's projects from the personal layer. USE WHEN the user says "charter status", "upgrade charter", "install charter on", "fold the ledgers", "cost per accepted unit across projects", "which projects run charter", OR wants open charter decisions turned into a Crossroads or Slate page.
+description: Administer the charter method across Gui's projects from the personal layer, and migrate existing projects onto it. USE WHEN the user says "charter status", "upgrade charter", "install charter on", "fold the ledgers", "cost per accepted unit across projects", "which projects run charter", OR wants to migrate, move or onboard an existing project onto charter, survey a project before a charter install, or plan a charter migration, OR wants open charter decisions turned into a Crossroads or Slate page.
 ---
 
 # CharterAdmin (personal layer)
 
 Package repository: `~/Projects/methodo` (override with `CHARTER_PKG_DIR`). The committed layer in each project never depends on this skill.
+
+## Workflow Routing
+
+**When executing a workflow, do BOTH of these:**
+
+1. **Call the notification script** (for observability tracking):
+   ```bash
+   ~/.claude/Tools/SkillWorkflowNotification WORKFLOWNAME CharterAdmin
+   ```
+
+2. **Output the text notification** (for user visibility):
+   ```
+   Running the **WorkflowName** workflow from the **CharterAdmin** skill...
+   ```
+
+| Workflow | Trigger | File |
+|----------|---------|------|
+| **Migrate** | "migrate <project> to charter", "put charter on <project>", "survey <project> for charter", any install on a project that already has code, taskets or documents | `workflows/Migrate.md` |
+
+The sections after the examples are short procedures for projects already on charter.
+
+## Examples
+
+**Example 1: Migrate an existing project**
+```
+User: "Put charter on leCRM"
+→ Invokes Migrate workflow
+→ Runs `charter-pkg survey`, which reads the project and rehearses the install in a throwaway clone
+→ Settles what the facts settle, puts the rest on a Slate, rehearses the whole plan in a clone
+→ Executes on a branch, one checked commit per step, only after the owner's go-ahead
+→ Returns the survey, the plan with each check's output, and the Slate link
+```
+
+**Example 2: Survey only**
+```
+User: "What would it take to put charter on orqueveaux?"
+→ Invokes Migrate workflow, phases 1 and 2
+→ Returns the survey report and the generated plan; writes nothing to the project
+```
+
+**Example 3: Upgrade a project already on charter**
+```
+User: "Upgrade charter on leCRM"
+→ Follows "Install or upgrade" below: the dry run, then the upgrade on a branch
+→ Returns the diff and the commit to review
+```
 
 ## Which projects, which version
 
@@ -13,6 +59,8 @@ Package repository: `~/Projects/methodo` (override with `CHARTER_PKG_DIR`). The 
     python3 ~/Projects/methodo/bin/charter-pkg status <project>
 
 ## Install or upgrade
+
+A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
     python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client --dry-run   # read it
     python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client

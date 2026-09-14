@@ -70,6 +70,7 @@ class Plan:
         self.dry = dry
         self.steps: list[str] = []
         self.changes = 0
+        self.written: list[Path] = []
 
     def say(self, s: str, change: bool = True) -> None:
         self.steps.append(s)
@@ -79,6 +80,7 @@ class Plan:
 
     def write(self, dest: Path, data: bytes, mode_exec: bool = False, what: str = "write") -> None:
         self.say(f"{what} {dest}")
+        self.written.append(dest)
         if self.dry:
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -180,6 +182,7 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
         p = project / d
         if not p.exists():
             plan.say(f"create {p}/")
+            plan.written.append(p / ".gitkeep")
             if not a.dry_run:
                 p.mkdir(parents=True, exist_ok=True)
                 (p / ".gitkeep").touch()
@@ -215,13 +218,31 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
     mp = project / ".charter" / "manifest.json"
     if not mp.exists() or load_manifest(project) != manifest:
         plan.write(mp, (json.dumps(manifest, indent=2) + "\n").encode(), what="write manifest")
-    # git hooks path
-    if (project / ".git").exists() or subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode == 0:
-        cur_path = subprocess.run(["git", "-C", str(project), "config", "--get", "core.hooksPath"], capture_output=True, text=True).stdout.strip()
-        if cur_path != ".charter/githooks":
+    in_git = (project / ".git").exists() or subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode == 0
+    if in_git:
+        # git hooks path: hooks the project already runs are never stopped without --replace-hooks
+        cur_path = charter_lib.hooks_path(project)
+        wired = charter_lib.hook_wired_by(project)
+        others = charter_lib.other_hooks(project)
+        if cur_path == charter_lib.CHARTER_HOOKS_PATH:
+            pass
+        elif wired and not a.replace_hooks:
+            print(f"git hook: {wired} runs the charter gate; core.hooksPath left {cur_path or 'unset'}")
+        elif others and not a.replace_hooks:
+            print(f"KEEP git hooks: {project} runs {', '.join(others)}; pointing core.hooksPath at .charter/githooks would stop them. "
+                  f"Add `python3 -B {charter_lib.CHARTER_HOOK_COMMAND}` to their pre-commit (.charter/githooks/README.md), "
+                  "or re-run with --replace-hooks to stop them.")
+        else:
             plan.say(f"git config core.hooksPath .charter/githooks (was {cur_path or 'unset'})")
             if not a.dry_run:
                 subprocess.run(["git", "-C", str(project), "config", "core.hooksPath", ".charter/githooks"], check=True)
+        # a path the project's .gitignore matches never reaches the commit, and nothing else says so
+        rels = [str(p.relative_to(project)) for p in plan.written if p.is_relative_to(project)]
+        ign = subprocess.run(["git", "-C", str(project), "check-ignore", "-v", "--stdin"],
+                             input="\n".join(rels) + "\n", capture_output=True, text=True).stdout if rels else ""
+        for line in ign.splitlines():
+            where, _, path = line.partition("\t")
+            print(f"IGNORED by {where.rsplit(':', 1)[0]} (`{where.rsplit(':', 1)[-1]}`), so a commit will not carry it: {path}")
     if plan.changes == 0 and not conflicts:
         print(f"charter {VERSION} already installed in {project}; nothing to do")
         return 0
@@ -337,6 +358,45 @@ def do_status(project: Path, a) -> int:
     return 0
 
 
+def do_survey(project: Path, a) -> int:
+    """The facts a migration plan rests on (bin/charter_survey.py), rendered by bin/charter_plan.py. Both documents
+    pass the anchoring check, run here in-process: the CLI would append to the project's gate log."""
+    if subprocess.run(["git", "-C", str(project), "rev-parse", "--verify", "--quiet", "HEAD"], capture_output=True).returncode != 0:
+        print(f"not a git repository with a commit: {project}")
+        return 2
+    out = Path(a.out).resolve() if a.out else None
+    if out and (out == project or project in out.parents):
+        print(f"--out must be outside the project: {out}")
+        return 2
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import charter_survey
+    import charter_plan
+    if a.ref and subprocess.run(["git", "-C", str(project), "rev-parse", "--verify", "--quiet", f"refs/heads/{a.ref}"], capture_output=True).returncode != 0:
+        print(f"no local branch {a.ref} in {project}")
+        return 2
+    facts = charter_survey.survey(project, sys.modules[__name__], track=a.track, test_cmd=a.test_cmd, rehearsal=not a.no_rehearse,
+                                  offline=a.offline, keep_clone=a.keep_clone, ref=a.ref)
+    docs = {"survey.md": charter_plan.report(facts), "plan.md": charter_plan.plan(facts, a.track)}
+    rc = 0
+    for name, text in docs.items():
+        rep = charter_plan.check(project, text)
+        if not rep.ok:
+            rc = 3
+            for ln, t in rep.unanchored + rep.unresolved:
+                print(f"{name}: anchors L{ln}: {t}", file=sys.stderr)
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "survey.json").write_text(json.dumps(facts, indent=2) + "\n")
+        for name, text in docs.items():
+            (out / name).write_text(text)
+        print(f"wrote {out}/survey.json, survey.md, plan.md")
+    elif a.json:
+        print(json.dumps(facts, indent=2))
+    else:
+        print(docs["plan.md" if a.plan else "survey.md"])
+    return rc
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="charter-pkg", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -348,11 +408,26 @@ def main(argv=None) -> int:
         s.add_argument("--track", choices=["client", "prototype"], default=None)
         s.add_argument("--show-diff", action="store_true")
         s.add_argument("--purge-state", action="store_true")
+        s.add_argument("--replace-hooks", action="store_true",
+                       help="point core.hooksPath at .charter/githooks even though the project runs other git hooks")
+    sv = sub.add_parser("survey", help="measure a project before a migration; read-only on the project")
+    sv.add_argument("project")
+    sv.add_argument("--track", choices=["client", "prototype"], default="prototype", help="the track the rehearsal installs and the plan assumes")
+    sv.add_argument("--plan", action="store_true", help="print the migration plan instead of the report")
+    sv.add_argument("--json", action="store_true", help="print the facts as JSON")
+    sv.add_argument("--out", default=None, help="write survey.json, survey.md and plan.md into this directory (outside the project)")
+    sv.add_argument("--test-cmd", default=None, help="run this command in the rehearsal clone and report its exit and duration")
+    sv.add_argument("--no-rehearse", action="store_true", help="skip the throwaway install in a temporary clone")
+    sv.add_argument("--offline", action="store_true", help="do not ask GitHub for the repository's visibility")
+    sv.add_argument("--keep-clone", action="store_true", help="keep the rehearsal clone and print its path")
+    sv.add_argument("--ref", default=None, help="the local branch to survey (default: the main line), e.g. the migration branch")
     a = ap.parse_args(argv)
     project = Path(a.project).resolve()
     if not project.is_dir():
         print(f"not a directory: {project}")
         return 2
+    if a.cmd == "survey":
+        return do_survey(project, a)
     if a.cmd == "install":
         return do_install(project, a)
     if a.cmd == "upgrade":
