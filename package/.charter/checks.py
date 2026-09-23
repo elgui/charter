@@ -664,8 +664,17 @@ def check_owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> list[Fin
 
 
 def check_owner_commits(root: Path, cfg: dict, base: str) -> list[Finding]:
-    """In CI: every commit in base..HEAD that makes an owner-only change must be authored by `owner`."""
-    owners = [o.strip().lower() for o in lib.as_list(cfg.get("owner"))]
+    """In CI: every commit in base..HEAD that makes an owner-only change must be authored by `owner`.
+
+    `owner` is read from the base's config, not the one under review: otherwise a change set could
+    name its own author the owner and pass for everything else it changes. Only a base without a
+    config (the install itself) falls back to the config under review."""
+    at_base = lib.git(root, "show", f"{base}:{lib.CHARTER_DIR}/config.json")
+    try:
+        owner = json.loads(at_base.stdout).get("owner") if at_base.returncode == 0 else cfg.get("owner")
+    except (json.JSONDecodeError, AttributeError):
+        owner = cfg.get("owner")
+    owners = [o.strip().lower() for o in lib.as_list(owner)]
     log = lib.git(root, "log", "--format=%H%x00%an%x00%ae", f"{base}..HEAD")
     if log.returncode != 0:
         return []

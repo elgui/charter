@@ -400,7 +400,15 @@ def taskets(root: Path) -> dict[str, dict]:
     d = base / TASKETS_DIR
     if not d.is_dir():
         return out
+    # a file git ignores is local scratch, not a unit: a synthesis that cites one fails its
+    # anchors in CI, where the file does not exist. The index view holds only tracked files.
+    ignored = set()
+    if _VIEW is None:
+        r = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "--", TASKETS_DIR)
+        ignored = set(r.stdout.splitlines()) if r.returncode == 0 else set()
     for p in sorted(d.glob("*.md")):
+        if rel(base, p) in ignored:
+            continue
         fields, body = read_md(p)
         fields["_path"] = rel(base, p)
         fields["_body"] = body
