@@ -7,6 +7,8 @@ owner decision, never decided here.
 """
 from __future__ import annotations
 
+import json
+
 import checks
 
 CLASS_TEXT = {
@@ -89,8 +91,10 @@ def report(s: dict) -> str:
                      src(f"git show {ref}:.taskets/<id>.md")))
     L.append("")
 
-    L += ["## Size", "", f"Limits: {sz['limits']['file_lines']} lines for a file, {sz['limits']['governance_lines']} for governance "
-          f"({src('cat package/charter/config.json')}). A file over its limit is frozen for growth from the install.", "",
+    gb = sz['limits'].get('governance_bytes')
+    L += ["## Size", "", f"Limits: {sz['limits']['file_lines']} lines for a file, {sz['limits']['governance_lines']} for governance"
+          + (f" and {gb} bytes" if gb else "") +
+          f" ({src('cat package/charter/config.json')}). A file over its limit is frozen for growth from the install.", "",
           row("Frozen file", "Lines", "Limit", "Area", "Source"), row("---", "---:", "---:", "---", "---")]
     for f in sz["frozen"]:
         L.append(row(f["path"], f["lines"], f["limit"], f["area"], src(f"git show {ref}:{f['path']}")))
@@ -100,15 +104,20 @@ def report(s: dict) -> str:
     for k, n in sz["variants"].items():
         globs = sz["exempt_groups"].get(k) if k in sz["exempt_groups"] else (["every glob above"] if k == "all" else [])
         L.append(row(k, n, lst(globs, 8) if globs else "package defaults only", src(f"git ls-tree -r {ref}")))
-    L += ["", row("Governance file", "Lines", "Bytes", "Limit", "Source"), row("---", "---:", "---:", "---:", "---")]
+    L += ["", row("Governance file", "Lines", "Bytes", "Limit", "Byte limit", "Source"), row("---", "---:", "---:", "---:", "---:", "---")]
     for f in sz["governance"]:
-        L.append(row(f["path"], f["lines"], f["bytes"], f["limit"], src(f"git show {ref}:{f['path']}")))
+        L.append(row(f["path"], f["lines"], f["bytes"], f["limit"], f.get("byte_limit") or "", src(f"git show {ref}:{f['path']}")))
     for f in sz["nested_governance"]:
-        L.append(row(f["path"] + " (nested, not gated)", f["lines"], "", "", src(f"git show {ref}:{f['path']}")))
+        L.append(row(f["path"] + " (nested, not gated)", f["lines"], "", "", "", src(f"git show {ref}:{f['path']}")))
     L += ["", "Frozen files an open tasket names:", ""]
     L += [f"- {f['path']} ({f['lines']} lines): {lst(f['taskets'])} ({src('git grep -n ' + f['path'].rsplit('/', 1)[-1] + ' ' + ref + ' -- .taskets')})"
           for f in s["frozen_in_open_work"]] or [f"- none ({src('git grep -n <frozen path> ' + ref + ' -- .taskets')})"]
     L.append("")
+    ex = s.get("exceptions_needed") or []
+    if ex:
+        L += [f"Named exceptions that would let that work grow those files, budgets at their size now plus a quarter, expiring {ex[0]['expires']}, "
+              f"a starting point for the owner's `size_exceptions` ({src('git grep -n <frozen path> ' + ref + ' -- .taskets')}):", "", "```json",
+              *[json.dumps(e) + ("," if i < len(ex) - 1 else "") for i, e in enumerate(ex)], "```", ""]
 
     L += ["## Git hooks", "", row("Fact", "Value", "Source"), row("---", "---", "---"),
           row("core.hooksPath", h["hooks_path"] or "unset", src("git config --get core.hooksPath")),
@@ -254,13 +263,16 @@ def decisions(s: dict) -> list[dict]:
                                 "leave them legacy: only taskets written after the install carry `## Acceptance`"],
                     "default": "decide at package level: the same heading appears in every project that tooling writes"})
     v = sz["variants"]
-    if v.get("none", 0) and any(k in v for k in ("tests", "tooling", "vendor")):
+    if v.get("none", 0) and (any(k in v for k in ("tests", "tooling", "vendor")) or s.get("exceptions_needed")):
         out.append({"id": "size", "q": "Which files are exempt from the size limit?",
                     "fact": f"{v['none']} files are frozen at install; with " + "; ".join(f"{k} exempt, {n}" for k, n in v.items() if k != "none") +
                             f" ({src('git ls-tree -r ' + ref)})",
                     "options": [f"exempt {k}: add {lst(sz['exempt_groups'][k], 8)} to `exempt_from_size`" for k in ("tooling", "tests", "vendor") if k in v] +
+                               ([f"name exceptions: the {len(s['exceptions_needed'])} frozen file(s) open taskets name get a budget, `because:` and `expires:` in `size_exceptions` (the list under § Size), instead of a split unit each"]
+                                if s.get("exceptions_needed") else []) +
                                ["exempt nothing: every frozen file needs a split unit before it grows"],
-                    "default": "exempt tooling installed from elsewhere; tests as the owner prefers"})
+                    "default": "exempt tooling installed from elsewhere; tests as the owner prefers" +
+                               ("; exceptions for the files open work must grow, each expiring, rather than a split unit per file" if s.get("exceptions_needed") else "")})
     authors = [a for a in s["history"]["authors_90d"]]
     if len(authors) > 1:
         out.append({"id": "people", "q": "Who is told before the install merges?",
@@ -379,12 +391,12 @@ def plan(s: dict, track: str) -> str:
              "Read each first: the name is only a hint" + (f"; {lst(kept)} stay, because code, CI or other docs cite them" if kept else ""),
              lst(cand, 8), "the survey's archive candidates are gone from `docs/`", "`git mv` back, or revert",
              src(f"git grep -l <name> {ref} -- . :!.taskets"))
-    over = [g_ for g_ in sz["governance"] if g_["lines"] > g_["limit"]]
+    over = [g_ for g_ in sz["governance"] if g_["lines"] > g_["limit"] or (g_.get("byte_limit") and g_["bytes"] > g_["byte_limit"])]
     if over:
-        step("Split the governance files over the limit; decisions moved out in the step above shrink them", lst(f"{g_['path']} {g_['lines']}" for g_ in over),
+        step("Split the governance files over the limit; decisions moved out in the step above shrink them", lst(f"{g_['path']} {g_['lines']} lines, {g_['bytes']} bytes" for g_ in over),
              f"`{CLI} check --all --strict --size` no longer lists them", "revert", src(f"git show {ref}:CLAUDE.md"))
     if s["frozen_in_open_work"]:
-        step("The owner opens one `kind: split` unit per frozen file that open work must grow",
+        step("The owner opens one `kind: split` unit per frozen file that open work must grow, or names it in `size_exceptions` as decided",
              lst(f"{f['path']} ({lst(f['taskets'], 3)})" for f in s["frozen_in_open_work"]), f"`{CLI} check --all --strict --size` shows them as warnings",
              "close the split units", src(f"git grep -n <frozen path> {ref} -- .taskets"))
     coe = [w for w in ci["workflows"] if w["continue_on_error_lines"]]

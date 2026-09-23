@@ -35,7 +35,12 @@ DEFAULT_CONFIG = {
     "limits": {
         "file_lines": 800,        # rule 3: freeze-and-split threshold
         "governance_lines": 400,  # CLAUDE.md, rules, scope, decisions index
+        "governance_bytes": 32768,  # the same files, in bytes: one 40,000-character line is 1 line
     },
+    # the governance set (globs); decisions and change requests are always governance
+    "governance_files": ["CLAUDE.md", "AGENTS.md", "charter/scope.md", ".claude/rules/*.md"],
+    # owner-named files judged against their own budget: {path, lines and/or bytes, because, expires}
+    "size_exceptions": [],
     "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt"],
     "done_statuses": ["done"],
     "probes": {                   # re-run acceptance probes of units that close in a change set

@@ -175,9 +175,10 @@ def s_size(root: Path, ref: str, paths: list[str], cfg: dict) -> dict:
         for p, n in sorted(lines.items(), key=lambda x: -x[1]):
             if p.startswith(("charter/", ".charter/", ".claude/skills/charter-")):
                 continue
-            lim = checks.size_limit_for(root, c, p)
-            if lim is not None and n > lim:
-                out.append({"path": p, "lines": n, "limit": lim})
+            b = checks.size_budget_for(root, c, p)
+            nb = len(content.get(p, b""))
+            if b is not None and (n > b.lines or (b.bytes and nb > b.bytes)):
+                out.append({"path": p, "lines": n, "limit": b.lines, "bytes": nb, "byte_limit": b.bytes})
         return out
 
     base = frozen([])
@@ -190,8 +191,9 @@ def s_size(root: Path, ref: str, paths: list[str], cfg: dict) -> dict:
     variants["all"] = len(remaining)
     for f in base:
         f["area"] = next((k for k, gl in groups.items() if gl and lib.matches_any(f["path"], gl)), "code or docs")
-    gov = [{"path": p, "lines": lines.get(p, 0), "bytes": len(content.get(p, b"")), "limit": int(cfg["limits"]["governance_lines"])}
-           for p in paths if p in checks.GOVERNANCE_FILES or lib.matches_any(p, checks.GOVERNANCE_GLOBS)]
+    gov = [{"path": p, "lines": lines.get(p, 0), "bytes": len(content.get(p, b"")), "limit": int(cfg["limits"]["governance_lines"]),
+            "byte_limit": int(cfg["limits"].get("governance_bytes") or 0) or None}
+           for p in paths if checks.is_governance(cfg, p) and not p.startswith("charter/")]
     nested = [{"path": p, "lines": lines.get(p, 0)} for p in paths if p.endswith("/CLAUDE.md") or p.endswith("/AGENTS.md")]
     return {"limits": cfg["limits"], "exempt_from_size": lib.as_list(cfg.get("exempt_from_size")), "exempt_groups": groups,
             "frozen": base, "variants": variants, "frozen_after_all_exempt": remaining, "governance": gov, "nested_governance": nested}
@@ -219,6 +221,23 @@ def s_frozen_in_open_work(taskets: dict, size: dict, paths: list[str]) -> list[d
                     break
         if hits:
             out.append({"path": p, "lines": f["lines"], "taskets": hits})
+    return out
+
+
+def exceptions_needed(size: dict, open_work: list[dict], expires: str) -> list[dict]:
+    """The `size_exceptions` entries that would let open work grow the frozen files it names: each budget is
+    the file's size now plus a quarter, a starting point for the owner, never a recommendation to keep."""
+    by_path = {f["path"]: f for f in size["frozen"]}
+    out = []
+    for w in open_work:
+        f = by_path.get(w["path"])
+        if not f:
+            continue
+        e = {"path": f["path"], "lines": max(f["limit"], f["lines"] + f["lines"] // 4)}
+        if f.get("byte_limit") and f.get("bytes", 0) > f["byte_limit"]:
+            e["bytes"] = f["bytes"] + f["bytes"] // 4
+        e.update({"because": f"open work names it: {', '.join(w['taskets'][:3])}", "expires": expires})
+        out.append(e)
     return out
 
 
@@ -570,6 +589,7 @@ def survey(root: Path, pkg, track: str = "prototype", test_cmd: str | None = Non
            "binaries": s_binaries(root, ref), "ci": s_ci(root, ref, paths, ip, mainline(root)), "remote": s_remote(root, offline),
            "history": s_history(root, ref), "markdown": s_markdown(root, ref, paths), "decisions": s_decisions(root, ref, paths),
            "test_candidates": s_tests(root, ref, paths), "tracked_files": len(paths)}
+    res["exceptions_needed"] = exceptions_needed(sz, res["frozen_in_open_work"], (dt.date.today() + dt.timedelta(days=90)).isoformat())
     fresh = not any(p.startswith(".taskets/") for p in paths)
     res["add_paths"] = add_paths(pkg, fresh, any(x["path"] == ".claude/settings.json" for x in res["claude"]["ignored_install_paths"]))
     res["rehearsal"] = rehearse(root, ref, Path(pkg.__file__).resolve(), track, test_cmd, keep_clone, res["add_paths"]) if rehearsal else None

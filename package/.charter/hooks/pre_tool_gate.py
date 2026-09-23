@@ -50,7 +50,11 @@ def main() -> int:
         if new_text is not None:
             new_lines = lib.line_count(new_text)
             old_lines = lib.count_lines(root / rp)
-            rep.add(*checks.check_size(root, cfg, rp, new_lines, old_lines))
+            try:
+                old_bytes = (root / rp).stat().st_size
+            except OSError:
+                old_bytes = 0
+            rep.add(*checks.check_size(root, cfg, rp, new_lines, old_lines, len(new_text.encode("utf-8")), old_bytes))
             if rp.startswith(lib.TASKETS_DIR + "/") and rp.endswith(".md"):
                 rep.add(*checks.check_unit_done(root, cfg, new_text, rp))
                 rep.add(*checks.check_acceptance_change(old_text, new_text, rp))

@@ -17,8 +17,11 @@ from pathlib import Path
 
 import lib
 
+# The default governance set; a project sets its own with `governance_files` in charter/config.json.
 GOVERNANCE_FILES = ["CLAUDE.md", "AGENTS.md", "charter/scope.md"]
 GOVERNANCE_GLOBS = [".claude/rules/*.md"]
+DEFAULT_GOVERNANCE = GOVERNANCE_FILES + GOVERNANCE_GLOBS
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 MARKER_RE = re.compile(r"charter:([a-z0-9][a-z0-9._-]*)", re.I)
 CHECKBOX_RE = re.compile(r"^\s*-\s*\[( |x|X)\]\s*(AC-\d+|[^\n]*)", re.M)
 PROBE_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s*(AC-\d+)?[^\n]*?probe:\s*`([^`\n]+)`", re.M)
@@ -142,12 +145,103 @@ def check_scope_file(root: Path, cfg: dict) -> list[Finding]:
 
 # ---------------------------------------------------------------- size (R3)
 
-def size_limit_for(root: Path, cfg: dict, rp: str) -> int | None:
+def is_governance(cfg: dict, rp: str) -> bool:
+    """Governance files carry the governance line limit and the byte budget. Decisions and change
+    requests always do; the rest of the set is `governance_files`, today's list by default."""
+    if rp.startswith("charter/decisions/") or rp.startswith("charter/changes/"):
+        return True
+    gov = cfg.get("governance_files")
+    return lib.matches_any(rp, lib.as_list(gov) if gov is not None else DEFAULT_GOVERNANCE)
+
+
+def _today() -> str:
+    import datetime as _dt
+    return _dt.date.today().isoformat()
+
+
+def size_exceptions(cfg: dict, today: str | None = None) -> tuple[dict, dict, list[Finding]]:
+    """(live, expired, problems) from `size_exceptions` in charter/config.json. An exception names one
+    path, a budget in `lines` and/or `bytes`, `because:` and a dated `expires:`; without either of the
+    last two it is ignored. Expiry is exclusive, as for decisions: on its `expires:` date it has stopped."""
+    today = today or _today()
+    live: dict = {}
+    expired: dict = {}
+    problems: list[Finding] = []
+    raw = cfg.get("size_exceptions") or []
+    if not isinstance(raw, list):
+        return live, expired, [Finding("size", "warn", "size_exceptions in charter/config.json is not a list; ignored", path="charter/config.json")]
+    for i, e in enumerate(raw):
+        where = f"size_exceptions[{i}]"
+        if not isinstance(e, dict) or not isinstance(e.get("path"), str) or not e.get("path"):
+            problems.append(Finding("size", "warn", f"{where} names no `path`; ignored", path="charter/config.json"))
+            continue
+        rp = e["path"]
+        missing = [k for k in ("because", "expires") if not str(e.get(k, "") or "").strip()]
+        budget_ok = all(isinstance(e.get(k), int) and e.get(k) > 0 for k in ("lines", "bytes") if k in e) and ("lines" in e or "bytes" in e)
+        if missing or not budget_ok:
+            why = (f"no {' or '.join('`' + k + ':`' for k in missing)}" if missing else "") + \
+                  ("" if budget_ok else ("; " if missing else "") + "no positive `lines` or `bytes` budget")
+            problems.append(Finding("size", "warn", f"{where} ({rp}) has {why}; ignored, the default limit applies", path="charter/config.json",
+                                    override="the owner adds `because:` (the case) and a dated `expires:` to the exception"))
+            continue
+        exp = str(e["expires"]).strip()
+        if not DATE_RE.fullmatch(exp):
+            problems.append(Finding("size", "warn", f"{where} ({rp}) expires on `{exp}`, not a date; ignored", path="charter/config.json"))
+            continue
+        if exp <= today:
+            expired[rp] = exp
+            problems.append(Finding("size", "warn", f"{where} ({rp}) expired on {exp}; the default limit applies again", path="charter/config.json",
+                                    override="the owner renews it with a new `expires:`, or the file is split"))
+            continue
+        live[rp] = e
+    return live, expired, problems
+
+
+def check_size_exceptions(cfg: dict, today: str | None = None) -> list[Finding]:
+    return size_exceptions(cfg, today)[2]
+
+
+@dataclass
+class SizeBudget:
+    lines: int
+    bytes: int | None = None
+    exception: dict | None = None
+    expired_on: str = ""
+
+    def label(self, unit: str) -> str:
+        n = self.lines if unit == "line" else self.bytes
+        if self.exception and (unit in ("line",) and "lines" in self.exception or unit == "byte" and "bytes" in self.exception):
+            return f"the {n}-{unit} budget of its size exception (expires {self.exception['expires']})"
+        tail = f" (its size exception expired on {self.expired_on})" if self.expired_on else ""
+        return f"the {n}-{unit} limit{tail}"
+
+
+def size_budget_for(root: Path, cfg: dict, rp: str, today: str | None = None) -> SizeBudget | None:
     if lib.matches_any(rp, lib.as_list(cfg.get("exempt_from_size"))) or rp.startswith(lib.TOOL_DIR + "/"):
         return None   # .charter/ is the package's; the project cannot split it, an upgrade replaces it
-    if rp in GOVERNANCE_FILES or lib.matches_any(rp, GOVERNANCE_GLOBS) or rp.startswith("charter/decisions/") or rp.startswith("charter/changes/"):
-        return int(cfg["limits"]["governance_lines"])
-    return int(cfg["limits"]["file_lines"])
+    limits = cfg.get("limits") or {}
+    if is_governance(cfg, rp):
+        gb = limits.get("governance_bytes", 32768)
+        b = SizeBudget(int(limits.get("governance_lines", 400)), int(gb) if gb else None)
+    else:
+        b = SizeBudget(int(limits.get("file_lines", 800)))
+    live, expired, _ = size_exceptions(cfg, today)
+    e = live.get(rp)
+    if e:
+        b.exception = e
+        if "lines" in e:
+            b.lines = int(e["lines"])
+        if "bytes" in e:
+            b.bytes = int(e["bytes"])
+    elif rp in expired:
+        b.expired_on = expired[rp]
+    return b
+
+
+def size_limit_for(root: Path, cfg: dict, rp: str) -> int | None:
+    """The line limit for rp, an exception's budget included; None when rp is exempt."""
+    b = size_budget_for(root, cfg, rp)
+    return b.lines if b else None
 
 
 def split_unit_for(root: Path, rp: str, cfg: dict | None = None) -> str | None:
@@ -161,19 +255,29 @@ def split_unit_for(root: Path, rp: str, cfg: dict | None = None) -> str | None:
     return None
 
 
-def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int) -> list[Finding]:
-    limit = size_limit_for(root, cfg, rp)
-    if limit is None:
+def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
+               new_bytes: int | None = None, old_bytes: int = 0) -> list[Finding]:
+    """A file over its line limit, or a governance file over its byte budget, is frozen for growth.
+    A live named exception replaces the limit it names; an open split unit unfreezes the file."""
+    b = size_budget_for(root, cfg, rp)
+    if b is None:
         return []
-    if new_lines > limit and new_lines > old_lines:
+    over = []
+    if new_lines > b.lines and new_lines > old_lines:
+        over.append(("line", new_lines, f"would grow to {new_lines} lines" if old_lines else f"is {new_lines} lines"))
+    if b.bytes and new_bytes is not None and new_bytes > b.bytes and new_bytes > old_bytes:
+        over.append(("byte", new_bytes, f"would grow to {new_bytes} bytes" if old_bytes else f"is {new_bytes} bytes"))
+    if over:
         su = split_unit_for(root, rp, cfg)
+        what = "; ".join(f"{v}, over {b.label(u)}" for u, n, v in over)
         if su:
-            return [Finding("size", "warn", f"{rp} is over {limit} lines ({new_lines}); allowed because split unit {su} is open", path=rp)]
-        verb = f"would grow to {new_lines} lines" if old_lines else f"is {new_lines} lines"
-        return [Finding("size", "block", f"{rp} {verb}, over the {limit}-line limit; the file is frozen for growth",
-                        path=rp, override=f"move code out of it into a new file (shrinking is always allowed), or ask the owner to open a unit with `kind: split` and `perimeter: [{rp}]`")]
-    if new_lines > int(limit * 0.8) and new_lines > old_lines:
-        return [Finding("size", "warn", f"{rp} is at {new_lines} lines, {limit} is the limit; plan a split", path=rp)]
+            return [Finding("size", "warn", f"{rp} {what}; allowed because split unit {su} is open", path=rp)]
+        return [Finding("size", "block", f"{rp} {what}; the file is frozen for growth", path=rp,
+                        override=f"move code out of it into a new file (shrinking is always allowed), or ask the owner to open a unit with `kind: split` and `perimeter: [{rp}]`, or to name it in `size_exceptions` with a budget, `because:` and `expires:`")]
+    if new_lines > int(b.lines * 0.8) and new_lines > old_lines:
+        return [Finding("size", "warn", f"{rp} is at {new_lines} lines, {b.lines} is the limit; plan a split", path=rp)]
+    if b.bytes and new_bytes is not None and new_bytes > int(b.bytes * 0.8) and new_bytes > old_bytes:
+        return [Finding("size", "warn", f"{rp} is at {new_bytes} bytes, {b.bytes} is the budget; plan a split", path=rp)]
     return []
 
 
