@@ -106,13 +106,23 @@ def rail_ids(unit: dict, keys: list[str]) -> list[str]:
 
 
 def rails_of(unit: dict, keys: list[str], items: dict[str, dict]) -> list[str]:
-    """The rails a unit is on: the ids it names, or, when it names none, every rail whose optional
-    `groups` column claims the unit's `group:` (globs). Naming a rail always wins over the group."""
-    named = rail_ids(unit, keys)
-    if named:
-        return named
+    """The rails a unit is on, in this order:
+
+    1. the ids its first key (`rail:`) names, always, known or not;
+    2. the ids the other keys (`roadmap:`) name, when at least one is a known rail: a roadmap anchor
+       links a document section, and a section that is not a rail declares nothing;
+    3. every rail whose optional `groups` column claims the unit's `group:` (globs);
+    4. whatever the other keys named, so an unknown anchor is still reported.
+    """
+    declared = rail_ids(unit, keys[:1])
+    if declared:
+        return declared
+    hints = rail_ids(unit, keys[1:])
+    if any(h in items for h in hints):
+        return [h for h in hints if h in items]
     group = str(unit.get("group") or "").strip()
-    return [rid for rid, it in items.items() if group and lib.matches_any(group, it.get("groups") or [])]
+    grouped = [rid for rid, it in items.items() if group and lib.matches_any(group, it.get("groups") or [])]
+    return grouped or hints
 
 
 def is_open(unit: dict, cfg: dict) -> bool:
@@ -120,7 +130,8 @@ def is_open(unit: dict, cfg: dict) -> bool:
     return status not in lib.as_list(cfg.get("done_statuses")) and status not in lib.TERMINAL_STATUSES
 
 
-def check(root: Path, cfg: dict, units: dict[str, dict], changed: set[str] | None) -> list[Finding]:
+def check(root: Path, cfg: dict, units: dict[str, dict], changed: set[str] | None, only_changed: bool = False) -> list[Finding]:
+    """`only_changed` (at commit): judge only the units in the change set; the backlog is `--all`'s."""
     rc = config(cfg)
     loaded = load(root, cfg)
     if loaded is None:
@@ -129,7 +140,7 @@ def check(root: Path, cfg: dict, units: dict[str, dict], changed: set[str] | Non
     f = rc["file"]
     out = [Finding("rails", "warn", f"{f}: {p}", path=f, override=f"the owner fixes {f}") for p in problems]
     for uid, u in units.items():
-        if not is_open(u, cfg):
+        if not is_open(u, cfg) or (only_changed and (changed is None or u["_path"] not in changed)):
             continue
         level = "block" if rc["required"] and changed is not None and u["_path"] in changed else "warn"
         ids = rails_of(u, rc["keys"], items)

@@ -122,6 +122,33 @@ class Rails(unittest.TestCase):
         rc, out = self.check("--all", "--rails")
         self.assertIn("rail other is done", out)
 
+    def test_a_roadmap_link_to_a_non_rail_section_defers_to_the_group(self):
+        """`roadmap:` links a document section; only `rail:` declares a rail. A roadmap anchor that is not
+        a rail must not hide the rail the unit's group is on."""
+        self.rails("| id | title | status | order | groups |\n|---|---|---|---|---|\n"
+                   "| findings | Findings | next | 20 | tcv2-*-followups |\n")
+        self.write_unit("a", group="tcv2-f2-followups", roadmap="docs/road.md#ogp-f2")
+        self.write_unit("b", roadmap="docs/road.md#ogp-f2")
+        self.owner_commit()
+        rc, out = self.check("--all", "--rails")
+        self.assertNotIn("[.taskets/a.md]", out)
+        self.assertIn("unit b names unknown rail ogp-f2", out)
+
+    def test_a_commit_hears_only_about_its_own_units(self):
+        """At commit the gate speaks about the units in the commit; the backlog is `--all`'s to report."""
+        self.write_unit("old")
+        self.owner_commit()
+        self.rails()
+        (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a + 1\n")
+        git(self.root, "add", "app/billing.py")
+        rc, out = self.check("--staged")
+        self.assertNotIn("charter/rails", out)
+        self.write_unit("new")
+        git(self.root, "add", ".taskets/new.md")
+        rc, out = self.check("--staged")
+        self.assertIn("[.taskets/new.md]", out)
+        self.assertNotIn("[.taskets/old.md]", out)
+
     def test_an_unknown_rail_warns(self):
         self.rails()
         self.write_unit("a", rail="off-road")

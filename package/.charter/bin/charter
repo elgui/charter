@@ -108,7 +108,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             rep.add(*checks.check_unit_scope(root, cfg, u))
         rep.add(*checks.check_scope_file(root, cfg))
     if "rails" in gates:
-        rep.add(*rails.check(root, cfg, units, changed_set))
+        rep.add(*rails.check(root, cfg, units, changed_set, only_changed=a.staged))
     if "changes" in gates:
         rep.add(*checks.check_changes(root))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "changes"])
