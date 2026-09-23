@@ -42,6 +42,8 @@ DEFAULT_CONFIG = {
     # owner-named files judged against their own budget: {path, lines and/or bytes, because, expires}
     "size_exceptions": [],
     "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt"],
+    # the road a project without a devis may be on (rails.py); off while the file does not exist
+    "rails": {"file": "charter/rails.md", "required": False, "keys": ["rail", "roadmap"]},
     "done_statuses": ["done"],
     "probes": {                   # re-run acceptance probes of units that close in a change set
         "at_commit": False, "in_ci": False, "timeout_s": 120,

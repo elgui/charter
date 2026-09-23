@@ -24,6 +24,6 @@ Install on a new project:
 
 Tests:
 
-    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions
+    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails
 
 In a clone of a project that already has the package: `python3 .charter/bin/charter setup` once.

@@ -6,6 +6,7 @@
   "governance_files": ["CLAUDE.md", "AGENTS.md", "charter/scope.md", ".claude/rules/*.md"],
   "size_exceptions": [],
   "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt", "*.html"],
+  "rails": {"file": "charter/rails.md", "required": false, "keys": ["rail", "roadmap"]},
   "done_statuses": ["done"],
   "probes": {"at_commit": false, "in_ci": false, "timeout_s": 120},
   "prices_usd_per_mtok": {

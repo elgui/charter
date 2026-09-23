@@ -7,6 +7,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 - Start the unit you are working on: `python3 .charter/bin/charter unit start <tasket-id>`. Edits without an active unit are logged as unattributed. An engine sets `CHARTER_UNIT=<id>` instead; the environment wins over the file.
 - Read the unit's `## Acceptance` list (`## Done When` in a tasket the Tasket skill wrote). Each line is a probe you will run. If a probe cannot be named, write it before coding.
 - On the client track, the unit's `scope:` must name an item in `charter/scope.md`. Work outside the scope is a change request in `charter/changes/`, not a commit.
+- Where `charter/rails.md` exists, the unit's `rail:` (or its `roadmap:` anchor) must name an open item of it. Work the road does not name is not started: ask the owner to add a rail item first, because that is the re-plan.
 - If the session banner says the git hook is not active, run `python3 .charter/bin/charter setup` once. If it says the clone runs other git hooks, tell the owner instead; `setup` would stop them.
 
 ## While you work
@@ -28,7 +29,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 
 These are refused to an agent's Edit and Write, and CI checks that the owner authored them. Propose instead: a change request, a new decision that supersedes, a note in your final message.
 
-- `charter/scope.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`.
+- `charter/scope.md`, `charter/rails.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`.
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
 - In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
 - Opening or widening a `kind: split` unit.

@@ -7,7 +7,7 @@ Repository `methodo` (working name; see decision `package-name` in the report). 
 | Path | What |
 |---|---|
 | `package/` | The committed layer, copied into a project by the installer |
-| `package/.charter/` | Tooling: `lib.py`, `checks.py`, `bin/charter`, `hooks/*.py`, `githooks/pre-commit` |
+| `package/.charter/` | Tooling: `lib.py`, `checks.py`, `rails.py`, `bin/charter`, `hooks/*.py`, `githooks/pre-commit` |
 | `package/.claude/` | `settings.json` (hook wiring, merged into the project's), `rules/charter.md`, `skills/charter-*/SKILL.md`, `agents/charter-reviewer.md` |
 | `package/.github/workflows/charter.yml` | CI gates |
 | `package/charter/` | `README.md`, `config.json` (seeded once), `templates/` (scope, decision, change, unit) |

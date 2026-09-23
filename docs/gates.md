@@ -16,13 +16,13 @@ Hook contract facts this design rests on (https://code.claude.com/docs/en/hooks,
 
 Every hook script wraps its body in a try/except that logs `gate=error` and allows; a hook that cannot run must not stop the tool. A hook path that is wrong in `settings.json` is reported by Claude Code as a non-blocking error on first run ("Failed with non-blocking status code"), so check `charter log` has entries after the first session on a new clone.
 
-## Owner-only changes (R3, R6, R7)
+## Owner-only changes (R3, R6, R7, rails)
 
 The files and fields that decide what the gates enforce are the owner's. `owner_only_changes` in `package/.charter/checks.py` lists them:
 
 | What | Why |
 |---|---|
-| `charter/scope.md`, `charter/config.json` (limits, `exempt_from_size`, `size_exceptions`, `governance_files` among its keys), `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml` | They define the gates and their wiring |
+| `charter/scope.md`, `charter/rails.md`, `charter/config.json` (limits, `rails`, `exempt_from_size`, `size_exceptions`, `governance_files` among its keys), `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml` | They define the gates and their wiring |
 | An id added to `charter/legacy-taskets.txt` | It exempts that tasket from the done gate; removing an id is free |
 | A change request's `status:` (other than a new `proposed` one), `approved_by:`, `approved_on:`; the `paths:` of an approved one | Only the owner approves (R7) |
 | An existing decision's `status:` and `superseded_by:`; the `check:` and `binds:` of an active one | Retiring or weakening a decision turns its gate off; an agent proposes a successor instead |
@@ -46,6 +46,14 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 - Blocks: `PreToolUse` deny; pre-commit; CI on the paths changed since the merge base of `--base` (PR base SHA or the push's previous SHA). Files already out of scope before the change set are a warning ("legacy"). When the base is unusable (an all-zero SHA when a branch is created, a SHA a force-push removed), every tracked path counts as changed and a warning says so.
 - Override: write the change request from `charter/templates/change.md`; the owner sets `status: approved`, `approved_by:`, `approved_on:`. `charter check` refuses `approved` without the two fields (R7). Recorded in `charter/changes/<slug>.md`; the approval is a commit by the owner.
 - Also: a unit whose `scope:` names an unknown id is refused; a unit with no `scope:` is a warning; a unit whose `perimeter:` reaches an out-of-scope path, or is not covered by the paths of the item it cites, is a warning; `charter check --scope` reports what makes the scope file fail open (no in-scope item, an out-of-scope item without `paths:`, an item without an id, a `###` item under an unknown `##` section).
+
+### Rails (R6 without a devis): open work the road does not name
+
+- Checks: when `charter/rails.md` exists (the file is `rails.file` in `charter/config.json`), every open unit names one of its items, with `rail: <id>` or a `roadmap:` link whose `#anchor` is the id (`rails.keys`, by default `rail` and `roadmap`). The file's first table with the columns `id`, `title`, `status`, `order` holds the items; statuses are `todo`, `next`, `in-progress`, `done`, `parked`, `dropped`. An open unit is one whose status is neither in `done_statuses` nor terminal. Such a unit that names no rail, or only ids the file does not list, is a warning. One whose rails are all closed (`done`, `parked`, `dropped`) is also a warning. A duplicate id, an unknown status or a non-integer order in the file is warned.
+- Blocks: only with `"rails": {"required": true}`, and only for a unit in the change set: pre-commit and CI. A unit written before the rails existed never blocks an unrelated commit.
+- Override: name an open item. To start work the road does not name, the owner adds an item to `charter/rails.md` first. That commit is the recorded re-plan, and the file is owner-only.
+- Synthesis: `charter synth` prints the rails in order, each with the units that cite it and their states, then the open units that are off the rails. For a project without a devis, this replaces a hand-kept tracker.
+- On the client track the scope gate does the same job against `charter/scope.md`. The two can run together.
 
 ### Size (R3): frozen file
 

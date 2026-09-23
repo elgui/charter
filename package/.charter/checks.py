@@ -37,7 +37,7 @@ DONE_CLAIM_RE = re.compile(
     r"|✅|\[x\]", re.I)
 
 # Files whose content decides what the gates enforce. Edit and Write on them are owner acts.
-OWNER_ONLY_FILES = ["charter/scope.md", "charter/config.json",
+OWNER_ONLY_FILES = ["charter/scope.md", "charter/config.json", "charter/rails.md",
                     ".claude/settings.json", ".claude/settings.local.json", ".github/workflows/charter.yml"]
 OWNER_ONLY_GLOBS = [lib.TOOL_DIR + "/**"]
 # Written only by the CLI; a hand edit in a session is refused, a commit of the CLI's output is not.

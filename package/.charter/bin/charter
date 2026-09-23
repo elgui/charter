@@ -27,6 +27,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import lib      # noqa: E402
 import checks   # noqa: E402
+import rails   # noqa: E402
 
 
 def today() -> str:
@@ -35,7 +36,7 @@ def today() -> str:
 
 # ---------------------------------------------------------------- check
 
-GATES = ("scope", "size", "done", "decisions", "memory", "perimeter", "changes", "protected")
+GATES = ("scope", "size", "done", "decisions", "memory", "perimeter", "changes", "protected", "rails")
 
 
 def cmd_check(a) -> int:
@@ -106,6 +107,8 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         for u in units.values():
             rep.add(*checks.check_unit_scope(root, cfg, u))
         rep.add(*checks.check_scope_file(root, cfg))
+    if "rails" in gates:
+        rep.add(*rails.check(root, cfg, units, changed_set))
     if "changes" in gates:
         rep.add(*checks.check_changes(root))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "changes"])
@@ -281,6 +284,7 @@ def cmd_synth(a) -> int:
     else:
         L.append(f"- No charter/scope.md; track is {cfg.get('track')} (charter/config.json)")
     L.append("")
+    L += rails.synth_lines(root, cfg, units, lambda uid: states[uid][0])
 
     def unit_line(uid: str, u: dict, st: str, info: dict) -> str:
         ev = ", ".join(info["evidence"][:3]) if info["evidence"] else "no evidence anchors"

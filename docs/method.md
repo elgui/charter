@@ -31,6 +31,7 @@ BMAD is not part of the execution problem: its execution bridge never ran anywhe
 | Artifact | Path | Written by | May change it | Read by | Kept small by |
 |---|---|---|---|---|---|
 | Scope | `charter/scope.md` | Owner, from the signed devis | Owner only: an agent's Edit or Write is refused, CI checks the author; agents propose via change request | Every unit (`scope:`), scope gate, synth | One item per sold deliverable; governance size limit (400 lines, 32 KiB) |
+| Rails | `charter/rails.md` | Owner, from the roadmap | Owner only: adding an item is the recorded re-plan | Every open unit (`rail:` or `roadmap:#<id>`), rails gate, synth | One row per item on the road |
 | Change request | `charter/changes/<slug>.md` | Any agent or the owner | Status, `approved_by`, `approved_on`, and the paths of an approved one, only by the owner | Scope gate, synth | One file per request; approved ones fold into scope at the next devis |
 | Decision | `charter/decisions/<slug>.md` | Whoever settles it (agent for local design, owner for commitments) | Status, `superseded_by`, and the `check:` and `binds:` of an active one, only by the owner; superseded by a new file | Decision gate (`charter:<id>` markers, `check:`), agents at session start (index), synth | One decision per file and one file per id; `expires:` and `because:` required; the index is generated, never hand-edited |
 | Unit of work | `.taskets/<id>.md` | The Tasket skill, a board, or an engine | The session that owns it (one writer) | Both tasket engines (unchanged keys), done gate, perimeter gate, synth | One deliverable per unit; the log section is append-only and dated |
@@ -172,6 +173,7 @@ An honest guarantee is: every factual claim in a checked deliverable points at s
 `charter synth [--write]` reads the repository and prints (or writes to `charter/progress.md`):
 
 1. **Scope**: each in-scope item with the units that cite it and their statuses; out-of-scope items with any approved change against them.
+1. **Rails** (when `charter/rails.md` exists): each item of the road in order, with the units that cite it and their states, then the open units off the rails. It replaces a hand-kept tracker.
 2. **Done and accepted**: units with `status: done`, all acceptance boxes checked and evidence that names a commit or a run and resolves; each line anchored to the unit file and its evidence. A commit the clone cannot resolve, cited by a unit whose done status is committed, is counted as historical (a squash or rebase merge removed it) and named as such.
 3. **In progress**: units with a non-terminal status and at least one log line, with the last log line and date.
 4. **Blocked**: units with `status: blocked` and their stated blocker.
@@ -188,6 +190,7 @@ It then runs `charter anchors` on its own output and exits non-zero without writ
 | | Client (`client`) | Prototype (`prototype`) |
 |---|---|---|
 | Scope file | Required; the scope gate is hard | Absent; the scope gate is off |
+| Rails file | Optional; runs beside the scope gate | Optional, and where the prototype has a roadmap, the way to keep it on it: `charter/rails.md` lists the road's items, every open unit names one, a warning by default and refused in the change set with `rails.required` |
 | Decisions | Hard as above | Hard as above (cheap, and prototypes become products) |
 | Size | Hard | Hard |
 | Done needs evidence | Hard | Hard, but acceptance may be a single probe |
