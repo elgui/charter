@@ -97,6 +97,31 @@ class Rails(unittest.TestCase):
         rc, out = self.check("--all", "--rails")
         self.assertNotIn("[.taskets/a.md]", out)
 
+    def test_a_groups_column_puts_a_whole_group_on_a_rail(self):
+        """tcv2 plans by `group:` and edits frontmatter only through its own writer, so linking a backlog
+        one key at a time is not possible there. The owner can claim groups for a rail instead."""
+        self.rails("| id | title | status | order | groups |\n|---|---|---|---|---|\n"
+                   "| triage | Gate triage | next | 10 | tcv2-gate-triage |\n"
+                   "| findings | Findings | next | 20 | tcv2-atlas-*, supervised-retro-* |\n")
+        self.write_unit("a", group="tcv2-gate-triage")
+        self.write_unit("b", group="supervised-retro-aug")
+        self.write_unit("c", group="elsewhere")
+        self.owner_commit()
+        rc, out = self.check("--all", "--rails")
+        self.assertNotIn("[.taskets/a.md]", out)
+        self.assertNotIn("[.taskets/b.md]", out)
+        self.assertIn("[.taskets/c.md]", out)
+        synth = charter(self.root, "synth").stdout
+        self.assertIn("a (open)", synth[synth.index("- triage"):synth.index("- findings")])
+
+    def test_an_explicit_rail_wins_over_the_group(self):
+        self.rails("| id | title | status | order | groups |\n|---|---|---|---|---|\n"
+                   "| triage | Gate triage | next | 10 | g1 |\n| other | Other | done | 20 | |\n")
+        self.write_unit("a", group="g1", rail="other")
+        self.owner_commit()
+        rc, out = self.check("--all", "--rails")
+        self.assertIn("rail other is done", out)
+
     def test_an_unknown_rail_warns(self):
         self.rails()
         self.write_unit("a", rail="off-road")

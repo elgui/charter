@@ -1,7 +1,8 @@
 """Rails: the road a project without a devis is allowed to be on.
 
 `charter/rails.md` holds a table of the road's items (id, title, status, order). Every open unit
-names one with `rail:`, or with a `roadmap:` link whose anchor is the item's id. The check makes
+names one with `rail:`, or with a `roadmap:` link whose anchor is the item's id, or belongs to a
+`group:` that an item's optional `groups` column claims. The check makes
 off-road work visible at the moment it starts rather than in the next progress report:
 
 - an open unit that names no rail, or only rails the file does not list, warns;
@@ -72,7 +73,8 @@ def parse(text: str) -> tuple[dict[str, dict], list[str]]:
         except ValueError:
             order = None
             problems.append(f"line {n}: order of {rid} is not an integer")
-        items[rid] = {"title": row.get("title", ""), "status": status, "order": order, "line": n}
+        groups = [g.strip() for g in row.get("groups", "").split(",") if g.strip()]
+        items[rid] = {"title": row.get("title", ""), "status": status, "order": order, "line": n, "groups": groups}
     if header is None:
         problems.append("no table with the columns " + ", ".join(COLUMNS))
     return items, problems
@@ -103,6 +105,16 @@ def rail_ids(unit: dict, keys: list[str]) -> list[str]:
     return out
 
 
+def rails_of(unit: dict, keys: list[str], items: dict[str, dict]) -> list[str]:
+    """The rails a unit is on: the ids it names, or, when it names none, every rail whose optional
+    `groups` column claims the unit's `group:` (globs). Naming a rail always wins over the group."""
+    named = rail_ids(unit, keys)
+    if named:
+        return named
+    group = str(unit.get("group") or "").strip()
+    return [rid for rid, it in items.items() if group and lib.matches_any(group, it.get("groups") or [])]
+
+
 def is_open(unit: dict, cfg: dict) -> bool:
     status = str(unit.get("status", "")).strip()
     return status not in lib.as_list(cfg.get("done_statuses")) and status not in lib.TERMINAL_STATUSES
@@ -120,7 +132,7 @@ def check(root: Path, cfg: dict, units: dict[str, dict], changed: set[str] | Non
         if not is_open(u, cfg):
             continue
         level = "block" if rc["required"] and changed is not None and u["_path"] in changed else "warn"
-        ids = rail_ids(u, rc["keys"])
+        ids = rails_of(u, rc["keys"], items)
         known = [i for i in ids if i in items]
         if not ids:
             out.append(Finding("rails", level, f"unit {uid} names no rail from {f}", path=u["_path"], override=OVERRIDE.format(file=f)))
@@ -144,12 +156,12 @@ def synth_lines(root: Path, cfg: dict, units: dict[str, dict], state_of) -> list
     f = rc["file"]
     L = ["## Rails"]
     for rid, it in ordered(items):
-        citing = [uid for uid, u in units.items() if rid in rail_ids(u, rc["keys"])]
+        citing = [uid for uid, u in units.items() if rid in rails_of(u, rc["keys"], items)]
         summary = ", ".join(f"{uid} ({state_of(uid)})" for uid in citing) or "no unit cites it"
         L.append(f"- {rid} — {it['title']} [{it['status']}]: {summary} ({f})")
     if not items:
         L.append(f"- none ({f})")
     L += ["", "## Off the rails"]
-    off = [(uid, u) for uid, u in units.items() if is_open(u, cfg) and not any(i in items for i in rail_ids(u, rc["keys"]))]
+    off = [(uid, u) for uid, u in units.items() if is_open(u, cfg) and not any(i in items for i in rails_of(u, rc["keys"], items))]
     L += [f"- {uid} — {u.get('title', '')} [{u.get('status')}] ({u['_path']})" for uid, u in off] or [f"- none ({f})"]
     return L + [""]
