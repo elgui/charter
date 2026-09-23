@@ -224,19 +224,38 @@ def s_frozen_in_open_work(taskets: dict, size: dict, paths: list[str]) -> list[d
     return out
 
 
-def exceptions_needed(size: dict, open_work: list[dict], expires: str) -> list[dict]:
-    """The `size_exceptions` entries that would let open work grow the frozen files it names: each budget is
-    the file's size now plus a quarter, a starting point for the owner, never a recommendation to keep."""
+RECENT_DAYS = 30
+RECENT_MIN_COMMITS = 2   # one commit in the window is as likely an import or a rename as activity
+
+
+def s_frozen_recently_changed(root: Path, ref: str, size: dict, days: int = RECENT_DAYS) -> list[dict]:
+    """Frozen files that at least RECENT_MIN_COMMITS commits on `ref` changed in the last `days` days: the
+    files work is happening in, whether or not an open tasket names them."""
+    frozen = {f["path"] for f in size["frozen"]}
+    log = g(root, "log", ref, f"--since={days}.days", "--format=", "--name-only")
+    counts = collections.Counter(p for p in log.splitlines() if p in frozen)
+    return [{"path": p, "commits": n} for p, n in sorted(counts.items()) if n >= RECENT_MIN_COMMITS]
+
+
+def exceptions_needed(size: dict, open_work: list[dict], expires: str, recent: list[dict] = ()) -> list[dict]:
+    """The `size_exceptions` entries that would let open work grow the frozen files it names, and recent work
+    keep changing the frozen files it changes: each budget is the file's size now plus a quarter, a starting
+    point for the owner, never a recommendation to keep."""
     by_path = {f["path"]: f for f in size["frozen"]}
-    out = []
+    reasons: dict[str, list[str]] = {}
     for w in open_work:
-        f = by_path.get(w["path"])
+        reasons.setdefault(w["path"], []).append(f"open work names it: {', '.join(w['taskets'][:3])}")
+    for r in recent:
+        reasons.setdefault(r["path"], []).append(f"changed in {r['commits']} commits in the last {RECENT_DAYS} days")
+    out = []
+    for path, why in reasons.items():
+        f = by_path.get(path)
         if not f:
             continue
         e = {"path": f["path"], "lines": max(f["limit"], f["lines"] + f["lines"] // 4)}
         if f.get("byte_limit") and f.get("bytes", 0) > f["byte_limit"]:
             e["bytes"] = f["bytes"] + f["bytes"] // 4
-        e.update({"because": f"open work names it: {', '.join(w['taskets'][:3])}", "expires": expires})
+        e.update({"because": "; ".join(why), "expires": expires})
         out.append(e)
     return out
 
@@ -589,7 +608,9 @@ def survey(root: Path, pkg, track: str = "prototype", test_cmd: str | None = Non
            "binaries": s_binaries(root, ref), "ci": s_ci(root, ref, paths, ip, mainline(root)), "remote": s_remote(root, offline),
            "history": s_history(root, ref), "markdown": s_markdown(root, ref, paths), "decisions": s_decisions(root, ref, paths),
            "test_candidates": s_tests(root, ref, paths), "tracked_files": len(paths)}
-    res["exceptions_needed"] = exceptions_needed(sz, res["frozen_in_open_work"], (dt.date.today() + dt.timedelta(days=90)).isoformat())
+    res["frozen_recently_changed"] = s_frozen_recently_changed(root, ref, sz)
+    res["exceptions_needed"] = exceptions_needed(sz, res["frozen_in_open_work"], (dt.date.today() + dt.timedelta(days=90)).isoformat(),
+                                                 res["frozen_recently_changed"])
     fresh = not any(p.startswith(".taskets/") for p in paths)
     res["add_paths"] = add_paths(pkg, fresh, any(x["path"] == ".claude/settings.json" for x in res["claude"]["ignored_install_paths"]))
     res["rehearsal"] = rehearse(root, ref, Path(pkg.__file__).resolve(), track, test_cmd, keep_clone, res["add_paths"]) if rehearsal else None

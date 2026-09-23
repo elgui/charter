@@ -223,5 +223,41 @@ class SurveyAndPlan(unittest.TestCase):
         self.assertIn("size_exceptions", text)
 
 
+class SurveyRecentlyChanged(unittest.TestCase):
+    """A frozen file no open tasket names but that recent commits keep changing is live code: the survey
+    suggests an exception for it too, so the install does not freeze the file everyone is working in."""
+
+    def setUp(self):
+        self.root = make_project(with_charter=False)
+        (self.root / "app" / "hot.py").write_text(lines(900))
+        (self.root / "app" / "cold.py").write_text(lines(900))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "both")
+        (self.root / "app" / "hot.py").write_text(lines(901))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "hot again")
+
+    def tearDown(self):
+        cleanup(self.root)
+
+    def test_recent_activity_suggests_an_exception(self):
+        import sys
+        from helpers import PKG, REPO
+        sys.path.insert(0, str(PKG / ".charter"))
+        sys.path.insert(0, str(REPO / "bin"))
+        import importlib.machinery, importlib.util
+        import charter_survey
+        loader = importlib.machinery.SourceFileLoader("charter_pkg", str(REPO / "bin" / "charter-pkg"))
+        spec = importlib.util.spec_from_loader("charter_pkg", loader)
+        pkg = importlib.util.module_from_spec(spec)
+        loader.exec_module(pkg)
+        s = charter_survey.survey(self.root, pkg, rehearsal=False, offline=True)
+        needed = {e["path"]: e for e in s["exceptions_needed"]}
+        self.assertIn("app/hot.py", needed)
+        self.assertNotIn("app/cold.py", needed)          # one commit: an import, not activity
+        self.assertIn("2 commits in the last 30 days", needed["app/hot.py"]["because"])
+        self.assertEqual([f["path"] for f in s["frozen_recently_changed"]], ["app/hot.py"])
+
+
 if __name__ == "__main__":
     unittest.main()

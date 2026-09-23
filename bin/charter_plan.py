@@ -113,6 +113,11 @@ def report(s: dict) -> str:
     L += [f"- {f['path']} ({f['lines']} lines): {lst(f['taskets'])} ({src('git grep -n ' + f['path'].rsplit('/', 1)[-1] + ' ' + ref + ' -- .taskets')})"
           for f in s["frozen_in_open_work"]] or [f"- none ({src('git grep -n <frozen path> ' + ref + ' -- .taskets')})"]
     L.append("")
+    rc = s.get("frozen_recently_changed") or []
+    L += ["Frozen files recent commits change:", ""]
+    L += [f"- {f['path']}: {f['commits']} commits in 30 days ({src('git log --since=30.days --name-only ' + ref)})" for f in rc] \
+        or [f"- none ({src('git log --since=30.days --name-only ' + ref)})"]
+    L.append("")
     ex = s.get("exceptions_needed") or []
     if ex:
         L += [f"Named exceptions that would let that work grow those files, budgets at their size now plus a quarter, expiring {ex[0]['expires']}, "
@@ -268,7 +273,7 @@ def decisions(s: dict) -> list[dict]:
                     "fact": f"{v['none']} files are frozen at install; with " + "; ".join(f"{k} exempt, {n}" for k, n in v.items() if k != "none") +
                             f" ({src('git ls-tree -r ' + ref)})",
                     "options": [f"exempt {k}: add {lst(sz['exempt_groups'][k], 8)} to `exempt_from_size`" for k in ("tooling", "tests", "vendor") if k in v] +
-                               ([f"name exceptions: the {len(s['exceptions_needed'])} frozen file(s) open taskets name get a budget, `because:` and `expires:` in `size_exceptions` (the list under § Size), instead of a split unit each"]
+                               ([f"name exceptions: the {len(s['exceptions_needed'])} frozen file(s) open taskets name or recent commits change get a budget, `because:` and `expires:` in `size_exceptions` (the list under § Size), instead of a split unit each"]
                                 if s.get("exceptions_needed") else []) +
                                ["exempt nothing: every frozen file needs a split unit before it grows"],
                     "default": "exempt tooling installed from elsewhere; tests as the owner prefers" +
