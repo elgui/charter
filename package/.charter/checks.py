@@ -592,6 +592,27 @@ def _fm(text: str | None) -> dict:
     return lib.split_frontmatter(text or "")[0]
 
 
+# The files Claude Code reads settings from, by name, and reloads mid-session
+# (https://code.claude.com/docs/en/settings, https://code.claude.com/docs/en/managed-settings):
+# user and project `settings.json`, `settings.local.json` (in a worktree, the main checkout's, which
+# is outside the worktree), `managed-settings.json`, and every `*.json` in `managed-settings.d/`.
+SETTINGS_FILE_NAMES = ("settings.json", "settings.local.json", "managed-settings.json")
+
+
+def reaches_the_session(rp: str) -> bool:
+    """Whether an `env` block written to `rp` could reach the running session: anything inside the
+    project (`rp` relative), and a Claude Code settings file anywhere, by name, through a link too.
+    Other files outside the project, a scratchpad or /tmp, reach nothing."""
+    if not Path(rp).is_absolute():
+        return True
+    try:
+        paths = (Path(rp), Path(rp).resolve())
+    except (OSError, RuntimeError):
+        return True
+    return any(p.name in SETTINGS_FILE_NAMES or (p.parent.name == "managed-settings.d" and p.suffix == ".json")
+               for p in paths)
+
+
 def owner_only_changes(rp: str, old: str | None, new: str | None, context: str = "edit",
                        done_statuses: list[str] | None = None) -> list[str]:
     """Why changing `rp` from `old` to `new` is the owner's act (empty when it is not). `context` is
@@ -601,7 +622,7 @@ def owner_only_changes(rp: str, old: str | None, new: str | None, context: str =
     if old == new:
         return []
     why: list[str] = []
-    if context == "edit" and "CHARTER_OWNER" in new and "CHARTER_OWNER" not in old:
+    if context == "edit" and "CHARTER_OWNER" in new and "CHARTER_OWNER" not in old and reaches_the_session(rp):
         # a settings file's `env` block reaches the hooks mid-session (settings reference, `env`)
         why.append("it sets CHARTER_OWNER, which switches the owner-only checks off")
     if rp in OWNER_ONLY_FILES or lib.matches_any(rp, OWNER_ONLY_GLOBS):

@@ -27,7 +27,7 @@ The files and fields that decide what the gates enforce are the owner's. `owner_
 | A change request's `status:` (other than a new `proposed` one), `approved_by:`, `approved_on:`; the `paths:` of an approved one | Only the owner approves (R7) |
 | An existing decision's `status:` and `superseded_by:`; the `check:` and `binds:` of an active one | Retiring or weakening a decision turns its gate off; an agent proposes a successor instead |
 | Opening a `kind: split` unit, adding a path to its perimeter, or reopening a closed one | It unfreezes files for the size gate (R3); narrowing or closing one is free |
-| Any edit that introduces `CHARTER_OWNER` (in session only) | A settings `env` block would switch these checks off mid-session |
+| Any edit that introduces `CHARTER_OWNER` (in session only) to a file inside the project, or to a Claude Code settings file anywhere: `settings.json`, `settings.local.json`, `managed-settings.json` or a `managed-settings.d/*.json`, by name and through a link (`reaches_the_session`) | A settings `env` block would switch these checks off mid-session ([settings](https://code.claude.com/docs/en/settings), [managed settings](https://code.claude.com/docs/en/managed-settings)); any other file outside the project, such as a scratchpad, reaches nothing and is allowed |
 | `charter/ledger.jsonl` (in session only) | Written by `charter ledger`, never by hand; committing what the CLI wrote is allowed |
 
 Where each layer enforces it:

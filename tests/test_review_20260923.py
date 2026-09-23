@@ -6,9 +6,11 @@ characterization test for unbound decision checks, which pins the behaviour the 
 """
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from helpers import charter, cleanup, git, make_project
+from helpers import charter, cleanup, git, make_project, run_hook
 
 
 def commit_all(root, msg, *extra):
@@ -106,6 +108,58 @@ class UnboundChecksRunInCiNotAtCommit(unittest.TestCase):
         commit_all(self.root, "flag")
         r = charter(self.root, "check", "--all", "--ci", "--base", "HEAD~1")
         self.assertIn("`flag` is contradicted", r.stdout)
+
+
+OWNER_VAR = "CHARTER_" + "OWNER"   # spelled apart: the gate under test refused this file while it was broken
+
+
+class OwnerVariableOutsideTheProject(unittest.TestCase):
+    """The PreToolUse gate refused any Edit or Write that introduced the owner variable, wherever the
+    file was. It exists because a settings `env` block reaches the running session; a PR description
+    in the session's scratchpad reaches nothing, and was refused (tcv2 session, 2026-09-23).
+    Inside the project, and in a Claude Code settings file anywhere, it is still refused."""
+
+    def setUp(self):
+        self.root = make_project(track="prototype")
+        self.outside = Path(tempfile.mkdtemp(prefix="charter-outside-"))
+
+    def tearDown(self):
+        cleanup(self.root)
+        cleanup(self.outside)
+
+    def write(self, path, content):
+        call = {"tool_name": "Write", "tool_input": {"file_path": str(path), "content": content}}
+        rc, out, so, se = run_hook(self.root, "pre_tool_gate", call)
+        return (out.get("hookSpecificOutput") or {}).get("permissionDecision"), so + se
+
+    def test_a_scratch_file_outside_the_project_may_name_it(self):
+        d, why = self.write(self.outside / "scratchpad" / "pr-upgrade.md", f"Set `{OWNER_VAR}=1` on the commit only.\n")
+        self.assertNotEqual(d, "deny", why)
+
+    def test_a_file_inside_the_project_still_may_not(self):
+        d, why = self.write(self.root / "docs" / "notes.md", f"export {OWNER_VAR}=1\n")
+        self.assertEqual(d, "deny", why)
+
+    def test_a_settings_file_anywhere_still_may_not(self):
+        env = json.dumps({"env": {OWNER_VAR: "1"}}) + "\n"
+        home = self.outside / "home" / ".claude"
+        for path in (self.root / ".claude" / "settings.json",
+                     home / "settings.json",
+                     home / "settings.local.json",
+                     self.outside / "etc" / "claude-code" / "managed-settings.json",
+                     self.outside / "etc" / "claude-code" / "managed-settings.d" / "50-owner.json",
+                     self.outside / "main-checkout" / ".claude" / "settings.local.json"):
+            d, why = self.write(path, env)
+            self.assertEqual(d, "deny", f"{path}: {why}")
+
+    def test_a_link_to_a_settings_file_is_a_settings_file(self):
+        target = self.outside / "home" / ".claude" / "settings.json"
+        target.parent.mkdir(parents=True)
+        target.write_text("{}\n")
+        link = self.outside / "notes.md"
+        link.symlink_to(target)
+        d, why = self.write(link, json.dumps({"env": {OWNER_VAR: "1"}}) + "\n")
+        self.assertEqual(d, "deny", why)
 
 
 if __name__ == "__main__":
