@@ -242,7 +242,10 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
                              input="\n".join(rels) + "\n", capture_output=True, text=True).stdout if rels else ""
         for line in ign.splitlines():
             where, _, path = line.partition("\t")
-            print(f"IGNORED by {where.rsplit(':', 1)[0]} (`{where.rsplit(':', 1)[-1]}`), so a commit will not carry it: {path}")
+            pattern = where.rsplit(':', 1)[-1]
+            if pattern.startswith("!"):   # a negation pattern means NOT ignored, though check-ignore -v still prints it
+                continue
+            print(f"IGNORED by {where.rsplit(':', 1)[0]} (`{pattern}`), so a commit will not carry it: {path}")
     if plan.changes == 0 and not conflicts:
         print(f"charter {VERSION} already installed in {project}; nothing to do")
         return 0

@@ -307,6 +307,8 @@ def ignored_at(root: Path, ref: str, paths: list[str], candidates: list[str]) ->
     for line in out.splitlines():
         where, _, p = line.partition("\t")
         src, pattern = where.rsplit(":", 1) if ":" in where else (where, "")
+        if pattern.startswith("!"):   # a negation pattern means NOT ignored, though check-ignore -v still prints it
+            continue
         res.append({"path": p, "source": src, "pattern": pattern})
     return res
 

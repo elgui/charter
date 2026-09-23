@@ -378,6 +378,33 @@ class Survey(unittest.TestCase):
         self.assertFalse((self.root / "survey").exists())
 
 
+class NegatedIgnorePattern(unittest.TestCase):
+    """`.gitignore` has `.claude/*` then `!.claude/settings.json` (a real migration's project did this):
+    `git check-ignore -v --stdin` still prints the negated line, with exit 0, though the file is trackable
+    (`git check-ignore -q` on it alone exits 1). The pre-fix code read every printed line as ignored."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_project(with_charter=False)
+        (cls.root / ".gitignore").write_text(".claude/*\n!.claude/settings.json\n")
+        commit(cls.root, "ignore .claude but keep settings.json")
+
+    @classmethod
+    def tearDownClass(cls):
+        cleanup(cls.root)
+
+    def test_survey_does_not_list_the_negated_path_as_ignored(self):
+        r = survey(self.root, "--no-rehearse", "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        facts = json.loads(r.stdout)
+        self.assertNotIn(".claude/settings.json", [x["path"] for x in facts["claude"]["ignored_install_paths"]])
+
+    def test_the_installer_does_not_print_ignored_by_for_it(self):
+        r = pkg("install", str(self.root), "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(any("IGNORED by" in l and "settings.json" in l for l in r.stdout.splitlines()), r.stdout)
+
+
 class WorkflowTriggers(unittest.TestCase):
     """GitHub's `paths-ignore` skips a push only when every changed file matches."""
 
