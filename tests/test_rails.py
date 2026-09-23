@@ -149,6 +149,23 @@ class Rails(unittest.TestCase):
         self.assertIn("charter/rails.md", out)
         self.assertIn("ogp-f5 twice", out)
 
+    def test_the_rails_file_cannot_be_moved_out_of_the_owner_only_path(self):
+        """A configurable path escaped both the staged view (which copies charter/ and .taskets/) and the
+        owner-only list (review finding). The file is charter/rails.md, and a `rails.file` key is ignored."""
+        (self.root / "docs").mkdir(exist_ok=True)
+        (self.root / "docs" / "road.md").write_text(RAILS)
+        p = self.root / "charter" / "config.json"
+        cfg = json.loads(p.read_text())
+        cfg["rails"] = {"file": "docs/road.md", "required": True}
+        p.write_text(json.dumps(cfg))
+        self.owner_commit("a rails file outside charter/")
+        self.write_unit("a")
+        self.owner_commit()
+        rc, out = self.check("--all", "--rails")
+        self.assertEqual(rc, 0, out)            # no charter/rails.md: the gate is off, not moved
+        self.assertNotIn("docs/road.md", out)
+        self.assertNotIn("charter/rails", out)
+
     def test_an_agent_edit_of_the_rails_file_is_refused(self):
         self.rails()
         rc, out, so, se = run_hook(self.root, "pre_tool_gate", write_call(self.root, "charter/rails.md", RAILS + "| mine | x | next | 1 |\n"))

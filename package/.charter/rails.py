@@ -19,7 +19,9 @@ from pathlib import Path
 import lib
 from checks import Finding
 
-DEFAULT_FILE = "charter/rails.md"
+# Fixed, not configurable: the staged view (lib.index_view) copies only charter/ and .taskets/, and the
+# owner-only list names this path, so a configured path elsewhere escaped both (review of 0.4.0).
+FILE = "charter/rails.md"
 STATUSES = ("todo", "next", "in-progress", "done", "parked", "dropped")
 CLOSED = ("done", "parked", "dropped")
 COLUMNS = ("id", "title", "status", "order")
@@ -29,7 +31,7 @@ OVERRIDE = ("add `rail: <id>` naming an open item of {file}; to start work the r
 
 def config(cfg: dict) -> dict:
     r = cfg.get("rails") or {}
-    return {"file": str(r.get("file") or DEFAULT_FILE), "required": bool(r.get("required")),
+    return {"file": FILE, "required": bool(r.get("required")),
             "keys": lib.as_list(r.get("keys")) or ["rail", "roadmap"]}
 
 
