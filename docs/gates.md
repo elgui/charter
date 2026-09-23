@@ -22,7 +22,7 @@ The files and fields that decide what the gates enforce are the owner's. `owner_
 
 | What | Why |
 |---|---|
-| `charter/scope.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml` | They define the gates and their wiring |
+| `charter/scope.md`, `charter/config.json` (limits, `exempt_from_size`, `size_exceptions`, `governance_files` among its keys), `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml` | They define the gates and their wiring |
 | An id added to `charter/legacy-taskets.txt` | It exempts that tasket from the done gate; removing an id is free |
 | A change request's `status:` (other than a new `proposed` one), `approved_by:`, `approved_on:`; the `paths:` of an approved one | Only the owner approves (R7) |
 | An existing decision's `status:` and `superseded_by:`; the `check:` and `binds:` of an active one | Retiring or weakening a decision turns its gate off; an agent proposes a successor instead |
@@ -49,9 +49,10 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ### Size (R3): frozen file
 
-- Checks: after the edit, in the staged version, or at HEAD against the change set's base, the file exceeds `limits.file_lines` (800 by default) and grew. Governance files (`CLAUDE.md`, `AGENTS.md`, `charter/scope.md`, `.claude/rules/*.md`, `charter/decisions/*`, `charter/changes/*`) use `limits.governance_lines` (400). Globs in `exempt_from_size` and the package's own `.charter/` are skipped, and so is binary content (a NUL byte in the first 8,000 bytes, the test git itself uses), for which a line count means nothing. At 80% of the limit a warning says to plan a split.
+- Checks: after the edit, in the staged version, or at HEAD against the change set's base, the file exceeds `limits.file_lines` (800 by default) and grew. Governance files use `limits.governance_lines` (400) **and** `limits.governance_bytes` (32768): one long line counts as one line, so a governance file past either is frozen. The governance set is `governance_files` in `charter/config.json`, globs, by default `CLAUDE.md`, `AGENTS.md`, `charter/scope.md` and `.claude/rules/*.md`; `charter/decisions/*` and `charter/changes/*` are always in it. Globs in `exempt_from_size` and the package's own `.charter/` are skipped, and so is binary content (a NUL byte in the first 8,000 bytes, the test git itself uses), for which a line count means nothing. At 80% of a limit a warning says to plan a split.
+- Named exceptions: `size_exceptions` in `charter/config.json` lists `{path, lines and/or bytes, because, expires}`. A live entry replaces the limit it names for that one path, so open work can grow a file the owner has budgeted without a split unit. An entry without `because:` or a dated `expires:`, or without a positive budget, is ignored and warned by `charter check`. Expiry is exclusive, as for decisions: on its `expires:` date the entry has stopped, `charter check` warns, and the block message names the date. The file is owner-only, so an agent cannot add or widen an entry.
 - Blocks: `PreToolUse` deny; pre-commit; CI for a file that grew past the limit in the change set. `--strict` reports every file over the limit, grown or not.
-- Override: move code out of the file (shrinking is always allowed), or an open unit with `kind: split` that names the file in its `perimeter:` as a literal path; a glob does not count. The owner opens the split unit. While it is open the file may grow (warning only), so the split can be done in steps. Recorded in that unit's `## Log` and `## Evidence`.
+- Override: move code out of the file (shrinking is always allowed), a `size_exceptions` entry the owner writes, or an open unit with `kind: split` that names the file in its `perimeter:` as a literal path; a glob does not count. The owner opens the split unit. While it is open the file may grow (warning only), so the split can be done in steps. Recorded in that unit's `## Log` and `## Evidence`.
 
 ### Done needs evidence (R9)
 
