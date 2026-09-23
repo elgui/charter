@@ -193,7 +193,7 @@ def s_size(root: Path, ref: str, paths: list[str], cfg: dict) -> dict:
         f["area"] = next((k for k, gl in groups.items() if gl and lib.matches_any(f["path"], gl)), "code or docs")
     gov = [{"path": p, "lines": lines.get(p, 0), "bytes": len(content.get(p, b"")), "limit": int(cfg["limits"]["governance_lines"]),
             "byte_limit": int(cfg["limits"].get("governance_bytes") or 0) or None}
-           for p in paths if checks.is_governance(cfg, p) and not p.startswith("charter/")]
+           for p in paths if checks.is_governance(cfg, p) and (p == "charter/scope.md" or not p.startswith("charter/"))]
     nested = [{"path": p, "lines": lines.get(p, 0)} for p in paths if p.endswith("/CLAUDE.md") or p.endswith("/AGENTS.md")]
     return {"limits": cfg["limits"], "exempt_from_size": lib.as_list(cfg.get("exempt_from_size")), "exempt_groups": groups,
             "frozen": base, "variants": variants, "frozen_after_all_exempt": remaining, "governance": gov, "nested_governance": nested}
@@ -232,7 +232,9 @@ def s_frozen_recently_changed(root: Path, ref: str, size: dict, days: int = RECE
     """Frozen files that at least RECENT_MIN_COMMITS commits on `ref` changed in the last `days` days: the
     files work is happening in, whether or not an open tasket names them."""
     frozen = {f["path"] for f in size["frozen"]}
-    log = g(root, "log", ref, f"--since={days}.days", "--format=", "--name-only")
+    # --since-as-filter, not --since: --since stops the walk at the first commit older than the window, so one
+    # backdated commit would hide every recent commit behind it
+    log = g(root, "log", ref, f"--since-as-filter={days}.days", "--format=", "--name-only")
     counts = collections.Counter(p for p in log.splitlines() if p in frozen)
     return [{"path": p, "commits": n} for p, n in sorted(counts.items()) if n >= RECENT_MIN_COMMITS]
 

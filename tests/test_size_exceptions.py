@@ -3,7 +3,7 @@ Each test fails if the corresponding piece is removed."""
 import json
 import unittest
 
-from helpers import make_project, run_hook, charter, git, cleanup
+from helpers import clean_env, make_project, run_hook, charter, git, cleanup
 
 
 def write_call(root, rel, content):
@@ -98,6 +98,15 @@ class SizeExceptions(unittest.TestCase):
         git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "grow")
         r = charter(self.root, "check", "--all", "--strict", "--size")
         self.assertNotIn("charter/size block [app/health.py]", r.stdout)
+
+    def test_a_boolean_budget_is_not_a_budget(self):
+        """JSON `true` is a Python int; an exception whose budget is `true` must be ignored, not read as 1."""
+        self.exception(lines=True)
+        rc, out, so, se = run_hook(self.root, "pre_tool_gate", write_call(self.root, "app/health.py", lines(30)))
+        self.assertTrue(denied(out), so + se)
+        self.assertIn("20-line", out["hookSpecificOutput"]["permissionDecisionReason"])
+        r = charter(self.root, "check", "--all")
+        self.assertIn("no positive `lines` or `bytes` budget", r.stdout)
 
     def test_agent_edit_of_size_exceptions_is_refused(self):
         p = self.root / "charter" / "config.json"
@@ -257,6 +266,39 @@ class SurveyRecentlyChanged(unittest.TestCase):
         self.assertNotIn("app/cold.py", needed)          # one commit: an import, not activity
         self.assertIn("2 commits in the last 30 days", needed["app/hot.py"]["because"])
         self.assertEqual([f["path"] for f in s["frozen_recently_changed"]], ["app/hot.py"])
+
+    def survey(self):
+        import sys
+        from helpers import PKG, REPO
+        sys.path.insert(0, str(PKG / ".charter"))
+        sys.path.insert(0, str(REPO / "bin"))
+        import importlib.machinery, importlib.util
+        import charter_survey
+        loader = importlib.machinery.SourceFileLoader("charter_pkg", str(REPO / "bin" / "charter-pkg"))
+        spec = importlib.util.spec_from_loader("charter_pkg", loader)
+        pkg = importlib.util.module_from_spec(spec)
+        loader.exec_module(pkg)
+        return charter_survey.survey(self.root, pkg, rehearsal=False, offline=True)
+
+    def test_a_backdated_commit_does_not_hide_the_ones_behind_it(self):
+        """`git log --since` stops walking at the first commit older than the window; a backdated commit in
+        the middle of recent history must not hide the recent commits behind it."""
+        import os
+        env = dict(clean_env(), GIT_COMMITTER_DATE="2001-01-01T00:00:00", GIT_AUTHOR_DATE="2001-01-01T00:00:00")
+        (self.root / "app" / "cold.py").write_text(lines(902))
+        git(self.root, "commit", "-q", "-am", "backdated", env=env)
+        (self.root / "app" / "cold.py").write_text(lines(903))
+        git(self.root, "commit", "-q", "-am", "cold again")
+        rc = {f["path"]: f["commits"] for f in self.survey()["frozen_recently_changed"]}
+        self.assertEqual(rc.get("app/hot.py"), 2)   # both behind the backdated commit
+        self.assertEqual(rc.get("app/cold.py"), 2)   # "both" and "cold again"; the backdated one is outside
+
+    def test_scope_file_stays_in_the_governance_table(self):
+        (self.root / "charter").mkdir()
+        (self.root / "charter" / "scope.md").write_text("# Scope\n")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "scope")
+        self.assertIn("charter/scope.md", [f["path"] for f in self.survey()["size"]["governance"]])
 
 
 if __name__ == "__main__":

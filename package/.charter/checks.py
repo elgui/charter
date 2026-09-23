@@ -177,7 +177,7 @@ def size_exceptions(cfg: dict, today: str | None = None) -> tuple[dict, dict, li
             continue
         rp = e["path"]
         missing = [k for k in ("because", "expires") if not str(e.get(k, "") or "").strip()]
-        budget_ok = all(isinstance(e.get(k), int) and e.get(k) > 0 for k in ("lines", "bytes") if k in e) and ("lines" in e or "bytes" in e)
+        budget_ok = all(isinstance(e.get(k), int) and not isinstance(e.get(k), bool) and e.get(k) > 0 for k in ("lines", "bytes") if k in e) and ("lines" in e or "bytes" in e)
         if missing or not budget_ok:
             why = (f"no {' or '.join('`' + k + ':`' for k in missing)}" if missing else "") + \
                   ("" if budget_ok else ("; " if missing else "") + "no positive `lines` or `bytes` budget")
