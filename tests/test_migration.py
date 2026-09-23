@@ -378,6 +378,86 @@ class Survey(unittest.TestCase):
         self.assertFalse((self.root / "survey").exists())
 
 
+class IgnoredTaskets(unittest.TestCase):
+    """`.gitignore` excludes `.taskets/` on purpose (a real migration's project did this): the taskets sit on
+    disk, untracked at every ref, and the pre-fix survey read only tracked taskets, so it reported the board as
+    empty and the generated plan never noticed the done gate, rails check and synthesis would see no units."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_project(with_charter=False)
+        (cls.root / ".gitignore").write_text(".taskets/\n")
+        t = cls.root / ".taskets"
+        t.mkdir()
+        (t / "a.md").write_text(tasket("a", "next", "## Context\n\nWork.\n"))
+        (t / "b.md").write_text(tasket("b", "next", "## Context\n\nMore work.\n"))
+        commit(cls.root, "ignore taskets on purpose")
+        cls.before = Survey.snapshot(cls.root)
+        r = survey(cls.root, "--no-rehearse", "--json")
+        assert r.returncode == 0, r.stdout + r.stderr
+        cls.facts = json.loads(r.stdout)
+        cls.after = Survey.snapshot(cls.root)
+        cls.report = survey(cls.root, "--no-rehearse")
+        cls.plan = survey(cls.root, "--no-rehearse", "--plan")
+
+    @classmethod
+    def tearDownClass(cls):
+        cleanup(cls.root)
+
+    def test_the_project_is_not_written(self):
+        self.assertEqual(self.before, self.after)
+        self.assertFalse((self.root / ".git" / "charter").exists())
+
+    def test_untracked_on_disk_is_counted_and_the_ignoring_rule_named(self):
+        t = self.facts["taskets"]
+        self.assertEqual(t["total"], 0)   # none tracked at ref: the old bug's "Taskets by status: none"
+        uod = t["untracked_on_disk"]
+        self.assertEqual(uod["count"], 2)
+        self.assertEqual(uod["ignored_by"]["pattern"], ".taskets/")
+        self.assertTrue(uod["ignored_by"]["source"].startswith(".gitignore"), uod)
+
+    def test_survey_md_shows_the_row_with_its_source(self):
+        self.assertIn("Untracked on disk", self.report.stdout)
+        self.assertIn("2", self.report.stdout)
+        self.assertIn("ls .taskets/*.md", self.report.stdout)
+
+    def test_plan_md_carries_the_owner_decision(self):
+        self.assertIn("Should the tasket board on disk be tracked?", self.plan.stdout)
+        self.assertIn("2 tasket(s)", self.plan.stdout)
+        self.assertIn("<!-- charter: opinion -->", self.plan.stdout)
+
+    def test_report_and_plan_pass_their_own_anchoring_check(self):
+        self.assertEqual(self.report.returncode, 0, self.report.stderr)
+        self.assertEqual(self.plan.returncode, 0, self.plan.stderr)
+
+
+class NegatedIgnorePattern(unittest.TestCase):
+    """`.gitignore` has `.claude/*` then `!.claude/settings.json` (a real migration's project did this):
+    `git check-ignore -v --stdin` still prints the negated line, with exit 0, though the file is trackable
+    (`git check-ignore -q` on it alone exits 1). The pre-fix code read every printed line as ignored."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_project(with_charter=False)
+        (cls.root / ".gitignore").write_text(".claude/*\n!.claude/settings.json\n")
+        commit(cls.root, "ignore .claude but keep settings.json")
+
+    @classmethod
+    def tearDownClass(cls):
+        cleanup(cls.root)
+
+    def test_survey_does_not_list_the_negated_path_as_ignored(self):
+        r = survey(self.root, "--no-rehearse", "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        facts = json.loads(r.stdout)
+        self.assertNotIn(".claude/settings.json", [x["path"] for x in facts["claude"]["ignored_install_paths"]])
+
+    def test_the_installer_does_not_print_ignored_by_for_it(self):
+        r = pkg("install", str(self.root), "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(any("IGNORED by" in l and "settings.json" in l for l in r.stdout.splitlines()), r.stdout)
+
+
 class WorkflowTriggers(unittest.TestCase):
     """GitHub's `paths-ignore` skips a push only when every changed file matches."""
 

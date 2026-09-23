@@ -70,8 +70,12 @@ def report(s: dict) -> str:
         L.append(row(k, v.get("open", 0), v.get("done", 0), v.get("closed", 0), cls_text(k), src(f"git show {ref}:.taskets/<id>.md")))
     L.append("")
     items = t["items"]
+    uod = t["untracked_on_disk"]
     L += [row("Fact", "Value", "Source"), row("---", "---", "---"),
           row("Taskets by status", lst(f"{k} {v}" for k, v in t["by_status"].items()), src(f"git ls-tree -r --name-only {ref} .taskets")),
+          row("Untracked on disk, not tracked at " + ref, f"{uod['count']}" +
+              (f"; ignored by {uod['ignored_by']['source']} (`{uod['ignored_by']['pattern']}`)" if uod["ignored_by"] else ""),
+              src("ls .taskets/*.md")),
           row("Listed as legacy by the installer", t["legacy_at_install"], src(f"charter-pkg install <clone> --dry-run")),
           row("Status outside the engines' vocabulary", lst(f"{i['path']} ({i['status'] or 'empty'})" for i in items if i["unknown_status"]),
               "~/Projects/tele-claude/services/project_tasket_reader.py"),
@@ -233,6 +237,16 @@ def decisions(s: dict) -> list[dict]:
                 "options": ["client: `charter/scope.md` written from the signed devis or contract, never from a proposal, with no prices or rates",
                             "prototype: no scope gate; the perimeter and anchor gates warn"],
                 "default": "client if a signed document exists, else prototype"})
+    uod = t["untracked_on_disk"]
+    if uod["count"]:
+        why = (f"{uod['ignored_by']['source']} (`{uod['ignored_by']['pattern']}`) ignores it" if uod["ignored_by"]
+               else "nothing in `.gitignore` ignores it, so these were never `git add`-ed")
+        out.append({"id": "untracked-taskets", "q": "Should the tasket board on disk be tracked?",
+                    "fact": f"{uod['count']} tasket(s) sit in `.taskets/` on disk but are not tracked at {ref}, {why} ({src('ls .taskets/*.md')}); "
+                            "the done gate, the rails check and synthesis all read tracked taskets, so an install today would see none of them",
+                    "options": ["track it: stop ignoring `.taskets/` (or `git add` the files), after first checking nothing in the board must stay out of git",
+                                "keep it local: the board stays out of every commit, and the done gate, rails check and synthesis see no units"],
+                    "default": "track it, once nothing in the board needs to stay out of git"})
     if h["other_hooks"] and not h["wired_by"]:
         out.append({"id": "hooks", "q": "How does the charter pre-commit gate run next to the hooks the project already has?",
                     "fact": f"the clone runs {lst(h['other_hooks'])}; the installer's hook path would stop them ({src('ls ' + h['hooks_dir'])})",
