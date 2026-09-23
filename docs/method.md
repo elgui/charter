@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.3.0. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Migration: `docs/migration.md`.
+Version 0.4.0. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Migration: `docs/migration.md`.
 
 ## The method on one page
 
