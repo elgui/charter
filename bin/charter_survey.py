@@ -154,8 +154,16 @@ def s_taskets(root: Path, ref: str, paths: list[str]) -> dict:
                       "evidence": bool(ev["sha"] or ev["run"]), "legacy": not lib.is_charter_unit(t),
                       "plan_group": str(f.get("group", "")), "no_id": "id" not in f, "inline_comments": lib.inline_comments(t),
                       "unknown_status": st not in ENGINE_STATUSES, "title": str(f.get("title", ""))[:100], "body": body})
+    # taskets on disk but not tracked at `ref`: an ignored .taskets/ (or a file never `git add`-ed) is invisible to
+    # every git-based read above, and so to the gates that read those reads (done, rails, synthesis) once installed
+    d = root / ".taskets"
+    on_disk = sorted(f".taskets/{p.name}" for p in d.glob("*.md")) if d.is_dir() else []
+    untracked = [p for p in on_disk if p not in tp]
+    ign = ignored_at(root, ref, paths, [".taskets/"]) if untracked else []
     return {"total": len(tp), "by_status": dict(by_status.most_common()), "classes": {k: dict(v) for k, v in sorted(classes.items())},
             "legacy_at_install": sum(1 for i in items if i["legacy"]), "duplicate_ids": sorted(k for k, n in ids.items() if n > 1),
+            "untracked_on_disk": {"count": len(untracked),
+                                  "ignored_by": {"source": ign[0]["source"], "pattern": ign[0]["pattern"]} if ign else None},
             "items": items}
 
 
