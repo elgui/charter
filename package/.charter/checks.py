@@ -461,17 +461,21 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
     base = unit_base(root, path) if probes else None
     if not base:
         return []
+    # a git hook runs with GIT_INDEX_FILE (and may run with GIT_DIR) pointing at the main checkout;
+    # inherited, they make `worktree add` and the probes in the worktree act on the wrong index
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCAL_ENV}
     tmp = Path(tempfile.mkdtemp(prefix="charter-base-"))
     wt = tmp / "base"
     try:
-        r = lib.git(root, "worktree", "add", "--detach", "--quiet", str(wt), base)
+        r = subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "--quiet", str(wt), base],
+                           capture_output=True, encoding="utf-8", errors="replace", env=env)
         if r.returncode != 0:
             return [Finding("error", "warn", f"could not check out {base[:10]} to run {path}'s probes before the change: {r.stderr.strip()[:100]}", path=path)]
         level = "block" if (cfg.get("probes") or {}).get("base_must_fail") else "warn"
         out = []
         for ac, cmd in probes:
             try:
-                code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout).returncode
+                code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout, env=env).returncode
             except subprocess.TimeoutExpired:
                 continue
             if code == 0:
@@ -479,8 +483,11 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
                                    override="make the probe exercise the new behaviour, or mark a criterion that guards existing behaviour `(guard)`"))
         return out
     finally:
-        lib.git(root, "worktree", "remove", "--force", str(wt))
+        subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True, env=env)
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+_GIT_LOCAL_ENV = ("GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
 
 
 def _probe_lines(text: str) -> list[tuple[str, str, str]]:

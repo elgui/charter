@@ -56,6 +56,17 @@ class ProbeAtBase(unittest.TestCase):
         r = self.close(NEW_PROBE, base_must_fail=True)
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    def test_it_runs_inside_the_real_pre_commit_hook(self):
+        """git sets GIT_INDEX_FILE for a hook; inherited, `worktree add` failed and the check never ran."""
+        set_config(self.root, probes={"at_commit": True})
+        commit_all(self.root, "probes at commit")
+        git(self.root, "config", "core.hooksPath", ".charter/githooks")
+        (self.root / ".taskets" / "u1.md").write_text(closed(UNIT, "true"))
+        git(self.root, "add", "-A")
+        r = git(self.root, "commit", "-q", "-m", "u1 done", check=False)
+        self.assertIn("already passes", r.stdout + r.stderr)
+        self.assertNotIn("could not check out", r.stdout + r.stderr)
+
     def test_no_worktree_is_left_behind(self):
         self.close("true")
         self.assertEqual(len(git(self.root, "worktree", "list").stdout.splitlines()), 1)
