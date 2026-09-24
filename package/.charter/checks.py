@@ -290,18 +290,26 @@ def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "") -> bool
         return lib.git(root, "cat-file", "-e", f"{value}^{{commit}}").returncode == 0
     if anchor_kind == "fileline":
         p = _abs(root, value)
-        if not p.is_file():
+        if not _exists(p, file=True):
             return False
         n = int(extra)
         return 1 <= n <= max(1, lib.count_lines(p))
     if anchor_kind == "path":
-        return _abs(root, value).exists()
+        return _exists(_abs(root, value))
     if anchor_kind == "url":
         return True
     return False
 
 
 DOC_DIR: Path | None = None   # set by the anchors command: paths may be relative to the document
+
+
+def _exists(p: Path, file: bool = False) -> bool:
+    """A path this user may not look at (under another user's home) does not resolve here; pathlib raises there."""
+    try:
+        return p.is_file() if file else p.exists()
+    except OSError:
+        return False
 
 
 def _abs(root: Path, value: str) -> Path:
@@ -311,7 +319,7 @@ def _abs(root: Path, value: str) -> Path:
         return Path(os.path.expanduser(value))
     if value.startswith("/"):
         return Path(value)
-    if not (root / value).exists() and DOC_DIR is not None and (DOC_DIR / value).exists():
+    if not _exists(root / value) and DOC_DIR is not None and _exists(DOC_DIR / value):
         return DOC_DIR / value
     return root / value
 
@@ -336,7 +344,7 @@ def classify_anchors(root: Path, text: str) -> dict[str, list[str]]:
         cand = m.group(1).rstrip("/.")
         if "*" in cand or not cand or cand.startswith("-"):
             continue
-        if _abs(root, cand).exists():
+        if _exists(_abs(root, cand)):
             k["path"].append(cand)
     k["run"] = [m.group(0).strip()[:60] for m in RUN_RE.finditer(text)]
     return k
@@ -598,6 +606,8 @@ def run_decision_checks(root: Path, decs: dict[str, dict], only_bound_to: list[s
 # ---------------------------------------------------------------- perimeter (R4)
 
 def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str], at_commit: bool) -> list[Finding]:
+    skip = lib.ignored(root, relpaths)   # a file git ignores is local scratch (a tool's journal), not the unit's work
+    relpaths = [rp for rp in relpaths if rp not in skip]
     if unit is None:
         if relpaths:
             return [Finding("perimeter", "warn", "no active unit; edits are not attributed (`charter unit start <id>`)")]

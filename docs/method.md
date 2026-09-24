@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.3. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.4. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 
@@ -177,6 +177,7 @@ An honest guarantee is: every factual claim in a checked deliverable points at s
 1. **Scope**: each in-scope item with the units that cite it and their statuses; out-of-scope items with any approved change against them.
 1. **Rails** (when `charter/rails.md` exists): each item of the road in order, with the units that cite it and their states, then the open units off the rails. It replaces a hand-kept tracker.
 2. **Done and accepted**: units with `status: done`, all acceptance boxes checked and evidence that names a commit or a run and resolves; each line anchored to the unit file and its evidence. A commit the clone cannot resolve, cited by a unit whose done status is committed, is counted as historical (a squash or rebase merge removed it) and named as such.
+2. **Done before charter** (only when there are some): done units the done gate never judged, listed apart from "Done but not accepted" (0.4.4). These are units whose done status was last set before the commit that added `charter/VERSION` and is still the committed status, and units of `charter/legacy-taskets.txt` without `## Acceptance`, which the gate only warns on (`check_unit_done` in `package/.charter/checks.py`). Their missing evidence says nothing about work done under charter.
 3. **In progress**: units with a non-terminal status and at least one log line, with the last log line and date.
 4. **Blocked**: units with `status: blocked` and their stated blocker.
 5. **Open decisions**: decisions with `status: proposed`, and change requests with `status: proposed`.
@@ -184,6 +185,17 @@ An honest guarantee is: every factual claim in a checked deliverable points at s
 7. **Cost**: from the ledger, the estimated total, cost per accepted unit (every session's cost, accepted or not, divided by the units accepted now), and the coverage: how many sessions have a cost, and how many of those record subagent usage. An unknown cost is never added as zero. While any session lacks a cost or subagent usage, the total and the figure per accepted unit are printed as lower bounds ("at least", "incomplete"). Per unit: its sessions, those without a cost, the subagents' share, the sessions after its first done, and the human minutes recorded, or "no human time recorded".
 
 It then runs `charter anchors` on its own output and exits non-zero without writing if the check fails. It is read-only apart from `charter/progress.md`.
+
+`charter next` reads the same unit states to answer what the synthesis does not: what comes next (`cmd_next` in `package/.charter/bin/charter`, 0.4.4). It prints:
+
+- the active unit, and whether every box is checked;
+- the open rails in order, with their units counted by state;
+- the open units on those rails, the started ones first;
+- the units off the road;
+- what waits on the owner: proposed decisions and changes, a rail whose units are all finished, owner-only files staged for commit;
+- the gate log over 7 days.
+
+It writes nothing, not even the gate log, so a session, an agent without the banner or a personal tool can run it at any time.
 
 ## Two tracks
 
@@ -211,7 +223,7 @@ Cost of the recording itself: a few milliseconds per session end, one JSON line 
 
 ## Seams designed, not built
 
-**External contributor.** `charter brief <unit>` would render a self-contained markdown brief: the unit body, the scope items it cites (text, not the file), the decisions it relies on (text), the acceptance probes, the perimeter, and the repository URL and branch. It contains no path outside the repository, no vault reference, no personal tooling. The contributor works in their own repository or fork; acceptance runs the same probes against their branch in CI (`probes.in_ci`). The seam is the brief plus CI, and it needs no personal layer. Two things a contributor's pull request brings that an in-repository check cannot stop: it can edit `.github/workflows/charter.yml` and `.charter/`, which run from the pull request's own tree, and CI runs its decision `check:` commands as it runs its tests. CI refuses such changes from an author who is not `owner`, but the workflow doing the refusing is itself editable; the lock is branch protection with required code-owner review on those paths (https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners). `charter brief` is not built (0.4.3).
+**External contributor.** `charter brief <unit>` would render a self-contained markdown brief: the unit body, the scope items it cites (text, not the file), the decisions it relies on (text), the acceptance probes, the perimeter, and the repository URL and branch. It contains no path outside the repository, no vault reference, no personal tooling. The contributor works in their own repository or fork; acceptance runs the same probes against their branch in CI (`probes.in_ci`). The seam is the brief plus CI, and it needs no personal layer. Two things a contributor's pull request brings that an in-repository check cannot stop: it can edit `.github/workflows/charter.yml` and `.charter/`, which run from the pull request's own tree, and CI runs its decision `check:` commands as it runs its tests. CI refuses such changes from an author who is not `owner`, but the workflow doing the refusing is itself editable; the lock is branch protection with required code-owner review on those paths (https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners). `charter brief` is not built (0.4.4).
 
 **Engines.** tele-claude's automator and tcv2's engine already dispatch `.taskets/`; the method changes no key they read. For them to *see* the new keys (`scope`, `perimeter`, `decisions`, `kind`), tele-claude's reader allowlist at `~/Projects/tele-claude/services/project_tasket_reader.py:230-234` needs four names added; until then the keys are stored and ignored, which is safe. The git hooks and CI gate their commits exactly as they gate an interactive session's, so an engine's done flip on a tasket written after the install needs acceptance and evidence (the legacy list above covers the earlier ones). An engine that exports `CHARTER_UNIT=<id>` to the session it starts gets the perimeter gate and a ledger attributed to that unit; neither engine does yet.
 

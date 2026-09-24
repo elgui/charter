@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.3",
+    "version": "0.4.4",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -200,6 +200,16 @@ def in_claude_code() -> bool:
 def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
     """Output decoded as UTF-8, undecodable bytes replaced: `git show` of a binary file must not raise."""
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8", errors="replace", check=check)
+
+
+def ignored(root: Path, relpaths: list[str]) -> set[str]:
+    """The paths among relpaths that git ignores and does not track: local scratch, never part of a unit's work.
+    A tracked file stays in, whatever the ignore rules say."""
+    if not relpaths:
+        return set()
+    r = subprocess.run(["git", "-C", str(root), "check-ignore", "-z", "--stdin"], input="\0".join(relpaths) + "\0",
+                       capture_output=True, encoding="utf-8", errors="replace")
+    return {p for p in r.stdout.split("\0") if p} if r.returncode == 0 else set()
 
 
 _GIT_DIRS: dict[tuple[str, str], Path | None] = {}

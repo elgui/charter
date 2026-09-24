@@ -7,7 +7,7 @@ description: Start, resume or finish a unit of work under the charter method. US
 
 ## Start or resume
 
-1. `python3 .charter/bin/charter unit start <tasket-id>`. If the tasket does not exist, create it from `charter/templates/unit.md` into `.taskets/` (keep the engines' keys: `id`, `title`, `status`, `priority`, `group`, `group_order`, `order` when grouped).
+1. `python3 .charter/bin/charter unit start <tasket-id>`. If the user named no unit, `python3 .charter/bin/charter next` lists the open units in the road's order; take one from there. If the tasket does not exist, create it from `charter/templates/unit.md` into `.taskets/` (keep the engines' keys: `id`, `title`, `status`, `priority`, `group`, `group_order`, `order` when grouped).
 2. Read the unit. Its `## Log` is the state; the transcript is not. Say in one line where it stands.
 3. Check the unit cites a scope item (`scope:`) on the client track, and that every `## Acceptance` line names a probe you can run. Fix the unit before touching code; once it leaves `next` or `later`, a changed criterion needs a `## Log` line saying why.
 4. Run the baseline probes (`python3 .charter/bin/charter probe <id>`) and append the results as the first `## Log` line of this session.

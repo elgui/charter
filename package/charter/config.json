@@ -1,5 +1,5 @@
 {
-  "version": "0.4.3",
+  "version": "0.4.4",
   "track": "client",
   "owner": "",
   "limits": {"file_lines": 800, "governance_lines": 400, "governance_bytes": 32768},

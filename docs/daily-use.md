@@ -43,11 +43,13 @@ Claude Code puts a SessionStart hook's plain output into Claude's context withou
 - **"The charter git hook is not active in this clone"**: run `python3 .charter/bin/charter setup` once. If it says the clone runs other git hooks, tell the owner instead (`package/.claude/rules/charter.md:11`).
 - **The active unit**, when one is set, with its open criteria, or a reminder to start one (`package/.charter/hooks/session_start.py:43-54`).
 
-Codex and other agents get no banner. They read the `AGENTS.md` section the installer wrote, which points at the same rules (`package/AGENTS.md`), and the git hook and CI gate their commits as they gate Claude's.
+For the rest of the picture, run `python3 .charter/bin/charter next`, or ask the agent to. It prints the road's open items with their units, the next units in the road's order, the units off the road, what waits on you, and the gate log over the last 7 days. It writes nothing, not even the gate log, so it is safe to run at any time (`cmd_next` in `package/.charter/bin/charter`, 0.4.4).
+
+Codex and other agents get no banner. They read the `AGENTS.md` section the installer wrote, which points at the same rules (`package/AGENTS.md`), and the git hook and CI gate their commits as they gate Claude's. From the command line, `charter next` gives them the active unit, the road and what waits on the owner.
 
 ## 2. Pick or write the unit
 
-One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`.
+One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with the ones already started first.
 
 A unit is ready when:
 
@@ -118,7 +120,7 @@ python3 .charter/bin/charter ledger fold      # this machine's ended sessions, w
 python3 .charter/bin/charter synth --write    # charter/progress.md, refused if its own anchoring check fails
 ```
 
-The synthesis lists scope, done and accepted units with their evidence, work in progress, blocked units, open decisions and change requests, and cost per accepted unit (`docs/method.md` § The progress synthesis). It is generated; nobody edits it by hand. For a client, send the scope section and the accepted units.
+The synthesis lists scope, done and accepted units with their evidence, work in progress, blocked units, open decisions and change requests, and cost per accepted unit (`docs/method.md` § The progress synthesis). Units done before charter was installed are listed apart, because the done gate never asked them for evidence (0.4.4). It is generated; nobody edits it by hand. For a client, send the scope section and the accepted units.
 
 ## What only the owner does
 
@@ -135,6 +137,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 
 ## The owner's weekly look
 
+- `python3 .charter/bin/charter next`: under "Waiting on the owner" it lists proposed decisions and change requests, each rail whose units are all finished (close it, or have a unit written for what is left), and owner-only files staged for your commit (`cmd_next` in `package/.charter/bin/charter`).
 - `python3 .charter/bin/charter log`: what the gates refused and warned about over 30 days. A warning that keeps firing on real problems is the evidence for turning it into a gate; one that fires on nothing is noise to remove (`docs/method.md:12`).
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
   - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:31`);

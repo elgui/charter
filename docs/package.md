@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.3. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.4. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -68,6 +68,7 @@ decisions index
 log [--days N] [--verbose]
 setup [--replace-hooks]
 config
+next [--limit N]
 version
 ```
 
@@ -89,6 +90,7 @@ Upgrade notes, by version:
 - 0.4.1 runs each probe of a closing unit a second time, before the unit's work, wherever probes run (`docs/gates.md` § Done needs evidence). A probe that already passes there is a warning; `probes.base_must_fail` makes it a refusal. Nothing that passed under 0.4.0 is refused after the upgrade. It also adds `review.required` (off): when set, done needs an anchored `review:` evidence line.
 - 0.4.2 changes documentation only: `charter/README.md` lists every owner-only path and says each clone runs `charter setup`. No gate changes and no step is needed.
 - 0.4.3 refuses a `charter/config.json` the gates cannot read as written: an unknown key, a value of the wrong type, a track other than `client` or `prototype`, or a file that is not JSON (`docs/gates.md` § Config). A config that 0.4.2 accepted with a typo in it is refused at the first commit after the upgrade. **Before committing the upgrade, run `python3 .charter/bin/charter config`**: it must print no `problem:` line, and the owner corrects any it prints in the same commit. The in-session hooks now also run on NotebookEdit (path gates only), and the banner and every `charter check` line name the opt-ins that are on. The installer requires `--track` on a first install and on `survey`. The SessionStart hook now shows the person a summary (version, track, opt-ins, config problems, git hook state, active unit) as a `systemMessage`; before, its whole output went to Claude's context and the person saw nothing (https://code.claude.com/docs/en/hooks, SessionStart).
+- 0.4.4 adds `charter next`, which answers "what comes next" from the project's own files: the active unit, the open rails and the units on them in the road's order, units off the road, what waits on the owner, and the gate log over 7 days. It writes nothing, not even the gate log, so any agent or tool can run it (`cmd_next` in `package/.charter/bin/charter`). The synthesis lists units the done gate never judged under **Done before charter** instead of "Done but not accepted". These are units done before the commit that added `charter/VERSION` and not reopened since, and legacy units without `## Acceptance`. In skill-delivery that moved 17 units (`$ python3 package/.charter/bin/charter --root ~/Projects/skill-delivery synth`, 2026-09-24). The perimeter gate ignores files that git ignores and does not track, such as a tool's local journal (`lib.ignored`); a tracked file is judged as before. A path in a unit's evidence that this user may not read no longer crashes the synthesis: on 2026-09-24, leCRM's crashed on a path under `/root` with 0.3.0 and 0.4.3 alike. No gate is added and no step is needed.
 
 ## What must stay true
 

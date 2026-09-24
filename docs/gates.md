@@ -80,7 +80,7 @@ What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: 
 
 ### Perimeter (R4)
 
-- Checks: the active unit (`CHARTER_UNIT` from the environment, else the one `charter unit start` recorded in this worktree's git directory) declares `perimeter:` globs; an edited or staged path outside them, outside `.taskets/`, `charter/` and `.charter/`, and not named under the unit's `## Outside perimeter` section.
+- Checks: the active unit (`CHARTER_UNIT` from the environment, else the one `charter unit start` recorded in this worktree's git directory) declares `perimeter:` globs; an edited or staged path outside them, outside `.taskets/`, `charter/` and `.charter/`, and not named under the unit's `## Outside perimeter` section. A file that git ignores and does not track, such as a tool's local journal, is never the unit's work and is not checked (0.4.4, `lib.ignored`).
 - Blocks: `PostToolUse` warning in session; pre-commit block on the client track, warning on the prototype track; CI does not know the active unit and does not check this.
 - Override: the note itself (`- path: why`), or widening `perimeter:`. No active unit is a warning ("edits are not attributed"), never a block.
 

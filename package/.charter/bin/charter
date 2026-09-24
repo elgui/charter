@@ -11,6 +11,7 @@
   log       summarise the gate log (in the git directory, shared by worktrees)
   setup     activate the git hook in this clone; move 0.1.0 state out of .charter/state/
   config    print the track and opt-ins the gates read; list what in charter/config.json is not applied
+  next      where the work stands and what comes next: the active unit, the road, what waits on the owner; read-only
   version   print the installed version
 """
 from __future__ import annotations
@@ -226,10 +227,15 @@ def cmd_anchors(a) -> int:
 
 # ---------------------------------------------------------------- synth
 
-def _unit_state(root: Path, cfg: dict, u: dict) -> tuple[str, dict]:
+def _unit_state(root: Path, cfg: dict, u: dict, legacy: set[str] = frozenset(), before: set[str] = frozenset()) -> tuple[str, dict]:
     """The unit's state now. A commit SHA in the evidence of a unit whose done status is committed,
     and that this clone cannot resolve, is "historical": it resolved when the done gate judged it,
-    and a squash or rebase merge has since removed it from the history."""
+    and a squash or rebase merge has since removed it from the history.
+
+    A done unit the done gate never judged is "done-before-charter", not "done-unaccepted": one listed in
+    `legacy` (charter/legacy-taskets.txt) without `## Acceptance`, which the gate only warns on
+    (checks.check_unit_done), or one whose path is in `before` (_done_before_charter) and whose committed
+    status is still done. Missing evidence on those says nothing about work done under charter."""
     status = str(u.get("status", ""))
     body = u.get("_body", "")
     acc = lib.acceptance(body)
@@ -248,12 +254,37 @@ def _unit_state(root: Path, cfg: dict, u: dict) -> tuple[str, dict]:
             "historical": historical, "log": log}
     if done:
         ran = k["sha"] or k["run"] or historical
-        return ("accepted" if boxes and info["open"] == 0 and ran and not bad else "done-unaccepted"), info
+        if boxes and info["open"] == 0 and ran and not bad:
+            return "accepted", info
+        if u["_id"] in legacy and not lib.section(body, "Acceptance"):
+            return "done-before-charter", info
+        if u["_path"] in before and str(lib.split_frontmatter(checks.head_text(root, u["_path"]))[0].get("status", "")) == status:
+            return "done-before-charter", info
+        return "done-unaccepted", info
     if status == "blocked":
         return "blocked", info
     if status in lib.TERMINAL_STATUSES:
         return "closed", info
     return ("in-progress" if log else "open"), info
+
+
+def _done_before_charter(root: Path, cfg: dict) -> set[str]:
+    """Unit paths whose last commit to add or remove a done status predates the commit that added
+    charter/VERSION: done before the install, and not reopened since. One `git log` for every unit."""
+    added = lib.git(root, "log", "--diff-filter=A", "--format=%cI", "--", f"{lib.CHARTER_DIR}/VERSION").stdout.split()
+    if not added:
+        return set()
+    installed = dt.datetime.fromisoformat(added[-1])
+    alts = "|".join(re.escape(s) for s in lib.as_list(cfg.get("done_statuses")))
+    # -G lists only the files whose own diff matches, so each path is paired with its own status change
+    r = lib.git(root, "log", "--format=%x00%cI", "--name-only", "-G", f"^status:[[:space:]]*({alts})([[:space:]]|#|$)", "--", lib.TASKETS_DIR)
+    last: dict[str, dt.datetime] = {}
+    for chunk in r.stdout.split("\0")[1:]:
+        lines = [x for x in chunk.splitlines() if x.strip()]
+        if lines:
+            for path in lines[1:]:
+                last.setdefault(path, dt.datetime.fromisoformat(lines[0]))   # newest first
+    return {path for path, t in last.items() if t < installed}
 
 
 def _first_done(root: Path, cfg: dict, u: dict) -> dt.datetime | None:
@@ -262,6 +293,24 @@ def _first_done(root: Path, cfg: dict, u: dict) -> dt.datetime | None:
     r = lib.git(root, "log", "--reverse", "--format=%cI", "-G", f"^status:[[:space:]]*({alts})([[:space:]]|#|$)", "--", u["_path"])
     first = r.stdout.split()[:1]
     return dt.datetime.fromisoformat(first[0]) if first else None
+
+
+def _gate_counts(root: Path, days: int) -> dict[str, int]:
+    """Events of the gate log over the last `days`, counted per `gate/decision`."""
+    logp = lib.shared_state_dir(root) / "log.jsonl"
+    counts: dict[str, int] = {}
+    if not logp.exists():
+        return counts
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
+    for line in logp.read_text().splitlines():
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if r.get("ts", "") >= since:
+            k = f"{r.get('gate')}/{r.get('decision')}"
+            counts[k] = counts.get(k, 0) + 1
+    return counts
 
 
 def cmd_synth(a) -> int:
@@ -278,7 +327,8 @@ def cmd_synth(a) -> int:
     L.append("")
     L.append(f"Generated by `charter synth` from the repository at commit {head}; every line carries the file it was read from. Regenerate rather than edit.")
     L.append("")
-    states = {uid: _unit_state(root, cfg, u) for uid, u in units.items()}
+    legacy, before = lib.legacy_taskets(root), _done_before_charter(root, cfg)
+    states = {uid: _unit_state(root, cfg, u, legacy, before) for uid, u in units.items()}
 
     L.append("## Scope")
     if sc["exists"]:
@@ -310,6 +360,13 @@ def cmd_synth(a) -> int:
         else:
             L.append(f"- none ({lib.TASKETS_DIR}/, {len(units)} unit(s) read)")
         L.append("")
+        if want == "done-unaccepted":
+            # listed apart, only when there are some: the done gate never asked these for evidence
+            old = [(uid, u) for uid, u in units.items() if states[uid][0] == "done-before-charter"]
+            if old:
+                L.append("## Done before charter (never judged by the done gate)")
+                L += [f"- {uid} — {u.get('title', '')} [{u.get('status')}] ({u['_path']})" for uid, u in old]
+                L.append("")
 
     L.append("## Open decisions and change requests")
     props = [(k, v) for k, v in decs.items() if str(v.get("status")) == "proposed"]
@@ -327,20 +384,9 @@ def cmd_synth(a) -> int:
         # the log is per machine; a committed synthesis would carry claims no clone can check
         L.append("- gate activity is recorded per machine and is not part of a written synthesis; `charter log` or `charter synth` prints it (.charter/bin/charter)")
     else:
-        logp = lib.shared_state_dir(root) / "log.jsonl"
-        counts: dict[str, int] = {}
-        if logp.exists():
-            since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).isoformat()
-            for line in logp.read_text().splitlines():
-                try:
-                    r = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if r.get("ts", "") >= since:
-                    k = f"{r.get('gate')}/{r.get('decision')}"
-                    counts[k] = counts.get(k, 0) + 1
-            for k, v in sorted(counts.items()):
-                L.append(f"- {k}: {v} (outside this repository: the gate log in this machine's git directory)")
+        counts = _gate_counts(root, 30)
+        for k, v in sorted(counts.items()):
+            L.append(f"- {k}: {v} (outside this repository: the gate log in this machine's git directory)")
         if not counts:
             L.append("- no gate events recorded on this machine yet; the gates in .charter/bin/charter and .charter/hooks/ write them as they fire")
     L.append("")
@@ -431,6 +477,143 @@ def cmd_synth(a) -> int:
         print(f"wrote {lib.rel(root, out)} ({rep.claims} claim lines, all anchored)")
     else:
         sys.stdout.write(text)
+    return 0
+
+
+# ---------------------------------------------------------------- next
+
+# The order open units are offered in: resume what has started before starting something new.
+_NEXT_RANK = {"in-progress": 0, "open": 1, "blocked": 2}
+FINISHED = ("accepted", "closed", "done-before-charter")
+
+
+def _num(v, prefix: str = "") -> float:
+    """A frontmatter number (`order: 3`, `priority: p1`) for sorting; a missing or odd value sorts last."""
+    t = str(v).strip().lower()
+    try:
+        return float(t[len(prefix):] if prefix and t.startswith(prefix) else t)
+    except ValueError:
+        return float("inf")
+
+
+def cmd_next(a) -> int:
+    """Where the work stands and what comes next, from the project's own files: the active unit, the road's open
+    items and the units on them, open units the road does not name, what waits on the owner, and the gates over
+    the last 7 days. Read-only: it writes nothing, the gate log included, so any tool may run it at any time."""
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    units = lib.taskets(root)
+    legacy, before = lib.legacy_taskets(root), _done_before_charter(root, cfg)
+    states = {uid: _unit_state(root, cfg, u, legacy, before) for uid, u in units.items()}
+    n = max(1, a.limit)
+    ver = (root / lib.CHARTER_DIR / "VERSION").read_text().strip() if (root / lib.CHARTER_DIR / "VERSION").exists() else "?"
+    L = [f"charter {ver}, {lib.config_line(cfg)}"]
+    L += [f"problem: charter/config.json: {m}. Commits and CI are refused until the owner corrects it." for m in cfg.get(lib.PROBLEMS, [])]
+    if lib.hooks_path(root) != lib.CHARTER_HOOKS_PATH and not lib.hook_wired_by(root):
+        L.append("The charter git hook is not active in this clone: " + ("tell the owner, since it runs other git hooks"
+                 if lib.other_hooks(root) else "run `python3 .charter/bin/charter setup` once"))
+
+    def line(uid: str, extra: str = "") -> str:
+        u = units[uid]
+        return f"- {uid} — {u.get('title', '')} [{u.get('status')}, {states[uid][0]}]{extra} ({u['_path']})"
+
+    aid = lib.active_unit(root)
+    L.append("")
+    if aid and aid in units:
+        st, info = states[aid]
+        closed = info["boxes"] - info["open"]
+        hint = ""
+        if st == "accepted":
+            hint = "; accepted, so `python3 .charter/bin/charter unit stop`"
+        elif info["boxes"] and not info["open"] and st not in FINISHED:
+            hint = "; every box is checked: finish it (probes, `## Evidence`, `status: done`)"
+        L.append(f"Active unit: {aid} — {units[aid].get('title', '')} [{units[aid].get('status')}], "
+                 f"{closed}/{info['boxes']} criteria closed{hint} ({units[aid]['_path']})")
+    elif aid:
+        L.append(f"Active unit: {aid}, which is not a tasket in {lib.TASKETS_DIR}/")
+    else:
+        L.append("Active unit: none. `python3 .charter/bin/charter unit start <id>` attributes the edits")
+
+    open_ids = [uid for uid in units if states[uid][0] in _NEXT_RANK and uid != aid]
+    owner: list[str] = []
+    loaded = rails.load(root, cfg)
+    if loaded is not None:
+        items, problems = loaded
+        rc = rails.config(cfg)
+        on = {uid: rails.rails_of(units[uid], rc["keys"], items) for uid in units}
+        todo = []
+        L += ["", f"Road ({rails.FILE}):"]
+        for rid, it in rails.ordered(items):
+            if it["status"] in rails.CLOSED:
+                continue
+            if it["status"] == "todo":
+                todo.append(rid)
+                continue
+            citing = [uid for uid in units if rid in on[uid]]
+            count: dict[str, int] = {}
+            for uid in citing:
+                count[states[uid][0]] = count.get(states[uid][0], 0) + 1
+            L.append(f"- {rid} [{it['status']}]: " + (", ".join(f"{v} {k}" for k, v in count.items()) or "no unit cites it, so none can start"))
+            if citing and all(states[uid][0] in FINISHED for uid in citing):
+                owner.append(f"- rail {rid} is {it['status']} and every unit on it is finished: close it, or a unit for what is left "
+                             f"is written first ({rails.FILE}:{it['line']})")
+        if todo:
+            L.append(f"- later ({len(todo)} todo): {', '.join(todo)}")
+        seq = {rid: k for k, (rid, _) in enumerate(rails.ordered(items))}
+
+        def road_key(uid: str):
+            live = [seq[r] for r in on[uid] if r in items and items[r]["status"] not in rails.CLOSED]
+            u = units[uid]
+            return (min(live), _NEXT_RANK[states[uid][0]], _num(u.get("group_order")), _num(u.get("order")), uid)
+
+        ahead = sorted((uid for uid in open_ids if any(r in items and items[r]["status"] not in rails.CLOSED for r in on[uid])), key=road_key)
+        L += ["", "Next on the road:"]
+        L += [line(uid, f" on {', '.join(r for r in on[uid] if r in items)}") for uid in ahead[:n]] or ["- no open unit names an open rail"]
+        if len(ahead) > n:
+            L.append(f"- +{len(ahead) - n} more (`--limit`)")
+        live = {units[uid]["_path"] for uid in open_ids + ([aid] if aid in units else [])}
+        off = [f for f in rails.check(root, cfg, units, None) if f.path in live]
+        L += ["", "Off the road:"]
+        L += [f"- {f.message} ({f.path})" for f in off[:n]] or ["- none"]
+        if len(off) > n:
+            L.append(f"- +{len(off) - n} more (`--limit`)")
+        owner += [f"- {rails.FILE}: {m}" for m in problems]
+    else:
+        ahead = sorted(open_ids, key=lambda uid: (_NEXT_RANK[states[uid][0]], _num(units[uid].get("priority"), "p"),
+                                                   _num(units[uid].get("group_order")), _num(units[uid].get("order")), uid))
+        L += ["", f"Open units (no {rails.FILE}, so no road to order them by):"]
+        L += [line(uid) for uid in ahead[:n]] or ["- none"]
+        if len(ahead) > n:
+            L.append(f"- +{len(ahead) - n} more (`--limit`)")
+
+    unacc = [uid for uid in units if states[uid][0] == "done-unaccepted"]
+    old = sum(1 for uid in units if states[uid][0] == "done-before-charter")
+    L += ["", "Done without acceptance (the evidence is missing):"]
+    L += [line(uid) for uid in unacc[:n]] or ["- none"]
+    if len(unacc) > n:
+        L.append(f"- +{len(unacc) - n} more (`charter synth`)")
+    if old:
+        L.append(f"- not counted: {old} unit(s) done before charter, which the done gate never judged (`charter synth` lists them)")
+
+    for k, v in lib.decisions(root).items():
+        if str(v.get("status")) == "proposed":
+            owner.append(f"- decision {k} — {v.get('title', '')} is proposed ({v['_path']})")
+    for k, v in lib.change_requests(root).items():
+        if str(v.get("status")) == "proposed":
+            owner.append(f"- change request {k} — {v.get('title', '')} is proposed ({v['_path']})")
+    staged = lib.git(root, "diff", "--cached", "--name-only").stdout.split()
+    mine = [rp for rp in staged if rp in checks.OWNER_ONLY_FILES or lib.matches_any(rp, checks.OWNER_ONLY_GLOBS)]
+    if mine:
+        owner.append(f"- staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""))
+    L += ["", "Waiting on the owner:"] + (owner or ["- nothing"])
+
+    counts = _gate_counts(root, 7)
+    blocks = {k.split("/")[0]: v for k, v in counts.items() if k.endswith("/block")}
+    warns = sum(v for k, v in counts.items() if k.endswith("/warn"))
+    # the log's own words: a `block` is a refused edit or commit, or a probe that failed (a baseline fails on purpose)
+    L += ["", "Gate log, last 7 days: " + (f"{sum(blocks.values())} block(s) ({', '.join(f'{g} {v}' for g, v in sorted(blocks.items()))}), "
+                                          if blocks else "no block, ") + f"{warns} warning(s). `python3 .charter/bin/charter log --verbose` has the detail"]
+    print("\n".join(L))
     return 0
 
 
@@ -726,6 +909,8 @@ def main(argv=None) -> int:
     st.set_defaults(fn=cmd_setup)
     cf = sub.add_parser("config", help="print the track and opt-ins the gates read, and any problem in charter/config.json")
     cf.set_defaults(fn=cmd_config)
+    nx = sub.add_parser("next", help="where the work stands and what comes next; read-only")
+    nx.add_argument("--limit", type=int, default=5, help="rows per list (default 5)"); nx.set_defaults(fn=cmd_next)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
     if a.cmd not in GATE_COMMANDS:
