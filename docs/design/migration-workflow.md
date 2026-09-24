@@ -11,7 +11,7 @@ How an existing project moves onto charter: measured by code (`bin/charter_surve
 | Skill | `personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md` | Judgement and sequencing: settle what the facts settle, put the rest on a Slate, rehearse the whole plan, execute after the go-ahead |
 | Tests | `tests/test_migration.py` | 24 tests; all but two, which guard kept behaviour, fail on 99e1a2a |
 
-The skill lives in the personal layer because it calls methodo's installer, and `package/` never references anything outside the project (`docs/package.md`). It reaches `~/.claude` through the symlink manifest, option B of `personal/README.md`.
+The skill lives in the personal layer because it calls this repository's installer, and `package/` never references anything outside the project (`docs/package.md`). It reaches `~/.claude` through the symlink manifest, option B of `personal/README.md`.
 
 ## Why the facts are measured
 
@@ -91,5 +91,5 @@ On 2026-09-13 the owner took the recommended option on all eight calls of the Sl
 | L4 Session hooks | `.claude/settings.json` is committed; Léo is not active, so no message | (operator report: the Slate answers, 2026-09-13) |
 | L5 Size | BMAD tooling and tests are exempt | (operator report: the Slate answers, 2026-09-13) |
 | L6 Real install | On a branch once the two sessions working in the tree are done, stopping before the pull request | (operator report: the Slate answers, 2026-09-13) |
-| L7 Skill home | The personal layer is symlinked from methodo | (operator report: the Slate answers, 2026-09-13) |
+| L7 Skill home | The personal layer is symlinked from the charter repository | (operator report: the Slate answers, 2026-09-13) |
 | L8 Runbook | Project facts leave `docs/migration.md` | (operator report: the Slate answers, 2026-09-13) |

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-PKG_DIR = Path(os.environ.get("CHARTER_PKG_DIR", str(Path.home() / "Projects" / "methodo")))
+PKG_DIR = Path(os.environ.get("CHARTER_PKG_DIR", str(Path.home() / "Projects" / "charter")))
 
 
 def main() -> int:

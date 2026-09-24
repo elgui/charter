@@ -21,13 +21,13 @@ Running the **Migrate** workflow from the **CharterAdmin** skill...
 ## Phase 1: survey
 
 ```bash
-M=~/Projects/methodo/bin/charter-pkg
+M=~/Projects/charter/bin/charter-pkg
 OUT=<scratchpad>/survey-<name>
 python3 $M survey <project> --track prototype --out $OUT
 ```
 
 - Read `$OUT/survey.md` and `$OUT/plan.md` in full. `$OUT/survey.json` holds the same facts for anything you compute.
-- Exit 3 means a rendered line failed its own anchoring check. That is a survey bug: fix `bin/charter_plan.py` in methodo with a test, never the output by hand.
+- Exit 3 means a rendered line failed its own anchoring check. That is a survey bug: fix `bin/charter_plan.py` in the charter repository with a test, never the output by hand.
 - When the report lists a test command, run the survey again with `--test-cmd "<the unit-test command>"`. The rehearsal clone has no untracked files and so no `.env`. Exit 0 there makes `probes.at_commit: true` viable.
 - The flags are in `tools/Survey.help.md`.
 

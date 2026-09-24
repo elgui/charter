@@ -4,7 +4,7 @@ What belongs in `~/.claude` on Gui's machines and nowhere else. The committed la
 
 | File | Goes to | Why personal |
 |---|---|---|
-| `claude-home/hooks/charter-personal.py` | the directory `~/.claude/hooks` resolves to | Reads `~/Projects/methodo` and points at Crossroads/Slate |
+| `claude-home/hooks/charter-personal.py` | the directory `~/.claude/hooks` resolves to | Reads `~/Projects/charter` and points at Crossroads/Slate |
 | `claude-home/Skills/CharterAdmin/` (`SKILL.md`, `workflows/Migrate.md`, `tools/Survey.help.md`) | the directory `~/.claude/Skills` resolves to | Operates across `~/Projects/*`; `Migrate` calls this repository's installer and survey |
 | `settings.fragment.json` | merged into `~/.claude/settings.json` (`hooks.SessionStart`) | User-level hook |
 | `settings.trial.json` | nothing; used by the trial through `--settings` | Absolute path to this checkout |
@@ -14,16 +14,16 @@ What belongs in `~/.claude` on Gui's machines and nowhere else. The committed la
 ## Option A: copy into the resolved directories (no manifest change)
 
     HOOKS=$(readlink -f ~/.claude/hooks); SKILLS=$(readlink -f ~/.claude/Skills)
-    cp ~/Projects/methodo/personal/claude-home/hooks/charter-personal.py "$HOOKS/"
-    mkdir -p "$SKILLS/CharterAdmin" && cp -R ~/Projects/methodo/personal/claude-home/Skills/CharterAdmin/. "$SKILLS/CharterAdmin/"
+    cp ~/Projects/charter/personal/claude-home/hooks/charter-personal.py "$HOOKS/"
+    mkdir -p "$SKILLS/CharterAdmin" && cp -R ~/Projects/charter/personal/claude-home/Skills/CharterAdmin/. "$SKILLS/CharterAdmin/"
     # then add the SessionStart entry from settings.fragment.json to ~/.claude/settings.json
 
 ## Option B: symlink from this checkout (manifest lines)
 
 Add to `symlink-manifest.tsv` (target then link, as the existing lines do):
 
-    $HOME/AI_tooling/PAI/generic/claude/Hooks/charter-personal.py	$HOME/Projects/methodo/personal/claude-home/hooks/charter-personal.py
-    $HOME/AI_tooling/PAI/generic/claude/Skills/CharterAdmin	$HOME/Projects/methodo/personal/claude-home/Skills/CharterAdmin
+    $HOME/AI_tooling/PAI/generic/claude/Hooks/charter-personal.py	$HOME/Projects/charter/personal/claude-home/hooks/charter-personal.py
+    $HOME/AI_tooling/PAI/generic/claude/Skills/CharterAdmin	$HOME/Projects/charter/personal/claude-home/Skills/CharterAdmin
 
 then `~/.claude/rebuild-symlinks.sh`, and add the SessionStart entry to `~/.claude/settings.json`.
 

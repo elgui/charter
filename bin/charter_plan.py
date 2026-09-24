@@ -223,7 +223,7 @@ def report(s: dict) -> str:
 # ---------------------------------------------------------------- plan
 
 OPINION, END = "<!-- charter: opinion -->", "<!-- charter: /opinion -->"
-TOOL = "python3 ~/Projects/methodo/bin/charter-pkg"
+TOOL = "python3 ~/Projects/charter/bin/charter-pkg"
 CLI = "python3 .charter/bin/charter"
 
 

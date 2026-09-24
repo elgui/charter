@@ -1,6 +1,6 @@
 # The package
 
-Repository `methodo` (working name; see decision `package-name` in the report). Version `package/VERSION`, 0.4.0. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.0. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -44,11 +44,11 @@ Owned files (22, listed in `bin/charter-pkg` `OWNED`) are recorded with their SH
 Installer, run from this repository:
 
 ```
-python3 ~/Projects/methodo/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--replace-hooks]
-python3 ~/Projects/methodo/bin/charter-pkg upgrade   <project> [--dry-run] [--force]
-python3 ~/Projects/methodo/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
-python3 ~/Projects/methodo/bin/charter-pkg status    <project>
-python3 ~/Projects/methodo/bin/charter-pkg survey    <project> [--track T] [--out DIR | --plan | --json] [--test-cmd CMD]
+python3 ~/Projects/charter/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--replace-hooks]
+python3 ~/Projects/charter/bin/charter-pkg upgrade   <project> [--dry-run] [--force]
+python3 ~/Projects/charter/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
+python3 ~/Projects/charter/bin/charter-pkg status    <project>
+python3 ~/Projects/charter/bin/charter-pkg survey    <project> [--track T] [--out DIR | --plan | --json] [--test-cmd CMD]
                                                      [--ref BRANCH] [--keep-clone] [--no-rehearse] [--offline]
 ```
 

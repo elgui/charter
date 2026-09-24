@@ -2,9 +2,9 @@
 
 Five starting points, each a sequence of steps with its rollback, then what to check after a migration, then how a new package version reaches a project. Facts about a particular project do not belong here: the survey measures them. Every step is a commit on a branch; the rollback of any step is `git revert` of that commit unless stated otherwise.
 
-Common preconditions: a clean working tree (`git status --porcelain` empty), Python 3 on the machine, a checkout of `~/Projects/methodo` at the version you want.
+Common preconditions: a clean working tree (`git status --porcelain` empty), Python 3 on the machine, a checkout of `~/Projects/charter` at the version you want.
 
-An existing project (paths C to E) starts with the survey, not with this page: `python3 ~/Projects/methodo/bin/charter-pkg survey <project> --out <dir>` reads the project without writing to it, rehearses the install in a throwaway clone, and writes `survey.md` and a generated `plan.md` whose steps each name their check and rollback. The `Migrate` workflow of the personal `CharterAdmin` skill drives it end to end. Design and the leCRM rehearsal: `docs/design/migration-workflow.md`.
+An existing project (paths C to E) starts with the survey, not with this page: `python3 ~/Projects/charter/bin/charter-pkg survey <project> --out <dir>` reads the project without writing to it, rehearses the install in a throwaway clone, and writes `survey.md` and a generated `plan.md` whose steps each name their check and rollback. The `Migrate` workflow of the personal `CharterAdmin` skill drives it end to end. Design and the leCRM rehearsal: `docs/design/migration-workflow.md`.
 
 ## Path A: a new client project
 
@@ -56,7 +56,7 @@ An existing project (paths C to E) starts with the survey, not with this page: `
 
 ## A new package version reaching a project
 
-1. In `~/Projects/methodo`: bump `package/VERSION`, change the package, run the tests, commit, tag.
+1. In `~/Projects/charter`: bump `package/VERSION`, change the package, run the tests, commit, tag.
 2. In the project, on a branch: `charter-pkg upgrade <project> --dry-run` and read the diff; `charter-pkg upgrade <project>`; review `git diff`; commit "charter <version>" as the owner (the commit touches `.charter/`, an owner-only path CI checks). From 0.1.0: the upgrade also writes `charter/legacy-taskets.txt`; then run `python3 .charter/bin/charter setup` to move the gate log and session records out of `.charter/state/`. A 0.1.0 `charter/config.json` keeps working: its flat price table becomes the `default` row, and the package's per-model rows apply to the models it does not name. From 0.2.0: ledger records folded earlier carry no subagent usage, so the synthesis prints the totals over them as lower bounds. No step is needed.
 3. Owned files the project modified are kept and listed; reconcile them by hand or re-run with `--force`.
 4. The personal-layer SessionStart hook reports "package X available, Y installed" until step 2 is done.

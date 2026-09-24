@@ -8,7 +8,7 @@
             "command": "python3",
             "args": [
               "-B",
-              "/home/gui/Projects/methodo/personal/claude-home/hooks/charter-personal.py"
+              "/home/gui/Projects/charter/personal/claude-home/hooks/charter-personal.py"
             ],
             "timeout": 10
           }

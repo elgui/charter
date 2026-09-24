@@ -1,8 +1,8 @@
 # charter-pkg survey
 
-The survey lives in methodo (`bin/charter_survey.py`, rendered by `bin/charter_plan.py`), next to the installer it rehearses. This skill calls it; it has no tool of its own.
+The survey lives in the charter repository (`bin/charter_survey.py`, rendered by `bin/charter_plan.py`), next to the installer it rehearses. This skill calls it; it has no tool of its own.
 
-    python3 ~/Projects/methodo/bin/charter-pkg survey <project> [options]
+    python3 ~/Projects/charter/bin/charter-pkg survey <project> [options]
 
 | Option | Effect |
 |---|---|

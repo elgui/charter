@@ -5,7 +5,7 @@ description: Administer the charter method across Gui's projects from the person
 
 # CharterAdmin (personal layer)
 
-Package repository: `~/Projects/methodo` (override with `CHARTER_PKG_DIR`). The committed layer in each project never depends on this skill.
+Package repository: `~/Projects/charter` (override with `CHARTER_PKG_DIR`). The committed layer in each project never depends on this skill.
 
 ## Workflow Routing
 
@@ -56,16 +56,16 @@ User: "Upgrade charter on leCRM"
 ## Which projects, which version
 
     for p in ~/Projects/*/; do [ -f "$p/charter/VERSION" ] && echo "$p $(cat $p/charter/VERSION)"; done
-    python3 ~/Projects/methodo/bin/charter-pkg status <project>
+    python3 ~/Projects/charter/bin/charter-pkg status <project>
 
 ## Install or upgrade
 
 A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
-    python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client --dry-run   # read it
-    python3 ~/Projects/methodo/bin/charter-pkg install <project> --track client
-    python3 ~/Projects/methodo/bin/charter-pkg upgrade <project> --dry-run                  # shows the diff
-    python3 ~/Projects/methodo/bin/charter-pkg upgrade <project>
+    python3 ~/Projects/charter/bin/charter-pkg install <project> --track client --dry-run   # read it
+    python3 ~/Projects/charter/bin/charter-pkg install <project> --track client
+    python3 ~/Projects/charter/bin/charter-pkg upgrade <project> --dry-run                  # shows the diff
+    python3 ~/Projects/charter/bin/charter-pkg upgrade <project>
 
 Commit the result in the project on a branch. Never upgrade a project with a dirty tree.
 
