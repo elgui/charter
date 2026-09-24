@@ -21,7 +21,9 @@ def main() -> int:
         cur["head"] = head(root)
         write_session(root, sid, cur)
         ver = (root / lib.CHARTER_DIR / "VERSION").read_text().strip() if (root / lib.CHARTER_DIR / "VERSION").exists() else "?"
-        out = [f"charter {ver}, track {cfg.get('track')}. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help"]
+        out = [f"charter {ver}, {lib.config_line(cfg)}. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help"]
+        for m in cfg.get(lib.PROBLEMS, []):
+            out.append(f"charter/config.json: {m}. Commits and CI are refused until the owner corrects it.")
         if lib.hooks_path(root) != lib.CHARTER_HOOKS_PATH and not lib.hook_wired_by(root):
             others = lib.other_hooks(root)
             if others:

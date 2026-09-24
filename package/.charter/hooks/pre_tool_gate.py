@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse on Edit|Write. Hard gates before the edit lands:
+"""PreToolUse on Edit|Write|NotebookEdit (a notebook edit's result is not computed: path gates only). Hard gates before the edit lands:
 owner-only files and fields (R3, R6, R7), scope (R6), size (R3), done-needs-evidence and
 acceptance changes on taskets (R9), retired-decision citations and duplicate ids (R1).
 Denies with the override named; warns otherwise. Fails open on its own errors."""
@@ -17,7 +17,7 @@ def main() -> int:
         root = tree_for(data)
         cfg = lib.load_config(root)
         ti = data.get("tool_input") or {}
-        path = ti.get("file_path")
+        path = ti.get("file_path") or ti.get("notebook_path")   # NotebookEdit names its file notebook_path
         if not path:
             return 0
         inside = lib.inside(root, path)

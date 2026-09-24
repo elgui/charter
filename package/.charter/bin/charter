@@ -10,6 +10,7 @@
   decisions regenerate charter/decisions/INDEX.md
   log       summarise the gate log (in the git directory, shared by worktrees)
   setup     activate the git hook in this clone; move 0.1.0 state out of .charter/state/
+  config    print the track and opt-ins the gates read; list what in charter/config.json is not applied
   version   print the installed version
 """
 from __future__ import annotations
@@ -47,12 +48,16 @@ def cmd_check(a) -> int:
     with (lib.index_view(root) if a.staged else contextlib.nullcontext()):
         cfg = lib.load_config(root)
         _check(a, root, cfg, gates, rep)
+    # a config the gates cannot read as written is refused, not skipped: it is the owner's input, not a gate error
+    rep.add(*(checks.Finding("config", "block", f"charter/config.json: {m}", path="charter/config.json",
+                             override="the owner corrects charter/config.json (owner-only); `charter config` lists what is read")
+              for m in cfg.get(lib.PROBLEMS, [])))
     for f in rep.findings:
         lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all")
     for f in rep.findings:
         print(f.line())
     n_b, n_w = len(rep.blocks), len(rep.warns)
-    print(f"charter check: {n_b} blocking, {n_w} warning(s) [{'staged' if a.staged else 'tree'}, track {cfg.get('track')}]")
+    print(f"charter check: {n_b} blocking, {n_w} warning(s) [{'staged' if a.staged else 'tree'}, {lib.config_line(cfg)}]")
     if n_b:
         print("Refused. Each line above names its override. `git commit --no-verify` skips this hook; CI runs it again.")
         return 1
@@ -659,6 +664,15 @@ def cmd_probe(a) -> int:
     return 1 if found else 0
 
 
+def cmd_config(a) -> int:
+    """The settings the gates read, and what in charter/config.json was not applied."""
+    cfg = lib.load_config(lib.repo_root(a.root))
+    print(lib.config_line(cfg))
+    for m in cfg.get(lib.PROBLEMS, []):
+        print(f"problem: charter/config.json: {m}")
+    return 1 if cfg.get(lib.PROBLEMS) else 0
+
+
 def cmd_version(a) -> int:
     root = lib.repo_root(a.root)
     p = root / lib.CHARTER_DIR / "VERSION"
@@ -710,16 +724,14 @@ def main(argv=None) -> int:
     lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
     st = sub.add_parser("setup"); st.add_argument("--replace-hooks", action="store_true", help="point core.hooksPath at .charter/githooks even though other git hooks run")
     st.set_defaults(fn=cmd_setup)
+    cf = sub.add_parser("config", help="print the track and opt-ins the gates read, and any problem in charter/config.json")
+    cf.set_defaults(fn=cmd_config)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
     if a.cmd not in GATE_COMMANDS:
         return a.fn(a)
     try:
         return a.fn(a)
-    except SystemExit as e:
-        if isinstance(e.code, str):   # lib.load_config refusing a config.json that is not JSON: a parse error
-            return _fail_open(a, e)
-        raise
     except Exception as e:
         return _fail_open(a, e)
 

@@ -83,12 +83,15 @@ class BinaryFiles(Base):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("::warning title=charter gate error::", r.stdout)   # CI passes, so the run's summary shows it
 
-    def test_a_config_that_is_not_json_fails_open(self):
+    def test_a_config_that_is_not_json_is_refused(self):
+        """Failed open before 0.4.3. The config is the owner's input, not a gate's error: a config the gates
+        cannot read would switch every opt-in off, so the check refuses it and names the fix."""
         (self.root / "charter" / "config.json").write_text("{ not json\n")
         r = charter(self.root, "check", "--all")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("not valid JSON", r.stderr)
-        self.assertIn("error/error: 1", charter(self.root, "log").stdout)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("charter/config block", r.stdout)
+        self.assertIn("not valid JSON", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
 
 
 # ---------------------------------------------------------------- defect 2

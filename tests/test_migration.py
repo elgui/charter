@@ -82,7 +82,7 @@ def legacy_project() -> Path:
 
 
 def survey(root: Path, *args) -> subprocess.CompletedProcess:
-    return pkg("survey", str(root), "--offline", *args)
+    return pkg("survey", str(root), "--offline", "--track", "prototype", *args)
 
 
 # ---------------------------------------------------------------- lib.section
@@ -130,23 +130,23 @@ class ExistingHooks(unittest.TestCase):
 
     def test_install_keeps_a_hook_the_clone_runs(self):
         executable(self.root / ".git" / "hooks" / "pre-commit")
-        r = pkg("install", str(self.root))
+        r = pkg("install", str(self.root), "--track", "client")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(self.hooks_path(), "")
         self.assertIn("KEEP git hooks", r.stdout)
         self.assertIn(".git/hooks/pre-commit", r.stdout)
-        r = pkg("install", str(self.root), "--replace-hooks")
+        r = pkg("install", str(self.root), "--track", "client", "--replace-hooks")
         self.assertEqual(self.hooks_path(), ".charter/githooks")
 
     def test_a_tracked_framework_counts_even_where_it_is_not_installed(self):
         (self.root / "lefthook.yml").write_text("pre-commit:\n  commands:\n    fmt:\n      run: true\n")
-        r = pkg("install", str(self.root))
+        r = pkg("install", str(self.root), "--track", "client")
         self.assertEqual(self.hooks_path(), "")
         self.assertIn("lefthook.yml", r.stdout)
 
     def test_a_framework_that_runs_the_gate_is_recognised(self):
         (self.root / "lefthook.yml").write_text("pre-commit:\n  commands:\n    charter:\n      run: python3 -B .charter/bin/charter check --staged\n")
-        r = pkg("install", str(self.root))
+        r = pkg("install", str(self.root), "--track", "client")
         self.assertEqual(self.hooks_path(), "")
         self.assertIn("lefthook.yml runs the charter gate", r.stdout)
         _, out, stdout, _ = run_hook(self.root, "session_start", {})
@@ -154,7 +154,7 @@ class ExistingHooks(unittest.TestCase):
         self.assertNotIn("not wired", stdout)
 
     def test_setup_keeps_other_hooks_and_the_banner_says_why(self):
-        pkg("install", str(self.root))
+        pkg("install", str(self.root), "--track", "client")
         git(self.root, "config", "--unset", "core.hooksPath")
         executable(self.root / ".git" / "hooks" / "pre-push")
         r = charter(self.root, "setup")
@@ -167,7 +167,7 @@ class ExistingHooks(unittest.TestCase):
         self.assertEqual(self.hooks_path(), ".charter/githooks")
 
     def test_a_clone_without_other_hooks_is_set_as_before(self):
-        r = pkg("install", str(self.root))
+        r = pkg("install", str(self.root), "--track", "client")
         self.assertEqual(self.hooks_path(), ".charter/githooks", r.stdout)
 
 
@@ -180,9 +180,9 @@ class IgnoredInstallPaths(unittest.TestCase):
             (root / ".gitignore").write_text("node_modules/\n.claude/settings.json\n")
             commit(root, "ignore settings")
             for args in (["--dry-run"], []):
-                r = pkg("install", str(root), *args)
+                r = pkg("install", str(root), "--track", "client", *args)
                 self.assertIn("IGNORED by .gitignore:2 (`.claude/settings.json`), so a commit will not carry it: .claude/settings.json", r.stdout)
-            self.assertNotIn("IGNORED", pkg("install", str(root)).stdout)   # nothing written, nothing to warn about
+            self.assertNotIn("IGNORED", pkg("install", str(root), "--track", "client").stdout)   # nothing written, nothing to warn about
         finally:
             cleanup(root)
 
@@ -231,7 +231,7 @@ class DoneWhen(unittest.TestCase):
             (root / ".taskets").mkdir()
             (root / ".taskets" / "old.md").write_text(tasket("old", "next", DONE_WHEN))
             commit(root, "before charter")
-            pkg("install", str(root))
+            pkg("install", str(root), "--track", "client")
             self.assertIn("old", (root / "charter" / "legacy-taskets.txt").read_text().split())
             commit(root, "install")
             (root / ".taskets" / "old.md").write_text(tasket("old", "done", DONE_WHEN))
@@ -278,7 +278,7 @@ class Survey(unittest.TestCase):
         self.assertEqual(t["classes"]["ready"], {"open": 1})
         self.assertEqual(t["classes"]["prose"], {"done": 1})
         self.assertEqual([i["id"] for i in t["items"] if i["unknown_status"]], ["f-pending"])
-        dry = pkg("install", str(self.root), "--dry-run").stdout
+        dry = pkg("install", str(self.root), "--track", "client", "--dry-run").stdout
         self.assertIn(f"seed ({t['legacy_at_install']} legacy tasket(s))", dry)
         self.assertEqual(self.facts["rehearsal"]["legacy"], t["legacy_at_install"])
 
@@ -453,7 +453,7 @@ class NegatedIgnorePattern(unittest.TestCase):
         self.assertNotIn(".claude/settings.json", [x["path"] for x in facts["claude"]["ignored_install_paths"]])
 
     def test_the_installer_does_not_print_ignored_by_for_it(self):
-        r = pkg("install", str(self.root), "--dry-run")
+        r = pkg("install", str(self.root), "--track", "client", "--dry-run")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertFalse(any("IGNORED by" in l and "settings.json" in l for l in r.stdout.splitlines()), r.stdout)
 
@@ -488,7 +488,7 @@ class SurveyOnAnotherMachine(unittest.TestCase):
         cls.root = make_project(with_charter=False)
         cls.home = Path(tempfile.mkdtemp(prefix="charter-home-"))
         env = dict(os.environ, HOME=str(cls.home))
-        run = lambda *a: subprocess.run([sys.executable, "-B", str(INSTALLER), "survey", str(cls.root), "--offline",
+        run = lambda *a: subprocess.run([sys.executable, "-B", str(INSTALLER), "survey", str(cls.root), "--offline", "--track", "prototype",
                                          "--no-rehearse", *a], capture_output=True, text=True, env=env)
         cls.report, cls.plan = run(), run("--plan")
 

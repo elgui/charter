@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.2",
+    "version": "0.4.3",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -87,23 +87,103 @@ def load_config(root: Path) -> dict:
     if not p.exists():
         return config_from({})
     try:
-        return config_from(json.loads(p.read_text()))
+        user = json.loads(p.read_text())
     except json.JSONDecodeError as e:
-        raise SystemExit(f"charter/config.json is not valid JSON: {e}")
+        cfg = config_from({})
+        cfg[PROBLEMS] = [f"not valid JSON ({e}); every setting is at its default, track client"]
+        return cfg
+    if not isinstance(user, dict):
+        cfg = config_from({})
+        cfg[PROBLEMS] = ["is not a JSON object; every setting is at its default, track client"]
+        return cfg
+    return config_from(user)
+
+
+TRACKS = ("client", "prototype")
+PRICE_FIELDS = ("input", "output", "cache_read", "cache_write", "cache_write_1h")
+PROBLEMS = "_problems"   # set by config_from: what in the project's config.json was not applied, in words
+# the type each setting must have; a dict names the keys a section may hold
+CONFIG_SCHEMA = {
+    "version": str, "track": str, "owner": (str, list),
+    "limits": {"file_lines": int, "governance_lines": int, "governance_bytes": int},
+    "governance_files": list, "size_exceptions": list, "exempt_from_size": list,
+    "rails": {"required": bool, "keys": list},
+    "done_statuses": list,
+    "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
+    "review": {"required": bool},
+    "prices_usd_per_mtok": dict,
+}
+
+
+def _typed(v, t) -> bool:
+    ts = t if isinstance(t, tuple) else (t,)
+    # JSON true is a Python bool, which is also an int: a limit of `true` is a mistake, not 1
+    return isinstance(v, ts) and not (isinstance(v, bool) and bool not in ts)
+
+
+def _near(k: str, known) -> str:
+    import difflib
+    m = difflib.get_close_matches(k, list(known), n=1)
+    return f" (did you mean `{m[0]}`?)" if m else ""
 
 
 def config_from(user: dict) -> dict:
-    """DEFAULT_CONFIG with a project's charter/config.json laid over it."""
+    """DEFAULT_CONFIG with a project's charter/config.json laid over it. What cannot be applied (an
+    unknown key, a value of the wrong type, an unknown track) is left at its default, except an unknown
+    track, which becomes client, the stricter one; each is listed under PROBLEMS, which `charter check`
+    refuses (a misspelled opt-in must not switch a gate off in silence)."""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+    problems: list[str] = []
     for k, v in user.items():
-        if k == "prices_usd_per_mtok" and isinstance(v, dict):
+        t = CONFIG_SCHEMA.get(k)
+        if t is None:
+            problems.append(f"unknown key `{k}`{_near(k, CONFIG_SCHEMA)}; ignored")
+        elif k == "prices_usd_per_mtok":
+            if not isinstance(v, dict):
+                problems.append("`prices_usd_per_mtok` is not an object; ignored")
+                continue
             # a project's rows override the package's; the 0.1.0 flat form is its "default" row
-            cfg[k].update(v if any(isinstance(x, dict) for x in v.values()) else {"default": v})
-        elif isinstance(v, dict) and isinstance(cfg.get(k), dict):
-            cfg[k].update(v)
+            rows = v if any(isinstance(x, dict) for x in v.values()) else {"default": v}
+            for m, row in rows.items():
+                if m == "_source":
+                    cfg[k][m] = row
+                elif not isinstance(row, dict) or any(f not in PRICE_FIELDS or not _typed(x, (int, float)) for f, x in row.items()):
+                    problems.append(f"`prices_usd_per_mtok.{m}` is not a row of {', '.join(PRICE_FIELDS)} numbers; ignored")
+                else:
+                    cfg[k][m] = row
+        elif isinstance(t, dict):
+            if not isinstance(v, dict):
+                problems.append(f"`{k}` is not an object; left at its default")
+                continue
+            for sk, sv in v.items():
+                if sk not in t:
+                    problems.append(f"unknown key `{k}.{sk}`{_near(sk, t)}; ignored")
+                elif not _typed(sv, t[sk]):
+                    problems.append(f"`{k}.{sk}` is {json.dumps(sv)}, not a {t[sk].__name__}; left at {json.dumps(cfg[k][sk])}")
+                else:
+                    cfg[k][sk] = sv
+        elif not _typed(v, t):
+            problems.append(f"`{k}` is {json.dumps(v)}, of the wrong type; left at {json.dumps(cfg[k])}")
+        elif k == "track" and v not in TRACKS:
+            problems.append(f"`track` is {json.dumps(v)}, not one of {', '.join(TRACKS)}{_near(v, TRACKS)}; read as client")
+            cfg[k] = "client"
         else:
             cfg[k] = v
+    cfg[PROBLEMS] = problems
     return cfg
+
+
+OPT_INS = (("rails", "required"), ("probes", "at_commit"), ("probes", "in_ci"), ("probes", "base_must_fail"), ("review", "required"))
+
+
+def opt_ins(cfg: dict) -> list[str]:
+    """The opt-in settings that are on, as `section.key`: printed by the session banner and every check."""
+    return [f"{s}.{k}" for s, k in OPT_INS if (cfg.get(s) or {}).get(k) is True]
+
+
+def config_line(cfg: dict) -> str:
+    on = opt_ins(cfg)
+    return f"track {cfg.get('track')}, opt-ins: {', '.join(on) if on else 'none'}"
 
 
 def owner_session() -> bool:

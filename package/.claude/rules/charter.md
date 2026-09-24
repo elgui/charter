@@ -58,3 +58,4 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
     python3 .charter/bin/charter decisions index  # regenerate the decision index
     python3 .charter/bin/charter log              # what the gates did lately
     python3 .charter/bin/charter setup            # activate the git hook in this clone
+    python3 .charter/bin/charter config           # the track and opt-ins the gates read; problems in charter/config.json

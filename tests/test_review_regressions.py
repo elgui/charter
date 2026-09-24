@@ -666,7 +666,7 @@ class LegacyTaskets(unittest.TestCase):
         (self.root / ".taskets" / "old.md").write_text("---\nid: old\ntitle: Old work\nstatus: next\npriority: p2\n---\n\n## Done When\n\nIt works.\n")
         git(self.root, "add", "-A")
         git(self.root, "commit", "-q", "-m", "a tasket from before charter")
-        r = subprocess.run([sys.executable, str(INSTALLER), "install", str(self.root)], capture_output=True, text=True, env=clean_env())
+        r = subprocess.run([sys.executable, str(INSTALLER), "install", str(self.root), "--track", "client"], capture_output=True, text=True, env=clean_env())
         assert r.returncode == 0, r.stdout + r.stderr
         commit_all(self.root, "install charter")
 

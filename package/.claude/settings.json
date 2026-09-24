@@ -4,10 +4,10 @@
       { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/session_start.py"], "timeout": 20 } ] }
     ],
     "PreToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/pre_tool_gate.py"], "timeout": 30 } ] }
+      { "matcher": "Edit|Write|NotebookEdit", "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/pre_tool_gate.py"], "timeout": 30 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/post_tool_gate.py"], "timeout": 90 } ] }
+      { "matcher": "Edit|Write|NotebookEdit", "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/post_tool_gate.py"], "timeout": 90 } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/stop_gate.py"], "timeout": 30 } ] }

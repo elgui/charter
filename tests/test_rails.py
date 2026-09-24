@@ -203,7 +203,8 @@ class Rails(unittest.TestCase):
 
     def test_the_rails_file_cannot_be_moved_out_of_the_owner_only_path(self):
         """A configurable path escaped both the staged view (which copies charter/ and .taskets/) and the
-        owner-only list (review finding). The file is charter/rails.md, and a `rails.file` key is ignored."""
+        owner-only list (review finding). The file is charter/rails.md, and a `rails.file` key is ignored;
+        since 0.4.3 the unknown key is also refused, so the config cannot look as if it moved the file."""
         (self.root / "docs").mkdir(exist_ok=True)
         (self.root / "docs" / "road.md").write_text(RAILS)
         p = self.root / "charter" / "config.json"
@@ -214,8 +215,9 @@ class Rails(unittest.TestCase):
         self.write_unit("a")
         self.owner_commit()
         rc, out = self.check("--all", "--rails")
-        self.assertEqual(rc, 0, out)            # no charter/rails.md: the gate is off, not moved
-        self.assertNotIn("docs/road.md", out)
+        self.assertEqual(rc, 1, out)            # the unknown key is refused (0.4.3) ...
+        self.assertIn("unknown key `rails.file`", out)
+        self.assertNotIn("docs/road.md", out)   # ... and the file is not read: no charter/rails.md, the gate is off
         self.assertNotIn("charter/rails", out)
 
     def test_an_agent_edit_of_the_rails_file_is_refused(self):

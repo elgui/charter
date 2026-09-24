@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PostToolUse on Edit|Write. Warnings after the edit landed:
+"""PostToolUse on Edit|Write|NotebookEdit. Warnings after the edit landed:
 perimeter without a note (R4), decision `check:` commands bound to the file (R1),
 and a per-session record of edited paths for the Stop hook."""
 import json
@@ -15,7 +15,7 @@ def main() -> int:
         root = tree_for(data)
         cfg = lib.load_config(root)
         ti = data.get("tool_input") or {}
-        path = ti.get("file_path")
+        path = ti.get("file_path") or ti.get("notebook_path")   # NotebookEdit names its file notebook_path
         if not path or not lib.inside(root, path):
             return 0
         rp = lib.rel(root, path)

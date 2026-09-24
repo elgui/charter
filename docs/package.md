@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.2. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.3. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -41,18 +41,18 @@ Owned files (24, listed in `bin/charter-pkg` `OWNED`) are recorded with their SH
 
 ## Commands
 
-Installer, run from this repository (the step-by-step procedure, with expected output, is `docs/install.md`):
+Installer, run from a checkout of this repository, wherever it sits (the step-by-step procedure, with expected output, is `docs/install.md`):
 
 ```
-python3 ~/Projects/charter/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--show-diff] [--replace-hooks]
-python3 ~/Projects/charter/bin/charter-pkg upgrade   <project> [--dry-run] [--force] [--replace-hooks]
-python3 ~/Projects/charter/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
-python3 ~/Projects/charter/bin/charter-pkg status    <project>
-python3 ~/Projects/charter/bin/charter-pkg survey    <project> [--track T] [--out DIR | --plan | --json] [--test-cmd CMD]
+python3 <checkout>/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--show-diff] [--replace-hooks]
+python3 <checkout>/bin/charter-pkg upgrade   <project> [--dry-run] [--force] [--replace-hooks]
+python3 <checkout>/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
+python3 <checkout>/bin/charter-pkg status    <project>
+python3 <checkout>/bin/charter-pkg survey    <project> --track client|prototype [--out DIR | --plan | --json] [--test-cmd CMD]
                                                      [--ref BRANCH] [--keep-clone] [--no-rehearse] [--offline]
 ```
 
-`--track` is read only when `charter/config.json` is seeded; without it the seed keeps the package default, `client`. `--show-diff` prints the diff of each owned file an `install` would change (`upgrade` always prints it). `--force` replaces owned files the project modified. The parser gives every subcommand but `survey` the same flags (`main` in `bin/charter-pkg`); those not shown above have no effect there.
+`--track` is required by `survey`, and by the first `install`, the one that seeds `charter/config.json`; without it the first install refuses before writing anything. On a project whose config exists it is not applied, and a value that differs from the config prints a `NOTE`. `--show-diff` prints the diff of each owned file an `install` would change (`upgrade` always prints it). `--force` replaces owned files the project modified. The parser gives every subcommand but `survey` the same flags (`main` in `bin/charter-pkg`); those not shown above have no effect there.
 
 In a project (`python3 .charter/bin/charter ...`):
 
@@ -67,6 +67,7 @@ unit start <id> | stop | show
 decisions index
 log [--days N] [--verbose]
 setup [--replace-hooks]
+config
 version
 ```
 
@@ -87,6 +88,7 @@ Upgrade notes, by version:
 - 0.4.0 changes the size gate (the size rule's named exceptions, `limits.governance_bytes`, `governance_files`). `upgrade` never rewrites a project's `charter/config.json`, so an upgraded project takes the new keys from the package defaults: a governance file over 32 KiB becomes frozen for growth on the first commit that grows it. Run `python3 .charter/bin/charter check --all --strict --size` after the upgrade, and name an exception or split the file before the next edit.
 - 0.4.1 runs each probe of a closing unit a second time, before the unit's work, wherever probes run (`docs/gates.md` § Done needs evidence). A probe that already passes there is a warning; `probes.base_must_fail` makes it a refusal. Nothing that passed under 0.4.0 is refused after the upgrade. It also adds `review.required` (off): when set, done needs an anchored `review:` evidence line.
 - 0.4.2 changes documentation only: `charter/README.md` lists every owner-only path and says each clone runs `charter setup`. No gate changes and no step is needed.
+- 0.4.3 refuses a `charter/config.json` the gates cannot read as written: an unknown key, a value of the wrong type, a track other than `client` or `prototype`, or a file that is not JSON (`docs/gates.md` § Config). A config that 0.4.2 accepted with a typo in it is refused at the first commit after the upgrade. **Before committing the upgrade, run `python3 .charter/bin/charter config`**: it must print no `problem:` line, and the owner corrects any it prints in the same commit. The in-session hooks now also run on NotebookEdit (path gates only), and the banner and every `charter check` line name the opt-ins that are on. The installer requires `--track` on a first install and on `survey`.
 
 ## What must stay true
 
