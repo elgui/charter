@@ -23,6 +23,7 @@ kind: work
 
 - [ ] AC-1: <binary, observable state> — probe: `<command>`
 - [ ] AC-2: <...> — probe: `<command>`
+<!-- A probe must fail before the work. A criterion that protects behaviour which already exists says `(guard)`. -->
 
 ## Evidence
 

@@ -4,7 +4,7 @@ What belongs in `~/.claude` on Gui's machines and nowhere else. The committed la
 
 | File | Goes to | Why personal |
 |---|---|---|
-| `claude-home/hooks/charter-personal.py` | the directory `~/.claude/hooks` resolves to | Reads `~/Projects/charter` and points at Crossroads/Slate |
+| `claude-home/hooks/charter-personal.py` | the directory `~/.claude/hooks` resolves to | Reads `~/Projects/charter`, points at Crossroads/Slate, and says the project's taskets are its record (no `MEMORY/WORK` or `PROJECTS.md` entry) |
 | `claude-home/Skills/CharterAdmin/` (`SKILL.md`, `workflows/Migrate.md`, `tools/Survey.help.md`) | the directory `~/.claude/Skills` resolves to | Operates across `~/Projects/*`; `Migrate` calls this repository's installer and survey |
 | `settings.fragment.json` | merged into `~/.claude/settings.json` (`hooks.SessionStart`) | User-level hook |
 | `settings.trial.json` | nothing; used by the trial through `--settings` | Absolute path to this checkout |

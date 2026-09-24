@@ -11,7 +11,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -375,7 +377,18 @@ def check_unit_done(root: Path, cfg: dict, unit_text: str, path: str) -> list[Fi
         out.append(Finding("done", "block", f"evidence anchors do not resolve: {', '.join(k['bad'][:5])}", path=path,
                            override="fix the anchors so they point at commits and lines that exist; a commit a squash or rebase merge "
                                     "removed resolves in CI once the pull-request heads are fetched (.github/workflows/charter.yml)"))
+    if (cfg.get("review") or {}).get("required") and not review_lines(root, lib.section(body, "Evidence")):
+        out.append(Finding("done", "block", "status is done but `## Evidence` has no `review:` line; this project requires an independent review before done", path=path,
+                           override="add `- review: <reviewer and model> — <verdict> — <anchor>` naming where the verdict is (a PR comment URL, a commit, a `$ command` run)"))
     return out
+
+
+REVIEW_RE = re.compile(r"^\s*-?\s*review:\s*(\S.*)$", re.M | re.I)
+
+
+def review_lines(root: Path, evidence: str) -> list[str]:
+    """`review:` lines in `## Evidence` that carry an anchor which resolves."""
+    return [m.group(1) for m in REVIEW_RE.finditer(evidence) if evidence_anchors(root, m.group(1))[0]]
 
 
 def acceptance_items(body: str) -> list[str]:
@@ -405,8 +418,7 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
 
 def unit_probes(text: str) -> list[tuple[str, str]]:
     """(criterion id, command) for each `probe: `cmd`` in a unit's acceptance checklist."""
-    _, _, body = lib.split_frontmatter(text)
-    return [(m.group(1) or f"line {i + 1}", m.group(2).strip()) for i, m in enumerate(PROBE_RE.finditer(lib.acceptance(body)))]
+    return [(ac, cmd) for ac, cmd, _ in _probe_lines(text)]
 
 
 def run_probes(root: Path, text: str, path: str, timeout: int) -> tuple[list[Finding], list[str]]:
@@ -427,6 +439,54 @@ def run_probes(root: Path, text: str, path: str, timeout: int) -> tuple[list[Fin
             out.append(Finding("probe", "block", f"{ac} probe failed: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
                                override="make the probe pass, or reopen the unit"))
     return out, lines
+
+
+def unit_base(root: Path, path: str) -> str | None:
+    """The repository before the unit existed: the parent of the commit that added its file, HEAD
+    when the file is not committed yet, None when that commit has no parent."""
+    r = lib.git(root, "log", "--follow", "--diff-filter=A", "--format=%H", "--", path)
+    added = [l for l in r.stdout.split() if l.strip()]
+    if not added:
+        return lib.git(root, "rev-parse", "--verify", "--quiet", "HEAD").stdout.strip() or None
+    p = lib.git(root, "rev-parse", "--verify", "--quiet", f"{added[-1]}^")
+    return p.stdout.strip() or None
+
+
+def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int) -> list[Finding]:
+    """A probe that already passes before the unit's work does not test it (method.md § Real tests, point 2).
+    Runs each probe in a detached worktree at `unit_base`; a criterion marked `(guard)` protects
+    existing behaviour and is expected to pass there. Untracked dependencies (node_modules, a venv)
+    are absent from the worktree, so a probe that fails there for that reason is not reported."""
+    probes = [(ac, cmd) for ac, cmd, line in _probe_lines(text) if "(guard)" not in line]
+    base = unit_base(root, path) if probes else None
+    if not base:
+        return []
+    tmp = Path(tempfile.mkdtemp(prefix="charter-base-"))
+    wt = tmp / "base"
+    try:
+        r = lib.git(root, "worktree", "add", "--detach", "--quiet", str(wt), base)
+        if r.returncode != 0:
+            return [Finding("error", "warn", f"could not check out {base[:10]} to run {path}'s probes before the change: {r.stderr.strip()[:100]}", path=path)]
+        level = "block" if (cfg.get("probes") or {}).get("base_must_fail") else "warn"
+        out = []
+        for ac, cmd in probes:
+            try:
+                code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout).returncode
+            except subprocess.TimeoutExpired:
+                continue
+            if code == 0:
+                out.append(Finding("probe", level, f"{ac} probe already passes at {base[:10]}, before the unit's work: `{cmd}` does not test the change", path=path,
+                                   override="make the probe exercise the new behaviour, or mark a criterion that guards existing behaviour `(guard)`"))
+        return out
+    finally:
+        lib.git(root, "worktree", "remove", "--force", str(wt))
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _probe_lines(text: str) -> list[tuple[str, str, str]]:
+    """(criterion id, command, whole line) for each probe, so a line's markers can be read."""
+    _, _, body = lib.split_frontmatter(text)
+    return [(m.group(1) or f"line {i + 1}", m.group(2).strip(), m.group(0)) for i, m in enumerate(PROBE_RE.finditer(lib.acceptance(body)))]
 
 
 # ---------------------------------------------------------------- decisions (R1)

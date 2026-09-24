@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.0",
+    "version": "0.4.1",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -47,7 +47,10 @@ DEFAULT_CONFIG = {
     "done_statuses": ["done"],
     "probes": {                   # re-run acceptance probes of units that close in a change set
         "at_commit": False, "in_ci": False, "timeout_s": 120,
+        "base_must_fail": False,  # a probe passing before the unit's work: a warning, or refused when true
     },
+    # done also needs a `review:` evidence line naming an independent verdict (off by default)
+    "review": {"required": False},
     # estimates for the ledger, USD per million tokens; keys are model-id prefixes (the longest match
     # wins), "default" for the rest; cache_write is the 5-minute TTL, cache_write_1h the 1-hour one
     "prices_usd_per_mtok": {

@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "track": "client",
   "owner": "",
   "limits": {"file_lines": 800, "governance_lines": 400, "governance_bytes": 32768},
@@ -8,7 +8,8 @@
   "exempt_from_size": ["*.lock", "*.min.*", "*.svg", "*.json", "*.csv", "*.txt", "*.html"],
   "rails": {"required": false, "keys": ["rail", "roadmap"]},
   "done_statuses": ["done"],
-  "probes": {"at_commit": false, "in_ci": false, "timeout_s": 120},
+  "probes": {"at_commit": false, "in_ci": false, "timeout_s": 120, "base_must_fail": false},
+  "review": {"required": false},
   "prices_usd_per_mtok": {
     "_source": "https://platform.claude.com/docs/en/about-claude/pricing, read 2026-09-11; estimates, update when Anthropic does",
     "default": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75, "cache_write_1h": 6.0},

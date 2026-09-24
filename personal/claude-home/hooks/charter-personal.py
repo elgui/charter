@@ -3,7 +3,8 @@
 
 Adds what only makes sense on Gui's machines: whether the installed package is behind the
 package repository, how many ended sessions wait to be folded into the ledger, and where the
-open decisions can be turned into a Crossroads or Slate page. Prints nothing outside a charter
+open decisions can be turned into a Crossroads or Slate page, and that the project's own taskets are
+the record of its work, not the PAI work memory. Prints nothing outside a charter
 project. Fails silent: it must never delay a session."""
 import json
 import os
@@ -54,6 +55,8 @@ def main() -> int:
                     props.append(f"{d}/{f.stem}")
     if props:
         out.append(f"  waiting on you: {', '.join(props)} (use /crossroads or /slate to decide them; answers go back into the files)")
+    out.append("  system of record: this project's .taskets/ and charter/. Do not write a ~/.claude/MEMORY/WORK entry (ISA, PRD) or a "
+               "PROJECTS.md entry for work here; progress goes in the unit's `## Log`, lessons in a `kind: lesson` decision.")
     print("\n".join(out))
     return 0
 

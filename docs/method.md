@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.0. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Migration: `docs/migration.md`.
+Version 0.4.1. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Migration: `docs/migration.md`.
 
 ## The method on one page
 
@@ -65,7 +65,7 @@ The body carries what upstream PAI's ISA carries and taskets lacked (lane 2 § C
 ```markdown
 ## Acceptance
 - [ ] AC-1: /health returns 200 with `{"ok": true}` — probe: `pytest tests/unit/test_health.py -q`
-- [ ] AC-2: no new file over 800 lines — probe: `charter check --size`
+- [ ] AC-2: (guard) no new file over 800 lines — probe: `charter check --size`
 
 ## Evidence
 - 3f2a9c1 adds the endpoint (app/routers/health.py:12-30)
@@ -129,7 +129,9 @@ What happens when a gate cannot be satisfied:
 A test counts as real for acceptance when:
 
 1. It exercises behaviour through the public surface the criterion names (an HTTP route, a CLI, a function's contract), not the implementation's internals.
-2. It fails without the change. The unit's `## Evidence` records the failing run before and the passing run after, or the probe is a command whose output the criterion predicts.
+2. It fails without the change. The unit's `## Evidence` records the failing run before and the passing run after, or the probe is a command whose output the criterion predicts. Wherever probes run (`probes.at_commit`, `probes.in_ci`, `--probe`), each probe of a closing unit is also run in a worktree at the parent of the commit that added the unit; one that passes there is reported, and refused with `probes.base_must_fail`. A criterion that guards behaviour which already exists is marked `(guard)` and is expected to pass there.
+
+A project that sets `review.required` also needs, before done, a `review:` line under `## Evidence` anchoring an independent verdict, meant to come from a model family other than the one that wrote the code. It proves the verdict is cited, not that it was earned.
 3. It runs in CI from a clean clone with no live credentials. A test that needs a real Stripe or HubSpot key is an end-to-end check that lives outside acceptance (orqueveaux's e2e suite is `xfail` for this reason, `~/Projects/orqueveaux/tests/e2e/test_payment_flow.py:38`).
 
 A test that asserts the implementation's own structure (a mock was called with these arguments, a private attribute holds this value) is not acceptance evidence. It may still exist.

@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.0. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.1. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -79,6 +79,7 @@ version
 - A new version reaches a project by `upgrade` from a checkout of this repository at the new version, on a branch, committed by the owner like any change (the commit touches `.charter/`, which CI checks against `owner`). Nothing pulls automatically. The personal-layer SessionStart hook says when a project is behind. After an upgrade from 0.1.0, `python3 .charter/bin/charter setup` moves the old state out of `.charter/state/`.
 
 - 0.4.0 changes the size gate (the size rule's named exceptions, `limits.governance_bytes`, `governance_files`). `upgrade` never rewrites a project's `charter/config.json`, so an upgraded project takes the new keys from the package defaults: a governance file over 32 KiB becomes frozen for growth on the first commit that grows it. Run `python3 .charter/bin/charter check --all --strict --size` after the upgrade, and name an exception or split the file before the next edit.
+- 0.4.1 runs each probe of a closing unit a second time, before the unit's work, wherever probes run (`docs/gates.md` § Done needs evidence). A probe that already passes there is a warning; `probes.base_must_fail` makes it a refusal. Nothing that passed under 0.4.0 is refused after the upgrade. It also adds `review.required` (off): when set, done needs an anchored `review:` evidence line.
 
 ## What must stay true
 

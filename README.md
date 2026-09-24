@@ -42,4 +42,4 @@ Then commit the result in the project. In another clone of a project that alread
 
 ## Tests
 
-    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails test_review_20260923
+    cd tests && python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails test_review_20260923 test_probe_at_base test_review_required

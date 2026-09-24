@@ -150,7 +150,10 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             else:
                 timeout = int((cfg.get("probes") or {}).get("timeout_s", 120))
                 for p, text in closing:
-                    rep.add(*checks.run_probes(root, text, p, timeout)[0])
+                    found = checks.run_probes(root, text, p, timeout)[0]
+                    rep.add(*found)
+                    if not found:
+                        rep.add(*checks.run_probes_at_base(root, cfg, text, p, timeout))
     if "decisions" in gates:
         for p in paths:
             if p.startswith(".charter/") or p.startswith("charter/decisions/"):
