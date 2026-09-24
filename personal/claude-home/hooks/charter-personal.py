@@ -57,7 +57,13 @@ def main() -> int:
         out.append(f"  waiting on you: {', '.join(props)} (use /crossroads or /slate to decide them; answers go back into the files)")
     out.append("  system of record: this project's .taskets/ and charter/. Do not write a ~/.claude/MEMORY/WORK entry (ISA, PRD) or a "
                "PROJECTS.md entry for work here; progress goes in the unit's `## Log`, lessons in a `kind: lesson` decision.")
-    print("\n".join(out))
+    # plain stdout reaches Claude only; `systemMessage` is what Gui sees (https://code.claude.com/docs/en/hooks)
+    seen = [l.strip() for l in out[1:] if l.strip().startswith(("package ", "waiting on you"))
+            and not l.strip().endswith("is current")]
+    msg = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(out)}}
+    if seen:
+        msg["systemMessage"] = "charter: " + "\n".join(seen)
+    print(json.dumps(msg))
     return 0
 
 

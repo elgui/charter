@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SessionStart. Prints the charter index: version, track, active unit with its
+"""SessionStart. Gives Claude the charter index, and the person a short summary (systemMessage): version, track, active unit with its
 open criteria, active decisions, pending changes, recent gate activity (R5)."""
 import json
 import sys
@@ -77,7 +77,12 @@ def main() -> int:
                     counts[key] = counts.get(key, 0) + 1
             if counts:
                 out.append("Gate activity, last 7 days: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
-        print("\n".join(out))
+        # plain stdout reaches Claude only; `systemMessage` is what the person sees in the transcript
+        # (https://code.claude.com/docs/en/hooks, SessionStart decision control)
+        seen = [out[0]] + [l if len(l) <= 160 else l[:157] + "..." for l in out[1:]
+                           if l.startswith(("charter/config.json", "The charter git hook", "Owner session", "Active unit", "No active unit"))]
+        print(json.dumps({"systemMessage": "\n".join(seen),
+                          "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(out)}}))
         return 0
     except Exception as e:
         print(f"charter session_start error: {e!r}")

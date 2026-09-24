@@ -142,7 +142,7 @@ After the owner's commit:
 | The installed version | `python3 .charter/bin/charter version` | the target version, as in `package/VERSION` |
 | The config reads as written | `python3 .charter/bin/charter config` | `track <track>, opt-ins: none`, exit 0. A `problem:` line names a key, type or track the gates cannot read; the owner corrects it (`cmd_config` in `package/.charter/bin/charter`) |
 | The files match the package | `python3 $M status $P` | `installed: <version>`, `locally modified: 0; missing: 0; differ from package: 0`, and `git core.hooksPath: .charter/githooks` (or `unset` where a framework runs the gate; `bin/charter-pkg:360-371`) |
-| The session hooks run | start a new Claude Code session in `$P`, then `python3 .charter/bin/charter log` | the banner prints the version, track and opt-ins; the log has entries. A wrong hook path shows only as a non-blocking error on first run (`docs/gates.md` § Claude Code hooks) |
+| The session hooks run | start a new Claude Code session in `$P`, then `python3 .charter/bin/charter log` | the transcript shows the summary line `charter <version>, track <track>, opt-ins: ...` (a `systemMessage`; the full index goes to Claude's context only, https://code.claude.com/docs/en/hooks); the log has entries. A wrong hook path shows only as a non-blocking error on first run (`docs/gates.md` § Claude Code hooks) |
 | The gate runs in a fresh clone | `git clone $P <scratch dir>/clone && cd <scratch dir>/clone && python3 .charter/bin/charter check --all --strict` | `0 blocking` (`docs/migration.md` § What to check after a migration) |
 
 The owner's side of a migration (branch protection, telling collaborators, the tele-claude dashboard) is listed in `docs/migration.md` § What to check after a migration.

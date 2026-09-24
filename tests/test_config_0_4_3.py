@@ -1,6 +1,6 @@
 """Charter 0.4.3, from the outside review of 2026-09-24: a misspelled key, a value of the wrong type or an
 unknown track in charter/config.json switched a gate off in silence (`config_from` merged any key), the
-installer's default track contradicted the survey's, and the in-session hooks did not see NotebookEdit.
+installer's default track contradicted the survey's, the in-session hooks did not see NotebookEdit, and the SessionStart banner reached Claude but not the person.
 Every test here fails on 0.4.2 except `test_a_notebook_in_scope_is_allowed`, which guards the behaviour kept."""
 import json
 import sys
@@ -89,6 +89,30 @@ class ConfigAtCommit(unittest.TestCase):
         self.assertIn("track client, opt-ins: none", so)
         self.assertIn("unknown key `reveiw`", so)
         self.assertIn("Commits and CI are refused", so)
+
+
+class BannerReachesThePerson(unittest.TestCase):
+    """SessionStart plain stdout is context for Claude only; the person saw no banner (skill-delivery, 2026-09-24).
+    `systemMessage` is shown in the transcript (https://code.claude.com/docs/en/hooks, SessionStart)."""
+
+    def setUp(self):
+        self.root = make_project()
+
+    def tearDown(self):
+        cleanup(self.root)
+
+    def test_the_person_gets_a_summary_and_claude_the_index(self):
+        set_config(self.root, reveiw={"required": True})
+        rc, out, so, se = run_hook(self.root, "session_start", {})
+        self.assertEqual(rc, 0, se)
+        seen = out.get("systemMessage", "")
+        self.assertTrue(seen.startswith("charter "), so)
+        self.assertIn("track client, opt-ins: none", seen)
+        self.assertIn("unknown key `reveiw`", seen)
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SessionStart")
+        self.assertIn("Active decisions", ctx)   # the full index stays with Claude
+        self.assertNotIn("Active decisions", seen)
 
 
 class TrackIsExplicit(unittest.TestCase):

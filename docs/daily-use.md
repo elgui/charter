@@ -30,13 +30,13 @@ The owner's part runs beside it: commit what only the owner may, approve or refu
 
 ## 1. Open a session
 
-In Claude Code, the SessionStart hook prints one line first (`package/.charter/hooks/session_start.py`):
+In Claude Code, the SessionStart hook gives Claude the full charter index: rules, active unit, decisions, proposals, gate activity. It shows you a short summary in the transcript, starting with this line (`package/.charter/hooks/session_start.py`):
 
 ```
 charter 0.4.3, track prototype, opt-ins: none. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help
 ```
 
-Read it before anything else:
+Claude Code puts a SessionStart hook's plain output into Claude's context without showing it; only its `systemMessage` appears in the transcript (https://code.claude.com/docs/en/hooks, SessionStart). Before 0.4.3 the hook printed plain output only, so a project on 0.4.2 or older shows you nothing. Ask the agent "what did the charter banner say?", or run `python3 .charter/bin/charter config`. The summary, line by line:
 
 - **The track and opt-ins** are the settings every gate reads. `python3 .charter/bin/charter config` prints the same line from a terminal or from another agent (`cmd_config` in `package/.charter/bin/charter`).
 - **A line starting `charter/config.json:`** means the config has a key, type or track the gates cannot read. Commits and CI are refused until the owner corrects it (`docs/gates.md` § Config). The agent cannot fix it: the file is the owner's.
@@ -146,4 +146,4 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 
 ## Moving to a new charter version
 
-The personal-layer banner says `package X available, Y installed` when a project is behind (`personal/claude-home/hooks/charter-personal.py`). Ask the agent to upgrade; it follows `docs/install.md` § Upgrade and stops with the files staged for your commit.
+The personal-layer hook shows you `charter: package X available, Y installed` in the transcript when a project is behind, and names the proposals waiting on you (`personal/claude-home/hooks/charter-personal.py`). Ask the agent to upgrade; it follows `docs/install.md` § Upgrade and stops with the files staged for your commit.
