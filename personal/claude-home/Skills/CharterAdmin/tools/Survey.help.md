@@ -6,7 +6,7 @@ The survey lives in the charter repository (`bin/charter_survey.py`, rendered by
 
 | Option | Effect |
 |---|---|
-| `--track client\|prototype` | The track the rehearsal installs and the plan assumes (default `prototype`) |
+| `--track client\|prototype` | Required. The track the rehearsal installs and the plan assumes |
 | `--out DIR` | Write `survey.json`, `survey.md` and `plan.md` into DIR; refused inside the project |
 | `--plan` | Print the plan instead of the report |
 | `--json` | Print the facts as JSON |

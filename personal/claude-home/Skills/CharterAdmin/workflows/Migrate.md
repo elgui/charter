@@ -65,7 +65,7 @@ The report's last line gives the kept clone's path; `TMPDIR` keeps it in the scr
 Check the preconditions again rather than assume them:
 
 ```bash
-python3 $M survey <project> --no-rehearse --offline --out $OUT/pre
+python3 $M survey <project> --track <track> --no-rehearse --offline --out $OUT/pre
 ```
 
 - No sessions in the tree, and no uncommitted files.
@@ -76,7 +76,7 @@ Then:
 1. `git -C <project> fetch origin`, then create the branch in its own worktree so the checkout, and anyone's uncommitted work in it, is never touched: `git -C <project> worktree add -b charter/install <scratchpad>/<name>-install origin/<main line>`. A change the plan merges first, such as `paths-ignore`, gets its own branch and worktree the same way.
 2. `git -C <project> branch --unset-upstream charter/install`. A branch created from `origin/<main line>` tracks it, and under some `push.default` settings a bare `git push` would push it onto the main line.
 3. Run the plan's steps in order in the worktree: make the change, stage it by name, commit, run the check. A step that touches owner-only paths stops with its files staged: hand the owner the commit command (`docs/install.md` step 8 in the charter repository) and continue after their commit. Never set `CHARTER_OWNER` or pass `--no-verify` on the real tree; only the throwaway rehearsal clone of phase 4 uses it.
-4. After each step that changes a measured fact (the install, the config, a triage batch), run `python3 $M survey <project> --ref charter/install --no-rehearse --offline --out $OUT/after-<n>`. `--ref` reads the branch, never the checkout.
+4. After each step that changes a measured fact (the install, the config, a triage batch), run `python3 $M survey <project> --track <track> --ref charter/install --no-rehearse --offline --out $OUT/after-<n>`. `--ref` reads the branch, never the checkout.
 5. Draft the pull-request descriptions in the scratchpad and check them with `python3 .charter/bin/charter anchors --pr <file>` from the worktree.
 6. `git -C <project> worktree remove <worktree>`; the branches stay. Stop before the pull request. The owner pushes, opens it, merges it and deploys.
 

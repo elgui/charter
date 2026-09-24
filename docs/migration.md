@@ -2,7 +2,7 @@
 
 How a project adopts the method, from five starting points: each a sequence of steps with its rollback, then what the owner checks after a migration. The install itself, with its preconditions, the owner's commit, per-clone setup and upgrades, is `docs/install.md`; this page starts where a step says "install". Facts about a particular project do not belong here: the survey measures them. Every step is a commit on a branch; the rollback of any step is `git revert` of that commit unless stated otherwise.
 
-An existing project (paths C to E) starts with the survey (`docs/install.md` step 1), which writes a generated `plan.md` whose steps each name their check and rollback. The `Migrate` workflow of the personal `CharterAdmin` skill drives it end to end. Design and the leCRM rehearsal: `docs/design/migration-workflow.md`.
+An existing project (paths C to E) starts with the survey (`docs/install.md` step 2), which writes a generated `plan.md` whose steps each name their check and rollback. The `Migrate` workflow of the personal `CharterAdmin` skill drives it end to end. Design and the leCRM rehearsal: `docs/design/migration-workflow.md`.
 
 ## Path A: a new client project
 

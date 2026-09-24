@@ -50,7 +50,7 @@ Each row is a gate running today (`docs/gates.md` gives each gate's exact trigge
 | Cite a decision that has been retired, or break a decision's `check:` | Refused, and the message names the decision that replaced it (`docs/gates.md:77-78`) |
 | Grow a file past its size limit (800 lines for code; 400 lines or 32 KiB for governance files such as `CLAUDE.md`) | Refused. Shrinking is always allowed. The owner can open a split unit or name a budgeted exception (`docs/gates.md:60-63`) |
 | Close a unit whose probes already passed before the work started | Where probes run (at commit or in CI, when the project turns them on), flagged, because such a probe tests nothing; refused with `probes.base_must_fail` (`docs/gates.md:69-70`) |
-| Publish a progress report with an unanchored claim | `charter synth` will not write it (`package/.charter/bin/charter:416`), and on the client track CI fails `charter anchors` on reports (`docs/gates.md:98-103`) |
+| Publish a progress report with an unanchored claim | `charter synth` will not write it (`package/.charter/bin/charter:421`), and on the client track CI fails `charter anchors` on reports (`docs/gates.md:98-103`) |
 | Edit or commit the scope, the config, the tooling or the CI workflow | Refused to an agent; the owner makes that change (`docs/gates.md:19-37`) |
 
 This is the exact output when a tasket is committed as `done` with an unchecked box and "it works" as its evidence (in the scratchpad: a scratch repository, 2026-09-24):
@@ -82,12 +82,12 @@ Four projects on this machine run charter: tcv2, leCRM, karaokay and skill-deliv
 
 ## Getting started
 
-To install charter on a project, ask an agent to do it; it follows **`docs/install.md`**, the one step-by-step procedure. The agent checks the preconditions and, for a project that already has code, runs a read-only survey first. It then chooses the track with you, does a dry run and installs on a branch. It stops with the files staged, because the install commit touches files that are yours to commit. Each other clone then runs `python3 .charter/bin/charter setup` once.
+To install charter on a project, ask an agent to do it; it follows **`docs/install.md`**, the one step-by-step procedure. The agent checks the preconditions and chooses the track with you. For a project that already has code, it runs a read-only survey first. It then does a dry run and installs on a branch. It stops with the files staged, because the install commit touches files that are yours to commit. Each other clone then runs `python3 .charter/bin/charter setup` once. After that, the working day (units, probes, evidence, reports, and what only you do) is **`docs/daily-use.md`**.
 
-A look first, changing nothing:
+A look first, changing nothing, from a checkout of this repository wherever it sits (`docs/install.md` § Step 0):
 
-    python3 ~/Projects/charter/bin/charter-pkg survey  <project> --out <dir>                  # a project with history: read-only
-    python3 ~/Projects/charter/bin/charter-pkg install <project> --track prototype --dry-run  # a new project
+    python3 bin/charter-pkg survey  <project> --track prototype --out <dir>  # a project with history: read-only
+    python3 bin/charter-pkg install <project> --track prototype --dry-run    # a new project
 
 ## What is in here
 
@@ -104,6 +104,7 @@ Three things live in this one repository. Each goes to a different place and is 
 | Read this | For |
 |---|---|
 | `docs/install.md` | **Installing, setting up, upgrading or removing charter on a project.** The only procedure; other documents point to it |
+| `docs/daily-use.md` | **Working on a project once charter is installed**: the daily loop for the agent, what only the owner does, the weekly look at the gates and opt-ins, and a glossary |
 | `docs/method.md` | The method: the rules R1 to R12, real tests, evidence classes, the synthesis, the two tracks, cost, the seams not built |
 | `docs/gates.md` | Every gate: what it checks, where it blocks, its override, its limits |
 | `docs/package.md` | Layout, commands and flags, what lands in a project, and the upgrade notes for each version |
