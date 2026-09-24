@@ -17,4 +17,6 @@ The written charter of this project. Machines check it; people own it.
 
 Units of work live in `.taskets/` (see `templates/unit.md`). Tooling lives in `.charter/`. The gate log and session records live in the git directory (`.git/charter/`), shared by worktrees and never committed.
 
-Owner-only: `scope.md`, `config.json`, `legacy-taskets.txt`, the approval fields of change requests, the status of existing decisions, `kind: split` units, and `.charter/`. An agent's Edit or Write on them is refused unless Claude Code was started with `CHARTER_OWNER=1`.
+Each clone activates the git hook once with `python3 .charter/bin/charter setup`; git does not clone it.
+
+Owner-only: `scope.md`, `rails.md`, `config.json`, adding an id to `legacy-taskets.txt`, the approval fields of change requests, the status of existing decisions and the `check:` and `binds:` of active ones, opening or widening a `kind: split` unit, `.charter/`, `.claude/settings.json`, `.claude/settings.local.json` and `.github/workflows/charter.yml`. The full list is in `.claude/rules/charter.md`. An agent's Edit or Write on them is refused unless Claude Code was started with `CHARTER_OWNER=1`, and so is a commit of them made from inside Claude Code. The owner commits them; an agent stages them and says so.

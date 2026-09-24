@@ -49,8 +49,8 @@ User: "What would it take to put charter on orqueveaux?"
 **Example 3: Upgrade a project already on charter**
 ```
 User: "Upgrade charter on leCRM"
-→ Follows "Install or upgrade" below: the dry run, then the upgrade on a branch
-→ Returns the diff and the commit to review
+→ Follows "Install or upgrade" below: the dry run, then the upgrade on a branch, staged
+→ Returns the diff and the commit command for the owner
 ```
 
 ## Which projects, which version
@@ -60,14 +60,7 @@ User: "Upgrade charter on leCRM"
 
 ## Install or upgrade
 
-A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
-
-    python3 ~/Projects/charter/bin/charter-pkg install <project> --track client --dry-run   # read it
-    python3 ~/Projects/charter/bin/charter-pkg install <project> --track client
-    python3 ~/Projects/charter/bin/charter-pkg upgrade <project> --dry-run                  # shows the diff
-    python3 ~/Projects/charter/bin/charter-pkg upgrade <project>
-
-Commit the result in the project on a branch. Never upgrade a project with a dirty tree.
+Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop with the files staged. The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
 ## Ledger and cost per accepted result
 

@@ -15,7 +15,7 @@ Running the **Migrate** workflow from the **CharterAdmin** skill...
 2. **Nothing writes to the project before the owner's go-ahead.** The survey only reads. Until phase 5 there is no install, no branch, no `git fetch`, and no `charter anchors --root <project>`, because that command appends to the project's gate log.
 3. **Rehearse before acting.** The survey rehearses the install; phase 4 rehearses the rest of the plan.
 4. **One step, one commit, one check.** Every step lands on the branch `charter/install` as its own commit, is staged by name with the plan's `git add` list (never `git add -A`), and is followed by its check. A red check stops the migration: revert that commit and report.
-5. **The owner's acts stay the owner's.** These are the install and config commits made with `CHARTER_OWNER=1`, telling collaborators, pushing, opening or merging the pull request, and anything that deploys. An explicit answer in the session or on the Slate is the owner's word; nothing else is.
+5. **The owner's acts stay the owner's.** These are the commits that touch owner-only paths (the install, the config, `.claude/settings.json`), which the owner makes; telling collaborators; pushing, opening or merging the pull request, and anything that deploys. An explicit answer in the session or on the Slate is the owner's word; nothing else is.
 6. **No figures in a repository.** `charter/scope.md` names deliverables, paths and assumptions, never a price or a rate.
 
 ## Phase 1: survey
@@ -75,7 +75,7 @@ Then:
 
 1. `git -C <project> fetch origin`, then create the branch in its own worktree so the checkout, and anyone's uncommitted work in it, is never touched: `git -C <project> worktree add -b charter/install <scratchpad>/<name>-install origin/<main line>`. A change the plan merges first, such as `paths-ignore`, gets its own branch and worktree the same way.
 2. `git -C <project> branch --unset-upstream charter/install`. A branch created from `origin/<main line>` tracks it, and under some `push.default` settings a bare `git push` would push it onto the main line.
-3. Run the plan's steps in order in the worktree: make the change, stage it by name, commit, run the check. Make only the owner-only commits the owner approved, and make them with `CHARTER_OWNER=1 git commit`.
+3. Run the plan's steps in order in the worktree: make the change, stage it by name, commit, run the check. A step that touches owner-only paths stops with its files staged: hand the owner the commit command (`docs/install.md` step 8 in the charter repository) and continue after their commit. Never set `CHARTER_OWNER` or pass `--no-verify` on the real tree; only the throwaway rehearsal clone of phase 4 uses it.
 4. After each step that changes a measured fact (the install, the config, a triage batch), run `python3 $M survey <project> --ref charter/install --no-rehearse --offline --out $OUT/after-<n>`. `--ref` reads the branch, never the checkout.
 5. Draft the pull-request descriptions in the scratchpad and check them with `python3 .charter/bin/charter anchors --pr <file>` from the worktree.
 6. `git -C <project> worktree remove <worktree>`; the branches stay. Stop before the pull request. The owner pushes, opens it, merges it and deploys.

@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.1. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.2. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -13,12 +13,12 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
 | `package/charter/` | `README.md`, `config.json` (seeded once), `templates/` (scope, decision, change, unit) |
 | `package/AGENTS.md` | The section appended to a project's `AGENTS.md` for Codex and pi |
 | `package/.gitignore.fragment` | The line appended to a project's `.gitignore` (`.charter/state/`) |
-| `bin/charter-pkg` | Installer: `install`, `upgrade`, `uninstall`, `status`; `--dry-run`, `--force`, `--track`, `--replace-hooks`. And `survey`, which measures a project before a migration |
+| `bin/charter-pkg` | Installer: `install`, `upgrade`, `uninstall`, `status`, and `survey`, which measures a project before a migration. Flags under [Commands](#commands); the procedure is `docs/install.md` |
 | `bin/charter_survey.py`, `bin/charter_plan.py` | The survey: the facts, read-only on the project, and the report and plan rendered from them (`docs/design/migration-workflow.md`) |
 | `bin/make-testbed`, `bin/trial-run` | Trial tooling |
 | `personal/` | The personal layer, not installed by the installer (`personal/README.md`) |
-| `tests/` | `python3 -B -m unittest -q test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration` from `tests/`; `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found, `test_migration.py` the survey and the defects the 2026-09-13 leCRM rehearsal found |
-| `docs/` | `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `design/`, `trials/`, `review/`, `report-2026-09-11.md`, `session-log.md` |
+| `tests/` | The command is in `AGENTS.md` at the repository root. `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found, `test_migration.py` the survey and the defects the 2026-09-13 leCRM rehearsal found; the others are named after the feature or review they test |
+| `docs/` | Reference: `install.md`, `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `design/`. History: `trials/`, `review/`, `briefs/`, `report-2026-09-11.md`, `session-log.md` |
 
 ## What lands in a project
 
@@ -37,20 +37,22 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
   .gitignore           `.charter/state/` appended (where 0.1.0 kept its state; `charter setup` moves it)
 ```
 
-Owned files (22, listed in `bin/charter-pkg` `OWNED`) are recorded with their SHA-256 in `.charter/manifest.json`; CI refuses a file under `.charter/` that differs from it. Seeded files (`charter/config.json`) are created once and never touched again. `charter/legacy-taskets.txt` is written once, listing the taskets found without an acceptance section. Project files (`charter/scope.md`, decisions, changes, ledger, taskets) are never written by the installer.
+Owned files (24, listed in `bin/charter-pkg` `OWNED`) are recorded with their SHA-256 in `.charter/manifest.json`; CI refuses a file under `.charter/` that differs from it. Seeded files (`charter/config.json`) are created once and never touched again. `charter/legacy-taskets.txt` is written once, listing the taskets found without an acceptance section. Project files (`charter/scope.md`, decisions, changes, ledger, taskets) are never written by the installer.
 
 ## Commands
 
-Installer, run from this repository:
+Installer, run from this repository (the step-by-step procedure, with expected output, is `docs/install.md`):
 
 ```
-python3 ~/Projects/charter/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--replace-hooks]
-python3 ~/Projects/charter/bin/charter-pkg upgrade   <project> [--dry-run] [--force]
+python3 ~/Projects/charter/bin/charter-pkg install   <project> --track client|prototype [--dry-run] [--force] [--show-diff] [--replace-hooks]
+python3 ~/Projects/charter/bin/charter-pkg upgrade   <project> [--dry-run] [--force] [--replace-hooks]
 python3 ~/Projects/charter/bin/charter-pkg uninstall <project> [--dry-run] [--force] [--purge-state]
 python3 ~/Projects/charter/bin/charter-pkg status    <project>
 python3 ~/Projects/charter/bin/charter-pkg survey    <project> [--track T] [--out DIR | --plan | --json] [--test-cmd CMD]
                                                      [--ref BRANCH] [--keep-clone] [--no-rehearse] [--offline]
 ```
+
+`--track` is read only when `charter/config.json` is seeded; without it the seed keeps the package default, `client`. `--show-diff` prints the diff of each owned file an `install` would change (`upgrade` always prints it). `--force` replaces owned files the project modified. The parser gives every subcommand but `survey` the same flags (`main` in `bin/charter-pkg`); those not shown above have no effect there.
 
 In a project (`python3 .charter/bin/charter ...`):
 
@@ -76,10 +78,15 @@ version
 - `install` names every path it wrote that the project's `.gitignore` matches, because a commit will not carry it.
 - `upgrade` prints a unified diff for every owned file that would change, keeps any owned file the project modified locally (unless `--force`), rewrites the manifest and the version, and re-merges the hook entries (entries whose command contains `/.charter/hooks/` are replaced; other hooks are kept).
 - `uninstall` removes owned files whose hash matches the manifest, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`; keeps project files, and the state in the git directory and in `.charter/state/` unless `--purge-state`.
-- A new version reaches a project by `upgrade` from a checkout of this repository at the new version, on a branch, committed by the owner like any change (the commit touches `.charter/`, which CI checks against `owner`). Nothing pulls automatically. The personal-layer SessionStart hook says when a project is behind. After an upgrade from 0.1.0, `python3 .charter/bin/charter setup` moves the old state out of `.charter/state/`.
+- A new version reaches a project by `upgrade` from a checkout of this repository at the new version, on a branch, committed by the owner (the commit touches `.charter/`, which CI checks against `owner`). Nothing pulls automatically. The procedure is `docs/install.md` § Upgrade; the notes below say what each version asks of a project.
 
+Upgrade notes, by version:
+
+- From 0.1.0: the upgrade also writes `charter/legacy-taskets.txt`; then run `python3 .charter/bin/charter setup` to move the gate log and session records out of `.charter/state/`. A 0.1.0 `charter/config.json` keeps working: its flat price table becomes the `default` row, and the package's per-model rows apply to the models it does not name.
+- From 0.2.0: ledger records folded earlier carry no subagent usage, so the synthesis prints the totals over them as lower bounds. No step is needed.
 - 0.4.0 changes the size gate (the size rule's named exceptions, `limits.governance_bytes`, `governance_files`). `upgrade` never rewrites a project's `charter/config.json`, so an upgraded project takes the new keys from the package defaults: a governance file over 32 KiB becomes frozen for growth on the first commit that grows it. Run `python3 .charter/bin/charter check --all --strict --size` after the upgrade, and name an exception or split the file before the next edit.
 - 0.4.1 runs each probe of a closing unit a second time, before the unit's work, wherever probes run (`docs/gates.md` § Done needs evidence). A probe that already passes there is a warning; `probes.base_must_fail` makes it a refusal. Nothing that passed under 0.4.0 is refused after the upgrade. It also adds `review.required` (off): when set, done needs an anchored `review:` evidence line.
+- 0.4.2 changes documentation only: `charter/README.md` lists every owner-only path and says each clone runs `charter setup`. No gate changes and no step is needed.
 
 ## What must stay true
 
