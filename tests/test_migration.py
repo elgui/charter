@@ -476,3 +476,35 @@ class WorkflowTriggers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SurveyOnAnotherMachine(unittest.TestCase):
+    """The survey's report cited a file under the owner's home directory and its plan named the installer
+    at `~/Projects/charter`, so on any other machine the report failed its own anchoring check and the survey
+    exited 3 (outside review, 2026-09-24). Runs the survey with an empty HOME, from wherever this checkout is."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_project(with_charter=False)
+        cls.home = Path(tempfile.mkdtemp(prefix="charter-home-"))
+        env = dict(os.environ, HOME=str(cls.home))
+        run = lambda *a: subprocess.run([sys.executable, "-B", str(INSTALLER), "survey", str(cls.root), "--offline",
+                                         "--no-rehearse", *a], capture_output=True, text=True, env=env)
+        cls.report, cls.plan = run(), run("--plan")
+
+    @classmethod
+    def tearDownClass(cls):
+        cleanup(cls.root)
+        cleanup(cls.home)
+
+    def test_report_and_plan_pass_their_anchoring_check(self):
+        self.assertEqual(self.report.returncode, 0, self.report.stderr)
+        self.assertEqual(self.plan.returncode, 0, self.plan.stderr)
+
+    def test_nothing_points_at_the_owners_machine(self):
+        for out in (self.report.stdout, self.plan.stdout):
+            self.assertNotIn("tele-claude", out)
+            self.assertNotIn("~/Projects/charter", out)
+
+    def test_the_plan_names_the_installer_that_ran(self):
+        self.assertIn(str(INSTALLER), self.plan.stdout)

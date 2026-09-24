@@ -8,6 +8,7 @@ owner decision, never decided here.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import checks
 
@@ -78,7 +79,7 @@ def report(s: dict) -> str:
               src("ls .taskets/*.md")),
           row("Listed as legacy by the installer", t["legacy_at_install"], src(f"charter-pkg install <clone> --dry-run")),
           row("Status outside the engines' vocabulary", lst(f"{i['path']} ({i['status'] or 'empty'})" for i in items if i["unknown_status"]),
-              "~/Projects/tele-claude/services/project_tasket_reader.py"),
+              src(f"git show {ref}:.taskets/<id>.md")),
           row("Frontmatter comment on the value line", lst(f"{i['path']} ({', '.join(i['inline_comments'])})" for i in items if i["inline_comments"]),
               src(f"git show {ref}:.taskets/<id>.md")),
           row("No `id:` key", sum(1 for i in items if i["no_id"]), src(f"git show {ref}:.taskets/<id>.md")),
@@ -223,7 +224,9 @@ def report(s: dict) -> str:
 # ---------------------------------------------------------------- plan
 
 OPINION, END = "<!-- charter: opinion -->", "<!-- charter: /opinion -->"
-TOOL = "python3 ~/Projects/charter/bin/charter-pkg"
+# the installer that is running, wherever this checkout sits; `~/` when it is under the home directory
+_PKG = Path(__file__).resolve().parent / "charter-pkg"
+TOOL = "python3 " + (f"~/{_PKG.relative_to(Path.home())}" if _PKG.is_relative_to(Path.home()) else str(_PKG))
 CLI = "python3 .charter/bin/charter"
 
 

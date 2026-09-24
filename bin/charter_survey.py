@@ -25,7 +25,7 @@ import checks
 
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
-# The statuses the engines accept (~/Projects/tele-claude/services/project_tasket_reader.py, VALID_STATUSES).
+# The statuses the engines accept (VALID_STATUSES in tele-claude's services/project_tasket_reader.py).
 ENGINE_STATUSES = ("now", "next", "later", "blocked", "done", "deleted", "superseded", "parked", "skipped", "realized", "deferred")
 # Headings other tooling gives the acceptance checklist and the package does not read (it reads lib.ACCEPTANCE_HEADINGS).
 OTHER_ACCEPTANCE = ("Definition of Done", "Success Criteria", "Exit Criteria", "Completion Criteria")
