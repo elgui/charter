@@ -36,7 +36,7 @@ Everything else is documentation, in two kinds:
 
 Then commit the result in the project. In another clone of a project that already has the package: `python3 .charter/bin/charter setup` once (it installs the git hook, which git does not clone).
 
-**The personal layer, on this machine.** Done once per machine: `personal/README.md`, option B (two lines in the PAI symlink manifest, then `~/.claude/rebuild-symlinks.sh`, plus the `SessionStart` entry from `personal/settings.fragment.json` in `~/.claude/settings.json`). On Gui's main machine the symlinks are in place; the `SessionStart` entry is not registered (checked 2026-09-24), so the skill works and the hook never runs.
+**The personal layer, on this machine.** Done once per machine: `personal/README.md`, option B (two lines in the PAI symlink manifest, then `~/.claude/rebuild-symlinks.sh`, plus the `SessionStart` entry from `personal/settings.fragment.json` in `~/.claude/settings.json`). On Gui's main machine all three are in place (the hook registered 2026-09-24).
 
 **Changing the method.** Edit `package/`, run the tests, bump `package/VERSION`, commit here, then `charter-pkg upgrade` each project and commit there (`docs/migration.md`, last section).
 
