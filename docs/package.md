@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.4. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.5. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -69,6 +69,7 @@ log [--days N] [--verbose]
 setup [--replace-hooks]
 config
 next [--limit N]
+handover [-m MESSAGE]
 version
 ```
 
@@ -77,7 +78,7 @@ version
 - `package/VERSION` is the package version; `charter/VERSION` in a project records what is installed; `.charter/manifest.json` records the hashes.
 - `install` reconciles on every run: missing owned files, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`. On a project where all of that already holds it changes nothing. Because `.charter/manifest.json` is tracked, a fresh clone looks installed; running `install` there, or `python3 .charter/bin/charter setup` without this repository, sets the hook path the clone lacks.
 - `core.hooksPath` replaces the clone's hook directory, so `install` and `setup` leave it alone when the project already runs git hooks: an executable non-sample file in the hook directory, or a tracked `lefthook.yml`, `.pre-commit-config.yaml`, `.husky/pre-commit` or husky entry in `package.json`. They print what they kept and how to run `charter check --staged` from that framework (`package/.charter/githooks/README.md`); `--replace-hooks` overrides. A framework file that already runs the gate counts as wired, for them and for the SessionStart banner.
-- `install` names every path it wrote that the project's `.gitignore` matches, because a commit will not carry it (`bin/charter-pkg:259`).
+- `install` names every path it wrote that the project's `.gitignore` matches, because a commit will not carry it (`bin/charter-pkg:282`).
 - `upgrade` prints a unified diff for every owned file that would change, keeps any owned file the project modified locally (unless `--force`), rewrites the manifest and the version, and re-merges the hook entries (entries whose command contains `/.charter/hooks/` are replaced; other hooks are kept; `do_install` and `merge_settings` in `bin/charter-pkg`).
 - `uninstall` removes owned files whose hash matches the manifest, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`; keeps project files, and the state in the git directory and in `.charter/state/` unless `--purge-state`.
 - A new version reaches a project by `upgrade` from a checkout of this repository at the new version, on a branch, committed by the owner (the commit touches `.charter/`, which CI checks against `owner`). Nothing pulls automatically. The procedure is `docs/install.md` § Upgrade; the notes below say what each version asks of a project.
@@ -91,6 +92,7 @@ Upgrade notes, by version:
 - 0.4.2 changes documentation only: `charter/README.md` lists every owner-only path and says each clone runs `charter setup`. No gate changes and no step is needed (cbb55fe).
 - 0.4.3 refuses a `charter/config.json` the gates cannot read as written: an unknown key, a value of the wrong type, a track other than `client` or `prototype`, or a file that is not JSON (`docs/gates.md` § Config). A config that 0.4.2 accepted with a typo in it is refused at the first commit after the upgrade. **Before committing the upgrade, run `python3 .charter/bin/charter config`**: it must print no `problem:` line, and the owner corrects any it prints in the same commit. The in-session hooks now also run on NotebookEdit (path gates only), and the banner and every `charter check` line name the opt-ins that are on. The installer requires `--track` on a first install and on `survey`. The SessionStart hook now shows the person a summary (version, track, opt-ins, config problems, git hook state, active unit) as a `systemMessage`; before, its whole output went to Claude's context and the person saw nothing (https://code.claude.com/docs/en/hooks, SessionStart).
 - 0.4.4 adds `charter next`, which answers "what comes next" from the project's own files: the active unit, the open rails and the units on them in the road's order, units off the road, what waits on the owner, and the gate log over 7 days. It writes nothing, not even the gate log, so any agent or tool can run it (`cmd_next` in `package/.charter/bin/charter`). The synthesis lists units the done gate never judged under **Done before charter** instead of "Done but not accepted". These are units done before the commit that added `charter/VERSION` and not reopened since, and legacy units without `## Acceptance`. In skill-delivery that moved 17 units (`$ python3 package/.charter/bin/charter --root ~/Projects/skill-delivery synth`, 2026-09-24). The perimeter gate ignores files that git ignores and does not track, such as a tool's local journal (`lib.ignored`); a tracked file is judged as before. A path in a unit's evidence that this user may not read no longer crashes the synthesis: on 2026-09-24, leCRM's crashed on a path under `/root` with 0.3.0 and 0.4.3 alike. No gate is added and no step is needed.
+- 0.4.5 changes how the owner's commit is handed over. `install`, `upgrade` and `uninstall` stage what they wrote or removed, by name, and end with one command for the owner, `git -C <project> commit -m 'charter <version>' -- <paths>`, in the form typed after `!` in a Claude Code prompt and in the form for the owner's own terminal (`stage_and_hand_over` in `bin/charter-pkg`, `lib.handover`). The paths after `--` commit exactly those files, so untracked or other staged work stays out (https://git-scm.com/docs/git-commit#Documentation/git-commit.txt---only). `charter handover` prints the same block from the index. The gate's refusal of an owner-only commit now says to leave it staged and run `charter handover`, where it used to suggest starting Claude Code with `CHARTER_OWNER=1` (`OWNER_COMMIT_OVERRIDE` in `package/.charter/checks.py`). Motivated by upgrade reports of 2026-09-25 that gave the owner a count of files, no command, and that suggestion (`tests/test_handover_0_4_5.py`). No gate changes and no step is needed; the upgrade to 0.4.5 is itself handed over this way.
 
 ## What must stay true
 

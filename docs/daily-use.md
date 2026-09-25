@@ -105,7 +105,7 @@ To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` 
 2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
 4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
-5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:558`).
+5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:559`).
 
 A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
@@ -128,7 +128,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 
 | When | What | How |
 |---|---|---|
-| The agent staged an owner-only file (install, upgrade, config) | Commit it | `git commit` from your own terminal, or `CHARTER_OWNER=1 git commit` from a terminal inside Claude Code (`docs/install.md` step 8) |
+| The agent staged an owner-only file (install, upgrade, config) | Commit it | Paste the command the agent handed over, after `!` in the Claude Code prompt; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
 | A change request is `proposed` | Approve it, or refuse it | Set `status: approved`, `approved_by:` and `approved_on:` in `charter/changes/<id>.md`; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
 | A decision is superseded | Retire the old one | Set its `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |

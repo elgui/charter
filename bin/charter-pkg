@@ -70,7 +70,7 @@ class Plan:
         self.dry = dry
         self.steps: list[str] = []
         self.changes = 0
-        self.written: list[Path] = []
+        self.written: list[Path] = []   # written or removed: what the owner's commit carries
 
     def say(self, s: str, change: bool = True) -> None:
         self.steps.append(s)
@@ -87,6 +87,27 @@ class Plan:
         dest.write_bytes(data)
         if mode_exec:
             dest.chmod(dest.stat().st_mode | 0o111)
+
+
+def stage_and_hand_over(project: Path, plan: Plan, message: str, skip: set[str] = frozenset()) -> None:
+    """Stage what the run wrote or removed, by name, and print the owner's commit command.
+    Staging is the agent's part; the commit touches owner-only paths, so it is the owner's."""
+    if plan.dry or not plan.written:
+        return
+    if subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode != 0:
+        return
+    rels = sorted({p.relative_to(project).as_posix() for p in plan.written if p.is_relative_to(project)} - set(skip))
+    tracked = set(subprocess.run(["git", "-C", str(project), "ls-files", "-z", "--", *rels],
+                                 capture_output=True, text=True).stdout.split("\0")) if rels else set()
+    rels = [r for r in rels if (project / r).exists() or r in tracked]   # a path git never knew needs no commit
+    if not rels:
+        return
+    subprocess.run(["git", "-C", str(project), "add", "-A", "--", *rels], check=True)
+    staged = subprocess.run(["git", "-C", str(project), "diff", "--cached", "--name-only", "-z", "--", *rels],
+                            capture_output=True, text=True).stdout.split("\0")
+    staged = [r for r in staged if r]
+    if staged:
+        print("\n".join(charter_lib.handover(project, staged, message)))
 
 
 def load_manifest(project: Path) -> dict:
@@ -248,6 +269,7 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
             if not a.dry_run:
                 subprocess.run(["git", "-C", str(project), "config", "core.hooksPath", ".charter/githooks"], check=True)
         # a path the project's .gitignore matches never reaches the commit, and nothing else says so
+        ignored_rels: set[str] = set()
         rels = [str(p.relative_to(project)) for p in plan.written if p.is_relative_to(project)]
         ign = subprocess.run(["git", "-C", str(project), "check-ignore", "-v", "--stdin"],
                              input="\n".join(rels) + "\n", capture_output=True, text=True).stdout if rels else ""
@@ -256,6 +278,7 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
             pattern = where.rsplit(':', 1)[-1]
             if pattern.startswith("!"):   # a negation pattern means NOT ignored, though check-ignore -v still prints it
                 continue
+            ignored_rels.add(path)
             print(f"IGNORED by {where.rsplit(':', 1)[0]} (`{pattern}`), so a commit will not carry it: {path}")
     if plan.changes == 0 and not conflicts:
         print(f"charter {VERSION} already installed in {project}; nothing to do")
@@ -263,6 +286,8 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
     print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s); charter {VERSION}" + (f"; {len(conflicts)} kept local file(s)" if conflicts else ""))
     if conflicts and not a.dry_run:
         print("Review the kept files against the package and re-run with --force to replace them.")
+    if in_git:
+        stage_and_hand_over(project, plan, f"charter {VERSION}", ignored_rels)
     return 0
 
 
@@ -280,12 +305,14 @@ def do_uninstall(project: Path, a) -> int:
             print(f"KEEP (locally modified) {rel}")
             continue
         plan.say(f"remove {rel}")
+        plan.written.append(p)
         if not a.dry_run:
             p.unlink()
     for rel in [".charter/manifest.json", "charter/VERSION"]:
         p = project / rel
         if p.exists():
             plan.say(f"remove {rel}")
+            plan.written.append(p)
             if not a.dry_run:
                 p.unlink()
     sp = project / ".claude" / "settings.json"
@@ -297,6 +324,7 @@ def do_uninstall(project: Path, a) -> int:
                 plan.write(sp, (json.dumps(stripped, indent=2) + "\n").encode(), what="remove charter hooks from")
             else:
                 plan.say(f"remove {sp} (nothing left in it)")
+                plan.written.append(sp)
                 if not a.dry_run:
                     sp.unlink()
     ap = project / "AGENTS.md"
@@ -307,6 +335,7 @@ def do_uninstall(project: Path, a) -> int:
         newtxt = (head.rstrip() + tail).strip() + "\n"
         if newtxt.strip() in ("", "# Agents"):
             plan.say(f"remove {ap} (only the charter section was in it)")
+            plan.written.append(ap)
             if not a.dry_run:
                 ap.unlink()
         else:
@@ -352,6 +381,7 @@ def do_uninstall(project: Path, a) -> int:
         if not a.dry_run:
             subprocess.run(["git", "-C", str(project), "config", "--unset", "core.hooksPath"])
     print(f"{'dry run: ' if a.dry_run else ''}{plan.changes} change(s). Kept: charter/scope.md, charter/decisions/, charter/changes/, charter/config.json, {LEGACY}, charter/ledger.jsonl, .taskets/ (project-owned).")
+    stage_and_hand_over(project, plan, "charter: uninstall")
     return 0
 
 

@@ -50,7 +50,7 @@ User: "What would it take to put charter on orqueveaux?"
 ```
 User: "Upgrade charter on leCRM"
 → Follows "Install or upgrade" below: the dry run, then the upgrade on a branch, staged
-→ Returns the diff and the commit command for the owner
+→ Returns the handover block the installer printed (the owner's one commit command), then the diff
 ```
 
 ## Which projects, which version
@@ -62,7 +62,7 @@ Where one project stands and what comes next: `python3 .charter/bin/charter next
 
 ## Install or upgrade
 
-Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop with the files staged. The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
+Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop: the installer stages its files and prints the handover block. Open the report with that block, copied verbatim (`docs/install.md` step 8). The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
 ## Ledger and cost per accepted result
 

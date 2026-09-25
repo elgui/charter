@@ -12,6 +12,7 @@
   setup     activate the git hook in this clone; move 0.1.0 state out of .charter/state/
   config    print the track and opt-ins the gates read; list what in charter/config.json is not applied
   next      where the work stands and what comes next: the active unit, the road, what waits on the owner; read-only
+  handover  print the command the owner runs to commit what is staged, when it holds owner-only changes; read-only
   version   print the installed version
 """
 from __future__ import annotations
@@ -604,7 +605,8 @@ def cmd_next(a) -> int:
     staged = lib.git(root, "diff", "--cached", "--name-only").stdout.split()
     mine = [rp for rp in staged if rp in checks.OWNER_ONLY_FILES or lib.matches_any(rp, checks.OWNER_ONLY_GLOBS)]
     if mine:
-        owner.append(f"- staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""))
+        owner.append(f"- staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else "")
+                     + "; `python3 .charter/bin/charter handover` prints the command")
     L += ["", "Waiting on the owner:"] + (owner or ["- nothing"])
 
     counts = _gate_counts(root, 7)
@@ -856,6 +858,31 @@ def cmd_config(a) -> int:
     return 1 if cfg.get(lib.PROBLEMS) else 0
 
 
+def cmd_handover(a) -> int:
+    """The owner's commit of what is staged, as one command to paste: the same block the installer prints.
+    Read-only; the index is left as it is."""
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
+    if not staged:
+        print("nothing staged")
+        return 0
+    done = lib.as_list(cfg.get("done_statuses"))
+    mine = [rp for rp in staged if checks.may_be_owner_only(rp)
+            and checks.owner_only_changes(rp, checks.head_text(root, rp), checks.staged_text(root, rp), "commit", done)]
+    if not mine:
+        print(f"none of the {len(staged)} staged file(s) is an owner-only change; an agent commits them")
+        return 0
+    msg = a.message
+    if not msg:
+        vp = f"{lib.CHARTER_DIR}/VERSION"
+        ver = checks.staged_text(root, vp) if vp in staged else None
+        msg = f"charter {ver.strip()}" if ver else f"Owner-only change: {mine[0]}" + (f" and {len(mine) - 1} more" if len(mine) > 1 else "")
+    print("\n".join(lib.handover(root, staged, msg)))
+    print(f"owner-only among them ({len(mine)}): " + ", ".join(mine[:8]) + (f" and {len(mine) - 8} more" if len(mine) > 8 else ""))
+    return 0
+
+
 def cmd_version(a) -> int:
     root = lib.repo_root(a.root)
     p = root / lib.CHARTER_DIR / "VERSION"
@@ -911,6 +938,9 @@ def main(argv=None) -> int:
     cf.set_defaults(fn=cmd_config)
     nx = sub.add_parser("next", help="where the work stands and what comes next; read-only")
     nx.add_argument("--limit", type=int, default=5, help="rows per list (default 5)"); nx.set_defaults(fn=cmd_next)
+    ho = sub.add_parser("handover", help="print the command the owner runs to commit what is staged; read-only")
+    ho.add_argument("-m", "--message", default=None, help="the commit message (default: `charter <version>` for an install or upgrade)")
+    ho.set_defaults(fn=cmd_handover)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a = ap.parse_args(argv)
     if a.cmd not in GATE_COMMANDS:

@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.4",
+    "version": "0.4.5",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -200,6 +200,21 @@ def in_claude_code() -> bool:
 def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
     """Output decoded as UTF-8, undecodable bytes replaced: `git show` of a binary file must not raise."""
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8", errors="replace", check=check)
+
+
+def handover(root: Path, paths: list[str], message: str) -> list[str]:
+    """The owner's commit as one paste-ready command. The pathspec after `--` commits exactly these
+    paths, whatever else is staged or untracked; `git -C` makes it right from any directory."""
+    import shlex
+    branch = git(root, "branch", "--show-current").stdout.strip() or "(detached HEAD)"
+    cmd = (f"git -C {shlex.quote(str(root))} commit -m {shlex.quote(message)} -- "
+           + " ".join(shlex.quote(p) for p in paths))
+    L = [f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
+         f"  in a Claude Code prompt:  ! CHARTER_OWNER=1 {cmd}",
+         f"  from your own terminal:   {cmd}"]
+    if branch in ("main", "master"):
+        L.append(f"  note: {branch} is the main line; the change belongs on a branch (`git switch -c <branch>` keeps what is staged)")
+    return L
 
 
 def ignored(root: Path, relpaths: list[str]) -> set[str]:

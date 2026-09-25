@@ -747,6 +747,9 @@ def may_be_owner_only(rp: str) -> bool:
 
 OWNER_OVERRIDE = ("this is the owner's act: edit the file yourself, or start Claude Code with CHARTER_OWNER=1 "
                   "for an owner session; as an agent, propose it (a change request, a new decision) and say so")
+# at commit the change is already made: the agent leaves it staged and hands the owner one command, not a new session
+OWNER_COMMIT_OVERRIDE = ("the owner commits it: leave it staged, run `python3 .charter/bin/charter handover` "
+                         "and give the owner the command it prints")
 
 
 def check_owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> list[Finding]:
@@ -757,7 +760,7 @@ def check_owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> list[Fin
         why = owner_only_changes(rp, head_text(root, rp), staged_text(root, rp), "commit", lib.as_list(cfg.get("done_statuses")))
         if why and not lib.owner_session():
             level = "block" if lib.in_claude_code() else "warn"
-            out.append(Finding("protected", level, f"{rp}: {'; '.join(why)}", path=rp, override=OWNER_OVERRIDE))
+            out.append(Finding("protected", level, f"{rp}: {'; '.join(why)}", path=rp, override=OWNER_COMMIT_OVERRIDE))
     return out
 
 
