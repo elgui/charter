@@ -58,6 +58,8 @@ User: "Upgrade charter on leCRM"
     for p in ~/Projects/*/; do [ -f "$p/charter/VERSION" ] && echo "$p $(cat $p/charter/VERSION)"; done
     python3 ~/Projects/charter/bin/charter-pkg status <project>
 
+Where one project stands and what comes next: `python3 .charter/bin/charter next` from 0.4.4. On an older install, run this checkout's copy against it; it only reads: `python3 ~/Projects/charter/package/.charter/bin/charter --root <project> next`.
+
 ## Install or upgrade
 
 Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop with the files staged. The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
