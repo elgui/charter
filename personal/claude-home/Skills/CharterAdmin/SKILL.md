@@ -46,7 +46,15 @@ User: "What would it take to put charter on orqueveaux?"
 → Returns the survey report and the generated plan; writes nothing to the project
 ```
 
-**Example 3: Upgrade a project already on charter**
+**Example 3: Upgrade every project ("upgrade charter", "upgrade the projects")**
+```
+User: "Upgrade charter everywhere"
+→ `python3 ~/Projects/charter/bin/charter-pkg fleet` to show the table, then `fleet --upgrade`
+→ Returns the fleet's handover block first, verbatim: one command that commits every project
+→ Then one line per project: the version change, and any KEEP, IGNORED or NOTE line
+```
+
+**Example 4: Upgrade one project already on charter**
 ```
 User: "Upgrade charter on leCRM"
 → Follows "Install or upgrade" below: the dry run, then the upgrade on a branch, staged
@@ -55,14 +63,16 @@ User: "Upgrade charter on leCRM"
 
 ## Which projects, which version
 
-    for p in ~/Projects/*/; do [ -f "$p/charter/VERSION" ] && echo "$p $(cat $p/charter/VERSION)"; done
+    python3 ~/Projects/charter/bin/charter-pkg fleet            # read-only: version, branch, what waits on the owner
     python3 ~/Projects/charter/bin/charter-pkg status <project>
 
 Where one project stands and what comes next: `python3 .charter/bin/charter next` from 0.4.4. On an older install, run this checkout's copy against it; it only reads: `python3 ~/Projects/charter/package/.charter/bin/charter --root <project> next`.
 
 ## Install or upgrade
 
-Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop: the installer stages its files and prints the handover block. Open the report with that block, copied verbatim (`docs/install.md` step 8). The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
+Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then stop: the installer stages its files and prints the handover block. Open the report with that block, copied verbatim (`docs/install.md` step 8). The commit touches owner-only paths, so the owner makes it; never set `CHARTER_OWNER` or pass `--no-verify` yourself. The auto-mode classifier refuses a `CHARTER_OWNER=1` commit from an agent as a safety bypass, even when Gui asked for it (2026-09-25), so don't try: hand over the command.
+
+Several projects at once: `charter-pkg fleet --upgrade` (from 0.4.5). It upgrades every project that is behind, stages each project's files, and prints one command that commits all of them, each by pathspec, so the owner's other work in each tree stays out. The upgrade lands on the branch each project is on. It skips the per-project preconditions of `docs/install.md` (a clean tree, no other session in the tree, a branch), so check each project's row before you run it: a project on a branch the owner is using for other work is upgraded there. A version note that asks for a step after the upgrade (a size check, a ledger fold) is still yours, per project. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
 ## Ledger and cost per accepted result
 

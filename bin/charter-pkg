@@ -5,6 +5,7 @@
   charter-pkg upgrade   <project> [--dry-run] [--force]     shows the diff, then applies
   charter-pkg uninstall <project> [--dry-run] [--force]
   charter-pkg status    <project>
+  charter-pkg fleet     [--root DIR] [--upgrade]   every charter project under DIR; one owner command for all
 
 Idempotent: a second install changes nothing. Files the package owns are listed with
 their hashes in <project>/.charter/manifest.json; a locally modified owned file is never
@@ -89,25 +90,31 @@ class Plan:
             dest.chmod(dest.stat().st_mode | 0o111)
 
 
-def stage_and_hand_over(project: Path, plan: Plan, message: str, skip: set[str] = frozenset()) -> None:
+def stage_and_hand_over(project: Path, plan: Plan, message: str, skip: set[str] = frozenset(), show: bool = True) -> list[str]:
     """Stage what the run wrote or removed, by name, and print the owner's commit command.
     Staging is the agent's part; the commit touches owner-only paths, so it is the owner's."""
     if plan.dry or not plan.written:
-        return
-    if subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode != 0:
-        return
+        return []
     rels = sorted({p.relative_to(project).as_posix() for p in plan.written if p.is_relative_to(project)} - set(skip))
+    return stage(project, rels, message, show)
+
+
+def stage(project: Path, rels: list[str], message: str, show: bool = True) -> list[str]:
+    """`git add -A` of these paths only; returns those that now differ from HEAD in the index."""
+    if subprocess.run(["git", "-C", str(project), "rev-parse"], capture_output=True).returncode != 0:
+        return []
     tracked = set(subprocess.run(["git", "-C", str(project), "ls-files", "-z", "--", *rels],
                                  capture_output=True, text=True).stdout.split("\0")) if rels else set()
     rels = [r for r in rels if (project / r).exists() or r in tracked]   # a path git never knew needs no commit
     if not rels:
-        return
+        return []
     subprocess.run(["git", "-C", str(project), "add", "-A", "--", *rels], check=True)
     staged = subprocess.run(["git", "-C", str(project), "diff", "--cached", "--name-only", "-z", "--", *rels],
                             capture_output=True, text=True).stdout.split("\0")
     staged = [r for r in staged if r]
-    if staged:
+    if staged and show:
         print("\n".join(charter_lib.handover(project, staged, message)))
+    return staged
 
 
 def load_manifest(project: Path) -> dict:
@@ -287,7 +294,7 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
     if conflicts and not a.dry_run:
         print("Review the kept files against the package and re-run with --force to replace them.")
     if in_git:
-        stage_and_hand_over(project, plan, f"charter {VERSION}", ignored_rels)
+        a.staged = stage_and_hand_over(project, plan, f"charter {VERSION}", ignored_rels, show=not getattr(a, "fleet", False))
     return 0
 
 
@@ -385,6 +392,69 @@ def do_uninstall(project: Path, a) -> int:
     return 0
 
 
+# every path the installer writes in a project, besides the empty directories' .gitkeep files
+MANAGED = OWNED + SEEDED + [LEGACY, ".charter/manifest.json", "charter/VERSION", ".claude/settings.json", "AGENTS.md", ".gitignore"]
+
+
+def head_version(project: Path) -> str | None:
+    r = subprocess.run(["git", "-C", str(project), "show", "HEAD:charter/VERSION"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def uncommitted_managed(project: Path) -> list[str]:
+    out = subprocess.run(["git", "-C", str(project), "status", "--porcelain", "-z", "--untracked-files=all", "--", *MANAGED],
+                         capture_output=True, text=True).stdout
+    return sorted({e[3:] for e in out.split("\0") if len(e) > 3 and e[2] == " "})
+
+
+def do_fleet(root: Path, a) -> int:
+    """Every charter project under `root`: installed version, branch, and what waits. With --upgrade, the ones
+    behind are upgraded and staged, and the owner gets one command that commits every project's upgrade."""
+    import contextlib
+    import io
+    projects = sorted(p for p in root.iterdir() if (p / "charter" / "VERSION").is_file() and (p / ".git").exists())
+    rows, pending, notes = [], [], []
+    for p in projects:
+        installed = (p / "charter" / "VERSION").read_text().strip()
+        if a.upgrade and installed != VERSION:
+            ua = argparse.Namespace(dry_run=False, force=False, track=None, show_diff=False, replace_hooks=False, fleet=True, staged=[])
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                do_install(p, ua, upgrade=True)
+            notes += [f"{p.name}: {l}" for l in buf.getvalue().splitlines() if l.startswith(("KEEP", "IGNORED", "NOTE", "git hook"))]
+            installed = (p / "charter" / "VERSION").read_text().strip()
+        head = head_version(p)
+        branch = subprocess.run(["git", "-C", str(p), "branch", "--show-current"], capture_output=True, text=True).stdout.strip() or "(detached)"
+        waiting = []
+        if head != installed:   # an upgrade applied and not committed, by this run or an earlier one
+            if a.upgrade:   # without --upgrade the command only reads
+                stage(p, uncommitted_managed(p), "", show=False)
+            waiting = sorted(set(uncommitted_managed(p)) | set(subprocess.run(["git", "-C", str(p), "diff", "--cached", "--name-only", "--", *MANAGED],
+                                                               capture_output=True, text=True).stdout.split()))
+        state = ("up to date" if installed == VERSION and not waiting else
+                 f"{head} -> {installed}, {len(waiting)} file(s) wait on the owner" if waiting else f"behind ({VERSION} available)")
+        rows.append((p.name, installed, branch, state))
+        if waiting:
+            pending.append((p, waiting, f"charter {installed}"))
+    w = max([len(r[0]) for r in rows] + [7])
+    print(f"{'project':<{w}}  {'charter':<8} {'branch':<14} state")
+    for n, v, b, s in rows:
+        print(f"{n:<{w}}  {v:<8} {b:<14} {s}")
+    for l in notes:
+        print(l)
+    if not pending:
+        print("nothing waits on the owner" + ("" if a.upgrade or all(r[1] == VERSION for r in rows) else "; --upgrade upgrades the projects behind"))
+        return 0
+    if not a.upgrade:
+        print("\nre-run with --upgrade to stage what waits and get the owner's one command")
+        return 0
+    cmds = [charter_lib.commit_command(p, paths, msg) for p, paths, msg in pending]
+    print(f"\nWaiting on the owner: {len(pending)} project(s), one command. The gate refuses these commits to an agent.")
+    print("  in a Claude Code prompt:  ! " + "; ".join(f"CHARTER_OWNER=1 {c}" for c in cmds))
+    print("  from your own terminal:   " + "; ".join(cmds))
+    return 0
+
+
 def do_status(project: Path, a) -> int:
     man = load_manifest(project)
     print(f"package version: {VERSION}; installed: {man.get('version') or 'none'}")
@@ -454,6 +524,9 @@ def main(argv=None) -> int:
         s.add_argument("--purge-state", action="store_true")
         s.add_argument("--replace-hooks", action="store_true",
                        help="point core.hooksPath at .charter/githooks even though the project runs other git hooks")
+    fl = sub.add_parser("fleet", help="every charter project under --root; with --upgrade, upgrade the ones behind and hand over one command")
+    fl.add_argument("--root", default=str(Path.home() / "Projects"))
+    fl.add_argument("--upgrade", action="store_true")
     sv = sub.add_parser("survey", help="measure a project before a migration; read-only on the project")
     sv.add_argument("project")
     sv.add_argument("--track", choices=["client", "prototype"], required=True, help="the track the rehearsal installs and the plan assumes")
@@ -466,6 +539,8 @@ def main(argv=None) -> int:
     sv.add_argument("--keep-clone", action="store_true", help="keep the rehearsal clone and print its path")
     sv.add_argument("--ref", default=None, help="the local branch to survey (default: the main line), e.g. the migration branch")
     a = ap.parse_args(argv)
+    if a.cmd == "fleet":
+        return do_fleet(Path(a.root).expanduser().resolve(), a)
     project = Path(a.project).resolve()
     if not project.is_dir():
         print(f"not a directory: {project}")

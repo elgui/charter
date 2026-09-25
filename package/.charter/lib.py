@@ -202,13 +202,18 @@ def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProc
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8", errors="replace", check=check)
 
 
-def handover(root: Path, paths: list[str], message: str) -> list[str]:
-    """The owner's commit as one paste-ready command. The pathspec after `--` commits exactly these
-    paths, whatever else is staged or untracked; `git -C` makes it right from any directory."""
+def commit_command(root: Path, paths: list[str], message: str) -> str:
+    """`git commit` of exactly these paths. The pathspec after `--` commits them whatever else is staged
+    or untracked; `git -C` makes it right from any directory."""
     import shlex
+    return (f"git -C {shlex.quote(str(root))} commit -m {shlex.quote(message)} -- "
+            + " ".join(shlex.quote(p) for p in paths))
+
+
+def handover(root: Path, paths: list[str], message: str) -> list[str]:
+    """The owner's commit as one paste-ready command, in the `!` form and the own-terminal form."""
     branch = git(root, "branch", "--show-current").stdout.strip() or "(detached HEAD)"
-    cmd = (f"git -C {shlex.quote(str(root))} commit -m {shlex.quote(message)} -- "
-           + " ".join(shlex.quote(p) for p in paths))
+    cmd = commit_command(root, paths, message)
     L = [f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
          f"  in a Claude Code prompt:  ! CHARTER_OWNER=1 {cmd}",
          f"  from your own terminal:   {cmd}"]

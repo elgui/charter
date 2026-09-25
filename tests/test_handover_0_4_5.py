@@ -148,5 +148,57 @@ class UninstallHandsOver(unittest.TestCase):
         self.assertFalse(git(self.root, "ls-files", ".charter").stdout.strip())
 
 
+class Fleet(unittest.TestCase):
+    """`charter-pkg fleet`: every charter project under a directory, and one owner command for all their upgrades."""
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.dir = Path(tempfile.mkdtemp(prefix="charter-fleet-"))
+        self.projects = []
+        for name in ("alpha", "beta", "gamma"):
+            root = make_project(track="prototype")
+            dest = self.dir / name
+            root.rename(dest)
+            behind(dest)
+            (dest / "mine.txt").write_text("the owner's, untracked\n")
+            self.projects.append(dest)
+        (self.dir / "not-charter").mkdir()
+        # gamma: upgraded by an earlier run, nothing staged, nothing committed
+        pkg("upgrade", str(self.projects[2]))
+        git(self.projects[2], "reset", "-q")
+
+    def tearDown(self):
+        cleanup(self.dir)
+
+    def test_without_upgrade_it_only_reads(self):
+        before = [git(p, "status", "--porcelain").stdout for p in self.projects]
+        r = pkg("fleet", "--root", str(self.dir))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual([git(p, "status", "--porcelain").stdout for p in self.projects], before)
+        lines = {l.split()[0]: l for l in r.stdout.splitlines()[1:4]}
+        self.assertEqual(sorted(lines), ["alpha", "beta", "gamma"])
+        self.assertIn("behind", lines["alpha"])
+        self.assertIn("0.4.4 -> ", lines["gamma"])
+        self.assertIn("wait on the owner", lines["gamma"])
+        self.assertIn("re-run with --upgrade", r.stdout)
+        self.assertNotIn("CHARTER_OWNER", r.stdout)
+
+    def test_upgrade_gives_one_command_that_commits_every_project(self):
+        r = pkg("fleet", "--root", str(self.dir), "--upgrade")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Waiting on the owner: 3 project(s), one command.", r.stdout)
+        cmd = owner_command(r.stdout)
+        self.assertEqual(cmd.count("CHARTER_OWNER=1 git -C "), 3)
+        c = run_as_owner_in_session(cmd)
+        self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
+        for p in self.projects:
+            self.assertEqual(git(p, "show", "-s", "--format=%s", "HEAD").stdout.strip(),
+                             "charter " + (p / "charter" / "VERSION").read_text().strip())
+            self.assertIn(".charter/rails.py", git(p, "show", "--name-only", "--format=", "HEAD").stdout)
+            self.assertEqual(git(p, "status", "--porcelain").stdout, "?? mine.txt\n")
+        again = pkg("fleet", "--root", str(self.dir))
+        self.assertIn("nothing waits on the owner", again.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
