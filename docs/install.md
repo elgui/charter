@@ -14,7 +14,7 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 
 ## Rules for the agent
 
-1. **Owner-only files are committed by the owner.** In an installed project these paths are the owner's: `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, `.claude/settings.json`, `.claude/settings.local.json` and `.github/workflows/charter.yml` (the full list, fields included, is in `package/.claude/rules/charter.md` § What only the owner changes). The pre-commit gate refuses a commit of them made from inside Claude Code (`docs/gates.md` § Owner-only changes). An install and an upgrade always touch them, so **you prepare and stage; the owner commits** (step 8).
+1. **Owner-only files are committed by the owner.** In an installed project these paths are the owner's: `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, `.claude/settings.json`, `.claude/settings.local.json` and `.github/workflows/charter.yml` (the full list, fields included, is in `package/.claude/rules/charter.md` § What only the owner changes). The pre-commit gate refuses a commit of them made from inside Claude Code (`docs/gates.md` § Owner-only changes). An install always touches them, so **you prepare and stage; the owner commits** (step 8). An upgrade touches them too, but from 0.4.6 package files exactly as the installer wrote them are not an owner-only change (`release_change` in `package/.charter/checks.py`): the installer's block says who commits, and when it says an agent, you commit. Only a merge into `.claude/settings.json` or a kept local file sends an upgrade to the owner.
 2. **Never set `CHARTER_OWNER`, never pass `--no-verify`**, and never work around a refusal by writing the file through Bash. The refusal is the method working, not a fault (`package/.claude/rules/charter.md:36`). The one exception is a throwaway rehearsal clone that the survey made (`--keep-clone`), which is not the project.
 3. **Never push, open or merge a pull request, or deploy.** Those are the owner's acts (`package/.claude/rules/charter.md` § Decisions and memory, "Commitments").
 4. **Facts about an existing project come from the survey** (step 2), measured today, never from memory or another session's notes (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:14`).
@@ -24,11 +24,11 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 
 | Check | Command | Expected | If not |
 |---|---|---|---|
-| The project is a git repository with a commit | `git -C $P rev-parse --verify HEAD` | a commit SHA | A new project: `git init`, a first commit, then continue (`bin/charter-pkg:479` refuses a survey without one) |
+| The project is a git repository with a commit | `git -C $P rev-parse --verify HEAD` | a commit SHA | A new project: `git init`, a first commit, then continue (`bin/charter-pkg:498` refuses a survey without one) |
 | The working tree is clean | `git -C $P status --porcelain` | no output | Stop. List the files to the owner. Do not stash, commit or discard someone else's work. `install` does not check this itself (`do_install` in `bin/charter-pkg`), so this step is the only guard |
 | No other session works in the tree | `tmux list-panes -a -F '#{pane_current_path}' \| grep -F "$P"` | no output (`no server running` also means none) | Stop and tell the owner, or work in a separate worktree (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:76`) |
 | The charter checkout is the version you mean to install | `cat $C/package/VERSION; git -C $C status --short` | the version, as in `package/VERSION`; no output | Ask the owner which version to install |
-| Whether charter is already there | `python3 $M status $P` | `package version: X; installed: none` (`bin/charter-pkg:460`) | `installed: <version>`: go to [Upgrade](#upgrade) instead |
+| Whether charter is already there | `python3 $M status $P` | `package version: X; installed: none` (`bin/charter-pkg:479`) | `installed: <version>`: go to [Upgrade](#upgrade) instead |
 
 ## Step 1: choose the track
 
@@ -64,13 +64,13 @@ Never on the main line.
 python3 $M install $P --track <track> --dry-run
 ```
 
-Expected: one `would create`, `would seed`, `would merge hooks into` or `would update` line per path, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:293`; 35 on a repository with no charter files, in the scratchpad rehearsal). `git -C $P status --porcelain` still prints nothing. Read the output for these lines:
+Expected: one `would create`, `would seed`, `would merge hooks into` or `would update` line per path, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:298`; 35 on a repository with no charter files, in the scratchpad rehearsal). `git -C $P status --porcelain` still prints nothing. Read the output for these lines:
 
 | Line | Meaning | What to do |
 |---|---|---|
-| `KEEP git hooks: <project> runs <framework>; pointing core.hooksPath at .charter/githooks would stop them. ...` | The project runs lefthook, pre-commit, husky or its own `.git/hooks` scripts (`bin/charter-pkg:271`) | Continue; step 6 wires the gate into that framework |
-| `IGNORED by <file> (<pattern>), so a commit will not carry it: <path>` | The project's `.gitignore` matches a path the installer writes, often `.claude/settings.json` (`bin/charter-pkg:289`; `docs/design/migration-workflow.md:24`) | Ask the owner: stop ignoring it so the commit carries it, or keep it local and accept that other clones have no session hooks |
-| `would seed (<n> legacy tasket(s)) .../charter/legacy-taskets.txt` | Taskets without an acceptance section; they may still close, with a warning (`bin/charter-pkg:218`) | Nothing now; triage is in `docs/migration.md` Path C |
+| `KEEP git hooks: <project> runs <framework>; pointing core.hooksPath at .charter/githooks would stop them. ...` | The project runs lefthook, pre-commit, husky or its own `.git/hooks` scripts (`bin/charter-pkg:276`) | Continue; step 6 wires the gate into that framework |
+| `IGNORED by <file> (<pattern>), so a commit will not carry it: <path>` | The project's `.gitignore` matches a path the installer writes, often `.claude/settings.json` (`bin/charter-pkg:294`; `docs/design/migration-workflow.md:24`) | Ask the owner: stop ignoring it so the commit carries it, or keep it local and accept that other clones have no session hooks |
+| `would seed (<n> legacy tasket(s)) .../charter/legacy-taskets.txt` | Taskets without an acceptance section; they may still close, with a warning (`bin/charter-pkg:223`) | Nothing now; triage is in `docs/migration.md` Path C |
 
 ## Step 5: install
 
@@ -78,10 +78,10 @@ Expected: one `would create`, `would seed`, `would merge hooks into` or `would u
 python3 $M install $P --track <track>
 ```
 
-Expected: the same lines without `would`, then `<n> change(s); charter <version>`, and, unless hooks were kept, `git config core.hooksPath .charter/githooks (was unset)` (`bin/charter-pkg:275`). Then:
+Expected: the same lines without `would`, then `<n> change(s); charter <version>`, and, unless hooks were kept, `git config core.hooksPath .charter/githooks (was unset)` (`bin/charter-pkg:280`). Then:
 
-- `python3 $M install $P --track <track>` again prints `charter <version> already installed in <project>; nothing to do` (`bin/charter-pkg:291`). The install is idempotent.
-- `git -C $P config core.hooksPath` prints `.charter/githooks`, unless hooks were kept (`bin/charter-pkg:275`).
+- `python3 $M install $P --track <track>` again prints `charter <version> already installed in <project>; nothing to do` (`bin/charter-pkg:296`). The install is idempotent.
+- `git -C $P config core.hooksPath` prints `.charter/githooks`, unless hooks were kept (`bin/charter-pkg:280`).
 
 ## Step 6: a project that already runs git hooks
 
@@ -135,10 +135,10 @@ After the owner's commit:
 
 | Check | Command (from `$P`) | Expected |
 |---|---|---|
-| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`package/.charter/checks.py:806`) |
+| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`package/.charter/checks.py:841`) |
 | The installed version | `python3 .charter/bin/charter version` | the target version, as in `package/VERSION` |
 | The config reads as written | `python3 .charter/bin/charter config` | `track <track>, opt-ins: none`, exit 0. A `problem:` line names a key, type or track the gates cannot read; the owner corrects it (`cmd_config` in `package/.charter/bin/charter`) |
-| The files match the package | `python3 $M status $P` | `installed: <version>`, `locally modified: 0; missing: 0; differ from package: 0`, and `git core.hooksPath: .charter/githooks` (or `unset` where a framework runs the gate; `bin/charter-pkg:460-471`) |
+| The files match the package | `python3 $M status $P` | `installed: <version>`, `locally modified: 0; missing: 0; differ from package: 0`, and `git core.hooksPath: .charter/githooks` (or `unset` where a framework runs the gate; `bin/charter-pkg:479-490`) |
 | The session hooks run | start a new Claude Code session in `$P`, then `python3 .charter/bin/charter log` | the transcript shows the summary line `charter <version>, track <track>, opt-ins: ...` (a `systemMessage`; the full index goes to Claude's context only, https://code.claude.com/docs/en/hooks); the log has entries. A wrong hook path shows only as a non-blocking error on first run (`docs/gates.md` § Claude Code hooks) |
 | The gate runs in a fresh clone | `git clone $P <scratch dir>/clone && cd <scratch dir>/clone && python3 .charter/bin/charter check --all --strict` | `0 blocking` (`docs/migration.md` § What to check after a migration) |
 
@@ -170,12 +170,12 @@ A new package version reaches a project only by an upgrade; nothing pulls it. Th
 1. Step 0 again: `upgrade` does not check the working tree either (`do_install` in `bin/charter-pkg` runs both).
 2. `git -C $P switch -c charter-<version>`: the upgrade lands on a branch (`personal/claude-home/Skills/CharterAdmin/SKILL.md:65`).
 3. Read the upgrade notes in `docs/package.md` § Versioning and upgrade for every version between the installed one and the target. Some ask for a step after the upgrade.
-4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:164-187`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:161`).
-5. `python3 $M upgrade $P`. It stages what it wrote and ends with the handover block of step 8. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
-6. Any step a version's note asks for that writes a file the owner does not own, such as `charter ledger fold` writing `charter/ledger.jsonl`: commit it yourself, apart from the upgrade, since the gate refuses only owner-only changes (`CLI_ONLY_FILES` in `package/.charter/checks.py`). Then hand over as in step 8. The report opens with the block, then says what the upgrade changed.
+4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:169-192`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:166`).
+5. `python3 $M upgrade $P`. It stages what it wrote and ends with a block that says who commits. `Staged <n> file(s) ...; none is an owner-only change, so an agent commits them:` is followed by the command: run it yourself (from 0.4.6, `release_change` in `package/.charter/checks.py`). `Waiting on the owner:` is step 8's block. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
+6. Any step a version's note asks for that writes a file the owner does not own, such as `charter ledger fold` writing `charter/ledger.jsonl`: commit it yourself, apart from the upgrade, since the gate refuses only owner-only changes (`CLI_ONLY_FILES` in `package/.charter/checks.py`). Then commit the upgrade, or hand it over as in step 8 when the block says so. The report opens with what waits on the owner, if anything, then says what the upgrade changed.
 7. Step 9, and the checks the version's note in `docs/package.md` asks for.
 
-Several projects: `python3 $M fleet` lists every charter project under `~/Projects` (`--root` for another directory) with its version, branch and what waits on the owner, and reads only. `python3 $M fleet --upgrade` upgrades the ones behind, stages what waits, and ends with one handover block whose command commits every project, each by pathspec (`do_fleet` in `bin/charter-pkg`). It lands each upgrade on the branch the project is on and does not run the checks of step 0, so read the table first. Hand the block over as in step 8.
+Several projects: `python3 $M fleet` lists every charter project under `~/Projects` (`--root` for another directory) with its version, branch and what waits on the owner, and reads only. `python3 $M fleet --upgrade` upgrades the ones behind and stages each. It commits a project itself when nothing staged is an owner-only change, through the project's gate (from 0.4.6), and ends with one handover block for the projects left, whose command commits each by pathspec (`do_fleet` in `bin/charter-pkg`). It lands each upgrade on the branch the project is on and does not run the checks of step 0, so read the table first. Hand any block over as in step 8.
 
 Rollback: `git revert` of the upgrade commit; `charter/VERSION` and the manifest revert with it (`docs/migration.md` § A new package version reaching a project).
 
@@ -186,7 +186,7 @@ python3 $M uninstall $P --dry-run
 python3 $M uninstall $P
 ```
 
-It removes the owned files whose hash matches the manifest, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`. It keeps the project's own files (`charter/scope.md`, decisions, changes, `charter/config.json`, the legacy list, the ledger, `.taskets/`) and the gate log unless `--purge-state` (`bin/charter-pkg:300-392`). The removal touches owner-only paths, so the owner commits it (step 8). Right after an install, `git revert` of the install commit does the same.
+It removes the owned files whose hash matches the manifest, the hook entries, the `AGENTS.md` section, the `.gitignore` line and `core.hooksPath`. It keeps the project's own files (`charter/scope.md`, decisions, changes, `charter/config.json`, the legacy list, the ledger, `.taskets/`) and the gate log unless `--purge-state` (`bin/charter-pkg:305-397`). The removal touches owner-only paths, so the owner commits it (step 8). Right after an install, `git revert` of the install commit does the same.
 
 ## When a gate refuses
 
@@ -196,15 +196,15 @@ Every refusal names its override (`docs/method.md:119`). The common ones:
 |---|---|---|
 | `charter/protected block [<path>]` at commit | An owner-only file committed from inside Claude Code (`check_owner_only_staged` in `package/.charter/checks.py`) | Leave it staged; `python3 .charter/bin/charter handover`; hand over (step 8) |
 | A `PreToolUse` denial on an Edit or Write of an owner-only file | The same rule, in session (`docs/gates.md:35`) | Propose instead: a change request (`charter/templates/change.md`), a successor decision, or a draft outside the project; say so in your final message |
-| `KEEP git hooks: ...` | The project runs another hook framework (`bin/charter-pkg:271`) | Step 6 |
-| `IGNORED by ...` | `.gitignore` matches a written path (`bin/charter-pkg:289`) | Ask the owner (step 4) |
-| `KEEP (locally modified, use --force to overwrite) <path>` | A package file changed in the project (`bin/charter-pkg:184`) | Show the owner; `--force` only on their word |
-| `nothing installed in <project>; use install` | `upgrade` on a project without charter (`bin/charter-pkg:161`) | Step 2 |
-| `the first install needs --track client or --track prototype` | `install` without `--track` on a project with no `charter/config.json` (`bin/charter-pkg:167`); nothing was written | Step 1, then pass `--track` |
+| `KEEP git hooks: ...` | The project runs another hook framework (`bin/charter-pkg:276`) | Step 6 |
+| `IGNORED by ...` | `.gitignore` matches a written path (`bin/charter-pkg:294`) | Ask the owner (step 4) |
+| `KEEP (locally modified, use --force to overwrite) <path>` | A package file changed in the project (`bin/charter-pkg:189`) | Show the owner; `--force` only on their word |
+| `nothing installed in <project>; use install` | `upgrade` on a project without charter (`bin/charter-pkg:166`) | Step 2 |
+| `the first install needs --track client or --track prototype` | `install` without `--track` on a project with no `charter/config.json` (`bin/charter-pkg:172`); nothing was written | Step 1, then pass `--track` |
 | `charter-pkg survey: error: the following arguments are required: --track` | `survey` without `--track` (`main` in `bin/charter-pkg`) | Step 1, then pass `--track` |
 | `charter/config block [charter/config.json]: charter/config.json: ...` | A key, a value's type or the track in the config is not one the gates read; an unknown track is read as `client` (`config_from` in `package/.charter/lib.py`) | Tell the owner; the message names the key and, for a near miss, the key meant. The file is the owner's |
-| `not a git repository with a commit` | `survey` on a repository with no commit (`bin/charter-pkg:479`) | A first commit, then survey |
-| `--out must be outside the project` | `survey --out` inside the project (`bin/charter-pkg:483`) | Pick a directory outside it |
+| `not a git repository with a commit` | `survey` on a repository with no commit (`bin/charter-pkg:498`) | A first commit, then survey |
+| `--out must be outside the project` | `survey --out` inside the project (`bin/charter-pkg:502`) | Pick a directory outside it |
 | A scope, size, done, decision or perimeter refusal after the install | The gates doing their job on real work | Follow the override in the message; `docs/gates.md` has each gate's override |
 | `charter check` printing one error line and passing | A gate crashed; gates fail open on their own errors, though not on a config they cannot read (`docs/gates.md` § Git hook) | Report it with `python3 .charter/bin/charter log`; it is a charter bug |
 

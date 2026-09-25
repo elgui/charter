@@ -752,13 +752,48 @@ OWNER_COMMIT_OVERRIDE = ("the owner commits it: leave it staged, run `python3 .c
                          "and give the owner the command it prints")
 
 
+MANIFEST = lib.TOOL_DIR + "/manifest.json"
+
+
+def blob(root: Path, spec: str) -> bytes | None:
+    """The raw bytes of `git show <spec>` (`:path` for the index, `<rev>:path`), None when absent."""
+    r = subprocess.run(["git", "-C", str(root), "show", spec], capture_output=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def release_change(rp: str, read) -> bool:
+    """True when `rp`, as `read` returns it (bytes, None when absent), is a package file exactly as the installer
+    wrote it: its hash is the one the manifest at the same revision records, and for the manifest itself, every
+    file it lists matches. That is an upgrade, which an agent commits. A hand edit of the engine does not match
+    and stays the owner's; an edit that also rewrites the manifest is deliberate, and no gate in the tree it
+    edits can stop it (docs/gates.md, What this cannot do)."""
+    try:
+        files = json.loads(read(MANIFEST) or b"").get("files") or {}
+    except (ValueError, AttributeError):
+        return False
+    sha = lambda b: hashlib.sha256(b).hexdigest() if b is not None else None
+    if rp == MANIFEST:
+        return bool(files) and all(sha(read(f)) == h for f, h in files.items())
+    return rp in files and sha(read(rp)) == files[rp]
+
+
+def owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> dict[str, list[str]]:
+    """The staged paths whose change is the owner's, with the reasons; an upgrade's package files are not."""
+    out = {}
+    read = lambda f: blob(root, f":{f}")
+    for rp in [p for p in paths if may_be_owner_only(p)]:
+        why = owner_only_changes(rp, head_text(root, rp), staged_text(root, rp), "commit", lib.as_list(cfg.get("done_statuses")))
+        if why and not release_change(rp, read):
+            out[rp] = why
+    return out
+
+
 def check_owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> list[Finding]:
     """At commit: an owner-only change committed from inside Claude Code without CHARTER_OWNER=1 is refused.
     Outside Claude Code the committer cannot be told apart from the owner; CI checks the author."""
     out = []
-    for rp in [p for p in paths if may_be_owner_only(p)]:
-        why = owner_only_changes(rp, head_text(root, rp), staged_text(root, rp), "commit", lib.as_list(cfg.get("done_statuses")))
-        if why and not lib.owner_session():
+    for rp, why in owner_only_staged(root, cfg, paths).items():
+        if not lib.owner_session():
             level = "block" if lib.in_claude_code() else "warn"
             out.append(Finding("protected", level, f"{rp}: {'; '.join(why)}", path=rp, override=OWNER_COMMIT_OVERRIDE))
     return out
@@ -805,7 +840,7 @@ def check_owner_commits(root: Path, cfg: dict, base: str) -> list[Finding]:
                 at_base = show(mb, rp) if mb else None
                 why = next((w for o in olds if o != new and o != at_base
                             for w in [owner_only_changes(rp, o, new, "commit", done)] if w), [])
-            if not why:
+            if not why or release_change(rp, lambda f, rev=sha: blob(root, f"{rev}:{f}")):
                 continue
             if not owners:
                 unattributed.append(f"{sha[:10]} {rp}")

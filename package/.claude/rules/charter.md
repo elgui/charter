@@ -29,7 +29,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 
 These are refused to an agent's Edit and Write, and CI checks that the owner authored them. Propose instead: a change request, a new decision that supersedes, a note in your final message.
 
-- `charter/scope.md`, `charter/rails.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`.
+- `charter/scope.md`, `charter/rails.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`. An upgrade is the exception: package files exactly as the installer wrote them, matching `.charter/manifest.json`, are yours to commit.
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
 - In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
 - Opening or widening a `kind: split` unit.

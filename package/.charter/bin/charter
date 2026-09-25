@@ -12,7 +12,7 @@
   setup     activate the git hook in this clone; move 0.1.0 state out of .charter/state/
   config    print the track and opt-ins the gates read; list what in charter/config.json is not applied
   next      where the work stands and what comes next: the active unit, the road, what waits on the owner; read-only
-  handover  print the command the owner runs to commit what is staged, when it holds owner-only changes; read-only
+  handover  who commits what is staged (the owner only for owner-only changes), and the command; read-only
   version   print the installed version
 """
 from __future__ import annotations
@@ -603,7 +603,7 @@ def cmd_next(a) -> int:
         if str(v.get("status")) == "proposed":
             owner.append(f"- change request {k} — {v.get('title', '')} is proposed ({v['_path']})")
     staged = lib.git(root, "diff", "--cached", "--name-only").stdout.split()
-    mine = [rp for rp in staged if rp in checks.OWNER_ONLY_FILES or lib.matches_any(rp, checks.OWNER_ONLY_GLOBS)]
+    mine = list(checks.owner_only_staged(root, cfg, staged))
     if mine:
         owner.append(f"- staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else "")
                      + "; `python3 .charter/bin/charter handover` prints the command")
@@ -867,19 +867,14 @@ def cmd_handover(a) -> int:
     if not staged:
         print("nothing staged")
         return 0
-    done = lib.as_list(cfg.get("done_statuses"))
-    mine = [rp for rp in staged if checks.may_be_owner_only(rp)
-            and checks.owner_only_changes(rp, checks.head_text(root, rp), checks.staged_text(root, rp), "commit", done)]
-    if not mine:
-        print(f"none of the {len(staged)} staged file(s) is an owner-only change; an agent commits them")
-        return 0
+    mine = list(checks.owner_only_staged(root, cfg, staged))
     msg = a.message
     if not msg:
         vp = f"{lib.CHARTER_DIR}/VERSION"
         ver = checks.staged_text(root, vp) if vp in staged else None
-        msg = f"charter {ver.strip()}" if ver else f"Owner-only change: {mine[0]}" + (f" and {len(mine) - 1} more" if len(mine) > 1 else "")
-    print("\n".join(lib.handover(root, staged, msg)))
-    print(f"owner-only among them ({len(mine)}): " + ", ".join(mine[:8]) + (f" and {len(mine) - 8} more" if len(mine) > 8 else ""))
+        msg = (f"charter {ver.strip()}" if ver else
+               f"Owner-only change: {mine[0]}" + (f" and {len(mine) - 1} more" if len(mine) > 1 else "") if mine else "Staged changes")
+    print("\n".join(lib.handover(root, staged, msg, mine)))
     return 0
 
 

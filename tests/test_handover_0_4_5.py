@@ -32,9 +32,16 @@ def staged(root):
     return sorted(x for x in git(root, "diff", "--cached", "--name-only").stdout.splitlines() if x)
 
 
-def behind(root):
-    """An installed project one release back: a file the new release adds is missing, the version is older."""
+def behind(root, settings=True):
+    """An installed project one release back: a file the new release adds is missing, the version is older, and
+    (settings) the hook entries the new release merges into .claude/settings.json, an owner-only file, are not
+    there yet. From 0.4.6 an upgrade of package files alone is the agent's to commit (test_release_commit_0_4_6)."""
     (root / ".charter" / "rails.py").unlink()
+    if settings:
+        sp = root / ".claude" / "settings.json"
+        cur = json.loads(sp.read_text())
+        cur["hooks"].pop("SessionEnd", None)
+        sp.write_text(json.dumps(cur, indent=2) + "\n")
     man = json.loads((root / ".charter" / "manifest.json").read_text())
     man["version"] = "0.4.4"
     (root / ".charter" / "manifest.json").write_text(json.dumps(man, indent=2) + "\n")
@@ -57,12 +64,12 @@ class UpgradeHandsOver(unittest.TestCase):
     def test_upgrade_stages_what_it_wrote_and_prints_one_command(self):
         r = pkg("upgrade", str(self.root))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        wrote = [".charter/manifest.json", ".charter/rails.py", "charter/VERSION"]
+        wrote = [".charter/manifest.json", ".charter/rails.py", ".claude/settings.json", "charter/VERSION"]
         self.assertEqual(staged(self.root), sorted(wrote + ["notes.md"]))
-        self.assertIn("Waiting on the owner: commit 3 staged file(s) on branch charter-upgrade.", r.stdout)
+        self.assertIn("Waiting on the owner: commit 4 staged file(s) on branch charter-upgrade.", r.stdout)
         cmd = owner_command(r.stdout)
         self.assertTrue(cmd.startswith(f"CHARTER_OWNER=1 git -C {shlex.quote(str(self.root))} commit -m "), cmd)
-        self.assertEqual(shlex.split(cmd)[-4:], ["--"] + wrote)
+        self.assertEqual(shlex.split(cmd)[-5:], ["--"] + wrote)
 
     def test_the_printed_command_commits_exactly_those_files_from_any_directory(self):
         cmd = owner_command(pkg("upgrade", str(self.root)).stdout)
@@ -70,7 +77,7 @@ class UpgradeHandsOver(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         shown = git(self.root, "show", "--name-only", "--format=%s", "HEAD").stdout.split()
         self.assertEqual(shown[:2], ["charter", (self.root / "charter" / "VERSION").read_text().strip()])
-        self.assertEqual(sorted(shown[2:]), [".charter/manifest.json", ".charter/rails.py", "charter/VERSION"])
+        self.assertEqual(sorted(shown[2:]), [".charter/manifest.json", ".charter/rails.py", ".claude/settings.json", "charter/VERSION"])
         self.assertEqual(staged(self.root), ["notes.md"])       # the agent's staged work stays out
         self.assertIn("?? credentials.md", git(self.root, "status", "--porcelain").stdout)
 
@@ -104,7 +111,7 @@ class HandoverCommand(unittest.TestCase):
         (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a * 2\n")
         git(self.root, "add", "app/billing.py")
         out = charter(self.root, "handover").stdout
-        self.assertIn("none of the 1 staged file(s) is an owner-only change", out)
+        self.assertIn("none is an owner-only change, so an agent commits them", out)
         self.assertNotIn("CHARTER_OWNER", out)
 
     def test_owner_only_change_gets_the_same_block_and_leaves_the_index(self):
@@ -116,7 +123,7 @@ class HandoverCommand(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Waiting on the owner: commit 2 staged file(s) on branch work.", r.stdout)
         self.assertIn("-m 'Settings: drop the hooks' -- .claude/settings.json notes.md", owner_command(r.stdout))
-        self.assertIn("owner-only among them (1): .claude/settings.json", r.stdout)
+        self.assertIn("owner-only among them (1): .claude/settings.json", r.stdout)   # (0.4.6: the block's last line)
         self.assertEqual(git(self.root, "diff", "--cached").stdout, before)
 
     def test_main_line_is_flagged(self):
@@ -179,7 +186,7 @@ class Fleet(unittest.TestCase):
         self.assertEqual(sorted(lines), ["alpha", "beta", "gamma"])
         self.assertIn("behind", lines["alpha"])
         self.assertIn("0.4.4 -> ", lines["gamma"])
-        self.assertIn("wait on the owner", lines["gamma"])
+        self.assertIn("not committed", lines["gamma"])
         self.assertIn("re-run with --upgrade", r.stdout)
         self.assertNotIn("CHARTER_OWNER", r.stdout)
 
@@ -197,7 +204,7 @@ class Fleet(unittest.TestCase):
             self.assertIn(".charter/rails.py", git(p, "show", "--name-only", "--format=", "HEAD").stdout)
             self.assertEqual(git(p, "status", "--porcelain").stdout, "?? mine.txt\n")
         again = pkg("fleet", "--root", str(self.dir))
-        self.assertIn("nothing waits on the owner", again.stdout)
+        self.assertIn("nothing waits", again.stdout)
 
 
 if __name__ == "__main__":

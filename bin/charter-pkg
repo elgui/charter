@@ -5,7 +5,7 @@
   charter-pkg upgrade   <project> [--dry-run] [--force]     shows the diff, then applies
   charter-pkg uninstall <project> [--dry-run] [--force]
   charter-pkg status    <project>
-  charter-pkg fleet     [--root DIR] [--upgrade]   every charter project under DIR; one owner command for all
+  charter-pkg fleet     [--root DIR] [--upgrade]   every charter project under DIR; an agent commits the upgrades, the owner gets one command for the rest
 
 Idempotent: a second install changes nothing. Files the package owns are listed with
 their hashes in <project>/.charter/manifest.json; a locally modified owned file is never
@@ -30,6 +30,7 @@ VERSION = (PKG / "VERSION").read_text().strip()
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(PKG / ".charter"))
 import lib as charter_lib  # noqa: E402  the package's own parser decides what counts as a charter unit
+import checks as charter_checks  # noqa: E402  and its gate decides which staged change is the owner's
 
 # Files copied verbatim and owned by the package (relative to the package root).
 OWNED = [
@@ -113,8 +114,12 @@ def stage(project: Path, rels: list[str], message: str, show: bool = True) -> li
                             capture_output=True, text=True).stdout.split("\0")
     staged = [r for r in staged if r]
     if staged and show:
-        print("\n".join(charter_lib.handover(project, staged, message)))
+        print("\n".join(charter_lib.handover(project, staged, message, owner_paths(project, staged))))
     return staged
+
+
+def owner_paths(project: Path, staged: list[str]) -> list[str]:
+    return list(charter_checks.owner_only_staged(project, charter_lib.load_config(project), staged))
 
 
 def load_manifest(project: Path) -> dict:
@@ -432,7 +437,21 @@ def do_fleet(root: Path, a) -> int:
             waiting = sorted(set(uncommitted_managed(p)) | set(subprocess.run(["git", "-C", str(p), "diff", "--cached", "--name-only", "--", *MANAGED],
                                                                capture_output=True, text=True).stdout.split()))
         state = ("up to date" if installed == VERSION and not waiting else
-                 f"{head} -> {installed}, {len(waiting)} file(s) wait on the owner" if waiting else f"behind ({VERSION} available)")
+                 f"{head} -> {installed}, {len(waiting)} file(s) not committed" if waiting else f"behind ({VERSION} available)")
+        if waiting and a.upgrade:
+            owner = owner_paths(p, waiting)
+            if not owner:   # an upgrade the installer wrote: the agent commits it, the gate agreeing
+                r = subprocess.run(["git", "-C", str(p), "commit", "-q", "-m", f"charter {installed}", "--", *waiting],
+                                   capture_output=True, text=True)
+                if r.returncode == 0:
+                    sha = subprocess.run(["git", "-C", str(p), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+                    state, waiting = f"{head} -> {installed}, committed {sha}", []
+                else:
+                    tail = (r.stdout + r.stderr).strip().splitlines()[-1:] or ["no output"]
+                    notes.append(f"{p.name}: commit refused: {tail[0]}")
+                    state = f"{head} -> {installed}, {len(waiting)} file(s) staged; the commit was refused"
+            else:
+                state = f"{head} -> {installed}, {len(waiting)} file(s) wait on the owner ({', '.join(owner[:3])})"
         rows.append((p.name, installed, branch, state))
         if waiting:
             pending.append((p, waiting, f"charter {installed}"))
@@ -443,10 +462,10 @@ def do_fleet(root: Path, a) -> int:
     for l in notes:
         print(l)
     if not pending:
-        print("nothing waits on the owner" + ("" if a.upgrade or all(r[1] == VERSION for r in rows) else "; --upgrade upgrades the projects behind"))
+        print("nothing waits" + ("" if a.upgrade or all(r[1] == VERSION for r in rows) else "; --upgrade upgrades the projects behind"))
         return 0
     if not a.upgrade:
-        print("\nre-run with --upgrade to stage what waits and get the owner's one command")
+        print("\nre-run with --upgrade to upgrade, commit what an agent may, and get one command for the rest")
         return 0
     cmds = [charter_lib.commit_command(p, paths, msg) for p, paths, msg in pending]
     print(f"\nWaiting on the owner: {len(pending)} project(s), one command. The gate refuses these commits to an agent.")

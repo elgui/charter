@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.5",
+    "version": "0.4.6",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -210,13 +210,19 @@ def commit_command(root: Path, paths: list[str], message: str) -> str:
             + " ".join(shlex.quote(p) for p in paths))
 
 
-def handover(root: Path, paths: list[str], message: str) -> list[str]:
-    """The owner's commit as one paste-ready command, in the `!` form and the own-terminal form."""
+def handover(root: Path, paths: list[str], message: str, owner: list[str]) -> list[str]:
+    """Who commits what is staged, and the command. `owner` lists the paths among them that are the owner's
+    change (`checks.owner_only_staged`); with none, the agent commits, and the owner is not asked."""
     branch = git(root, "branch", "--show-current").stdout.strip() or "(detached HEAD)"
     cmd = commit_command(root, paths, message)
-    L = [f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
-         f"  in a Claude Code prompt:  ! CHARTER_OWNER=1 {cmd}",
-         f"  from your own terminal:   {cmd}"]
+    if not owner:
+        L = [f"Staged {len(paths)} file(s) on branch {branch}; none is an owner-only change, so an agent commits them:",
+             f"  {cmd}"]
+    else:
+        L = [f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
+             f"  in a Claude Code prompt:  ! CHARTER_OWNER=1 {cmd}",
+             f"  from your own terminal:   {cmd}",
+             f"  owner-only among them ({len(owner)}): " + ", ".join(owner[:8]) + (f" and {len(owner) - 8} more" if len(owner) > 8 else "")]
     if branch in ("main", "master"):
         L.append(f"  note: {branch} is the main line; the change belongs on a branch (`git switch -c <branch>` keeps what is staged)")
     return L
