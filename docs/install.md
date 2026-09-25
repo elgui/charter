@@ -1,6 +1,6 @@
 # Installing charter on a project
 
-The one procedure for an agent asked to install, set up, upgrade or remove charter on a project. Other documents point here rather than repeat it. The outputs quoted below come from a rehearsal of charter 0.4.3 on a scratch repository on 2026-09-24 (in the scratchpad); the counts and paths vary with the project, and the version in each line is the one in `package/VERSION`. Once the owner has committed the install, day-to-day work follows `docs/daily-use.md`.
+The one procedure for an agent asked to install, set up, upgrade or remove charter on a project. Other documents point here rather than repeat it. The outputs quoted below come from a rehearsal of charter 0.4.4 on a scratch repository on 2026-09-25 (in the scratchpad); the counts and paths vary with the project, and the version in each line is the one in `package/VERSION`. Once the owner has committed the install, day-to-day work follows `docs/daily-use.md`.
 
 Conventions used throughout:
 
@@ -18,7 +18,7 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 2. **Never set `CHARTER_OWNER`, never pass `--no-verify`**, and never work around a refusal by writing the file through Bash. The refusal is the method working, not a fault (`package/.claude/rules/charter.md:36`). The one exception is a throwaway rehearsal clone that the survey made (`--keep-clone`), which is not the project.
 3. **Never push, open or merge a pull request, or deploy.** Those are the owner's acts (`package/.claude/rules/charter.md` § Decisions and memory, "Commitments").
 4. **Facts about an existing project come from the survey** (step 2), measured today, never from memory or another session's notes (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:14`).
-5. **Stop and report** any check that fails.
+5. **Stop and report** any check that fails (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:17`).
 
 ## Step 0: preconditions
 
@@ -39,7 +39,7 @@ The full comparison is `docs/method.md` § Two tracks. The survey and the first 
 
 ## Step 2: choose the path
 
-- **A new project** (a first commit and little else): step 3.
+- **A new project** (a first commit and little else): step 3 (`docs/migration.md` Paths A and B).
 - **A project that already has code, taskets or documents**: survey it first. The survey reads the project without writing to it and rehearses the install in a throwaway clone (`docs/design/migration-workflow.md`):
 
   ```
@@ -170,13 +170,13 @@ Expected, one of:
 
 A new package version reaches a project only by an upgrade; nothing pulls it. The personal-layer SessionStart hook says `package X available, Y installed` when a project is behind (`personal/claude-home/hooks/charter-personal.py`).
 
-1. Step 0 again.
-2. `git -C $P switch -c charter-<version>`.
+1. Step 0 again: `upgrade` does not check the working tree either (`do_install` in `bin/charter-pkg` runs both).
+2. `git -C $P switch -c charter-<version>`: the upgrade lands on a branch (`personal/claude-home/Skills/CharterAdmin/SKILL.md:65`).
 3. Read the upgrade notes in `docs/package.md` § Versioning and upgrade for every version between the installed one and the target. Some ask for a step after the upgrade.
 4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:136-159`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:133`).
 5. `python3 $M upgrade $P`. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
-6. Stage the changed and new files by name (`git -C $P status --porcelain` lists them), then hand over as in step 8, with the message `charter <version>`.
-7. Step 9, and the note's checks.
+6. Stage the changed and new files by name (`git -C $P status --porcelain` lists them; `personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:17`), then hand over as in step 8, with the message `charter <version>`.
+7. Step 9, and the checks the version's note in `docs/package.md` asks for.
 
 Rollback: `git revert` of the upgrade commit; `charter/VERSION` and the manifest revert with it (`docs/migration.md` § A new package version reaching a project).
 

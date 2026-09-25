@@ -1,6 +1,6 @@
 # Working on a project under charter, day to day
 
-What to do once charter is installed (`docs/install.md`), for the owner and for the agent. The rules the agent follows are in the project's `.claude/rules/charter.md` (`package/.claude/rules/charter.md`); this page puts them in the order a working day uses them, and says what the owner does that the agent cannot. The commands and outputs quoted below come from a rehearsal of charter 0.4.3 on a scratch repository on 2026-09-24 (in the scratchpad).
+What to do once charter is installed (`docs/install.md`), for the owner and for the agent. The rules the agent follows are in the project's `.claude/rules/charter.md` (`package/.claude/rules/charter.md`); this page puts them in the order a working day uses them, and says what the owner does that the agent cannot. The commands and outputs quoted below come from a rehearsal of charter 0.4.4 on a scratch repository on 2026-09-25 (in the scratchpad).
 
 ## Words used here
 
@@ -18,13 +18,13 @@ What to do once charter is installed (`docs/install.md`), for the owner and for 
 
 ## The loop
 
-1. **Open a session.** Read the banner.
-2. **Pick or write the unit**, with probes that fail today.
-3. **Start it**, and record the failing baseline.
-4. **Work** inside its perimeter; record decisions as they are made.
-5. **Commit.** The gate runs on every commit, whoever makes it.
-6. **Close it**: probes pass, boxes checked, evidence cited, `status: done`.
-7. **Report** when someone asks where things stand.
+1. **Open a session.** Read the banner (`package/.charter/hooks/session_start.py`).
+2. **Pick or write the unit**, with probes that fail today (`package/charter/templates/unit.md:24-26`).
+3. **Start it**, and record the failing baseline (`package/.claude/skills/charter-unit/SKILL.md`).
+4. **Work** inside its perimeter; record decisions as they are made (`package/.claude/rules/charter.md:15-19`).
+5. **Commit.** The gate runs on every commit, whoever makes it (`package/.charter/githooks/pre-commit`).
+6. **Close it**: probes pass, boxes checked, evidence cited, `status: done` (`package/.claude/rules/charter.md:24`).
+7. **Report** when someone asks where things stand (`package/.claude/skills/charter-progress/SKILL.md`).
 
 The owner's part runs beside it: commit what only the owner may, approve or refuse what the agent proposed, and once a week read what the gates did (§ What only the owner does, below; `package/.claude/rules/charter.md:28-38`).
 
@@ -33,7 +33,7 @@ The owner's part runs beside it: commit what only the owner may, approve or refu
 In Claude Code, the SessionStart hook gives Claude the full charter index: rules, active unit, decisions, proposals, gate activity. It shows you a short summary in the transcript, starting with this line (`package/.charter/hooks/session_start.py`):
 
 ```
-charter 0.4.3, track prototype, opt-ins: none. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help
+charter 0.4.4, track prototype, opt-ins: none. Rules: .claude/rules/charter.md. CLI: python3 .charter/bin/charter --help
 ```
 
 Claude Code puts a SessionStart hook's plain output into Claude's context without showing it; only its `systemMessage` appears in the transcript (https://code.claude.com/docs/en/hooks, SessionStart). Before 0.4.3 the hook printed plain output only, so a project on 0.4.2 or older shows you nothing. Ask the agent "what did the charter banner say?", or run `python3 .charter/bin/charter config`. The summary, line by line:
@@ -41,9 +41,9 @@ Claude Code puts a SessionStart hook's plain output into Claude's context withou
 - **The track and opt-ins** are the settings every gate reads. `python3 .charter/bin/charter config` prints the same line from a terminal or from another agent (`cmd_config` in `package/.charter/bin/charter`).
 - **A line starting `charter/config.json:`** means the config has a key, type or track the gates cannot read. Commits and CI are refused until the owner corrects it (`docs/gates.md` § Config). The agent cannot fix it: the file is the owner's.
 - **"The charter git hook is not active in this clone"**: run `python3 .charter/bin/charter setup` once. If it says the clone runs other git hooks, tell the owner instead (`package/.claude/rules/charter.md:11`).
-- **The active unit**, when one is set, with its open criteria, or a reminder to start one (`package/.charter/hooks/session_start.py:43-54`).
+- **The active unit**, when one is set, with its open criteria, or `No active unit. Start one with ...` (`package/.charter/hooks/session_start.py:43-54`).
 
-For the rest of the picture, run `python3 .charter/bin/charter next`, or ask the agent to. It prints the road's open items with their units, the next units in the road's order, the units off the road, what waits on you, and the gate log over the last 7 days. It writes nothing, not even the gate log, so it is safe to run at any time (`cmd_next` in `package/.charter/bin/charter`, 0.4.4).
+For the rest of the picture, run `python3 .charter/bin/charter next`, or ask the agent to. It prints the active unit, the road's open items with their units, the next units in the road's order (without `charter/rails.md`, the open units by priority), the units off the road, the done units that lack acceptance, what waits on you, and the gate log over the last 7 days. It writes nothing, not even the gate log, so it is safe to run at any time (`cmd_next` in `package/.charter/bin/charter`, 0.4.4).
 
 Codex and other agents get no banner. They read the `AGENTS.md` section the installer wrote, which points at the same rules (`package/AGENTS.md`), and the git hook and CI gate their commits as they gate Claude's. From the command line, `charter next` gives them the active unit, the road and what waits on the owner.
 
@@ -70,7 +70,7 @@ python3 .charter/bin/charter probe <id>
 `unit start` attributes the session's edits and cost to the unit; an engine sets `CHARTER_UNIT=<id>` instead (`package/.claude/rules/charter.md:7`). Before the work, the probe should fail. In the rehearsal:
 
 ```
-charter/probe block [.taskets/20260924-greet.md]: AC-1 probe failed: ... exited 1: ModuleNotFoundError: No module named 'app.greet'
+charter/probe block [.taskets/20260925-greet.md]: AC-1 probe failed: ... exited 1: ModuleNotFoundError: No module named 'app.greet'
 - `$ python3 -c "from app.greet import greet; assert greet()=='hello'"` → exit 1 (ModuleNotFoundError: No module named 'app.greet')
 ```
 
@@ -102,12 +102,12 @@ A refusal prints one line per finding, each with its `Override:`. Do what the ov
 To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` § Finish).
 
 1. `python3 .charter/bin/charter probe <id>`. In the rehearsal, after the work: ``- `$ python3 -c "from app.greet import greet; assert greet()=='hello'"` → exit 0``.
-2. Check each `- [x] AC-n` whose probe passed.
+2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
-4. `status: done`, and a closing `## Log` line.
+4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
 5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:558`).
 
-A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-24).
+A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
 The final message of the turn cites the same evidence. A completion claim without a commit, a `path:line` or a `$ command` is blocked once by the Stop hook (`package/.claude/rules/charter.md:25`).
 
