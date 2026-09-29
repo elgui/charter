@@ -39,7 +39,7 @@ def main() -> int:
         if lib.owner_session():
             out.append("Owner session (CHARTER_OWNER=1): owner-only files and fields may be edited.")
         units = lib.taskets(root)
-        aid = lib.active_unit(root)
+        aid = lib.active_unit(root, sid)
         if aid and aid in units:
             u = units[aid]
             acc = lib.acceptance(u.get("_body", ""))

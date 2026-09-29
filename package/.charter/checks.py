@@ -24,7 +24,9 @@ GOVERNANCE_FILES = ["CLAUDE.md", "AGENTS.md", "charter/scope.md"]
 GOVERNANCE_GLOBS = [".claude/rules/*.md"]
 DEFAULT_GOVERNANCE = GOVERNANCE_FILES + GOVERNANCE_GLOBS
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-MARKER_RE = re.compile(r"charter:([a-z0-9][a-z0-9._-]*)", re.I)
+# An id ends in a letter or digit: `see charter:foo.` cites `foo`, not the unknown id `foo.`
+# (3 of the decisions gate's first 7 blocks in tele-claude were that trailing period).
+MARKER_RE = re.compile(r"charter:([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)", re.I)
 CHECKBOX_RE = re.compile(r"^\s*-\s*\[( |x|X)\]\s*(AC-\d+|[^\n]*)", re.M)
 PROBE_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s*(AC-\d+)?[^\n]*?probe:\s*`([^`\n]+)`", re.M)
 SHA_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
@@ -260,7 +262,11 @@ def split_unit_for(root: Path, rp: str, cfg: dict | None = None) -> str | None:
 def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
                new_bytes: int | None = None, old_bytes: int = 0) -> list[Finding]:
     """A file over its line limit, or a governance file over its byte budget, is frozen for growth.
-    A live named exception replaces the limit it names; an open split unit unfreezes the file."""
+    A live named exception replaces the limit it names; an open split unit unfreezes the file.
+    `limits.growth_slack_lines` (default 0) lets one change add that many lines to a non-governance
+    file over its line limit, with a warning: in tele-claude, 66 files over 800 lines had no
+    exception, so a one-line fix to any of them was refused (the size gate blocked 143 times in
+    its first week there)."""
     b = size_budget_for(root, cfg, rp)
     if b is None:
         return []
@@ -274,11 +280,19 @@ def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
         what = "; ".join(f"{v}, over {b.label(u)}" for u, n, v in over)
         if su:
             return [Finding("size", "warn", f"{rp} {what}; allowed because split unit {su} is open", path=rp)]
+        slack = int((cfg.get("limits") or {}).get("growth_slack_lines", 0) or 0)
+        if ([u for u, _, _ in over] == ["line"] and old_lines and new_lines - old_lines <= slack
+                and not is_governance(cfg, rp)):
+            return [Finding("size", "warn", f"{rp} {what}; allowed as {new_lines - old_lines} of the "
+                                            f"{slack}-line growth slack. Plan a split", path=rp)]
         return [Finding("size", "block", f"{rp} {what}; the file is frozen for growth", path=rp,
                         override=f"move code out of it into a new file (shrinking is always allowed), or ask the owner to open a unit with `kind: split` and `perimeter: [{rp}]`, or to name it in `size_exceptions` with a budget, `because:` and `expires:`")]
-    if new_lines > int(b.lines * 0.8) and new_lines > old_lines:
+    # Warn when a change CROSSES 80%, not on every change above it. An exception's budget is 1.25x
+    # the file's size on the day it was granted, so 80% of it is that size: warning above 80% warned
+    # on every line any exception file gained.
+    if new_lines > int(b.lines * 0.8) >= old_lines:
         return [Finding("size", "warn", f"{rp} is at {new_lines} lines, {b.lines} is the limit; plan a split", path=rp)]
-    if b.bytes and new_bytes is not None and new_bytes > int(b.bytes * 0.8) and new_bytes > old_bytes:
+    if b.bytes and new_bytes is not None and new_bytes > int(b.bytes * 0.8) >= old_bytes:
         return [Finding("size", "warn", f"{rp} is at {new_bytes} bytes, {b.bytes} is the budget; plan a split", path=rp)]
     return []
 
@@ -1008,6 +1022,26 @@ def unstaged_paths(root: Path) -> list[str]:
     """Tracked files whose working-tree content differs from the index."""
     r = lib.git(root, "diff", "--name-only")
     return [p for p in r.stdout.splitlines() if p.strip()]
+
+
+def rename_sources(root: Path, base: str | None = None) -> dict[str, str]:
+    """{new path: old path} for each file the change set renames: the index against HEAD when `base`
+    is None, else `base` against HEAD. A `git mv` of a 4,955-line file into docs/history was measured
+    as a new 4,955-line file and refused; before the move it was that size under its old name."""
+    args = ["diff", "--name-status", "-M", "--diff-filter=R", "-z"] + (["--cached"] if base is None else [base, "HEAD"])
+    r = lib.git(root, *args)
+    if r.returncode != 0:
+        return {}
+    t = r.stdout.split("\0")
+    out = {}
+    i = 0
+    while i + 2 < len(t):
+        if t[i].startswith("R"):
+            out[t[i + 2]] = t[i + 1]
+            i += 3
+        else:
+            i += 2
+    return out
 
 
 def staged_paths(root: Path) -> list[str]:

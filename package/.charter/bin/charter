@@ -75,6 +75,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         paths = checks.staged_paths(root)
         texts = {p: checks.staged_text(root, p) for p in paths}
         changed = paths
+        renamed = checks.rename_sources(root)
 
         def old(p):
             r = lib.git(root, "show", f"HEAD:{p}")
@@ -86,6 +87,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         paths = tracked
         base = checks.usable_base(root, a.base)
         changed = checks.changed_paths(root, a.base) if base else None
+        renamed = checks.rename_sources(root, base) if base else {}
         if changed is None:
             changed = list(tracked)
             rep.add(checks.Finding("error", "warn", f"base {a.base or 'HEAD~1'} is not usable in this clone (an all-zero SHA, a SHA a force-push removed, "
@@ -126,7 +128,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             text = new(p)
             if lib.is_binary(text):
                 continue   # a line count means nothing for binary content
-            prev = old(p)
+            prev = old(renamed.get(p, p))   # a renamed file is measured against its old name, not as new
             new_lines = lib.line_count(text)
             old_lines = 0 if (a.strict or prev is None) else lib.line_count(prev)
             old_bytes = 0 if (a.strict or prev is None) else len(prev.encode("utf-8"))
@@ -732,6 +734,9 @@ def cmd_unit(a) -> int:
             print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
             return 1
         (st / "active").write_text(a.id + "\n")
+        own = lib.session_unit_file(root)
+        if own is not None:
+            own.write_text(a.id + "\n")   # this session's choice; the checkout's file is every session's
         cfg = lib.load_config(root)
         for f in checks.check_unit_scope(root, cfg, units[a.id]) + checks.check_unit_decisions(root, checks.decision_index(root), units[a.id]):
             print(f.line())
@@ -741,13 +746,17 @@ def cmd_unit(a) -> int:
         print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
         return 0
     if a.action == "stop":
-        p = st / "active"
-        if p.exists():
-            p.unlink()
+        for p in (st / "active", lib.session_unit_file(root)):
+            if p is not None and p.exists():
+                p.unlink()
         print("no active unit")
         return 0
     aid = lib.active_unit(root)
-    print(aid or "no active unit")
+    last = (st / "active").read_text().strip() if (st / "active").exists() else ""
+    if not aid and last:
+        print(f"no active unit (the checkout's last choice, {last}, is closed)")
+    else:
+        print(aid or "no active unit")
     return 0
 
 

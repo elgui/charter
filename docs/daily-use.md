@@ -67,7 +67,7 @@ python3 .charter/bin/charter unit start <id>
 python3 .charter/bin/charter probe <id>
 ```
 
-`unit start` attributes the session's edits and cost to the unit; an engine sets `CHARTER_UNIT=<id>` instead (`package/.claude/rules/charter.md:7`). Before the work, the probe should fail. In the rehearsal:
+`unit start` attributes the session's edits and cost to the unit; an engine sets `CHARTER_UNIT=<id>` instead (`package/.claude/rules/charter.md:7`). The choice is the session's: another session in the same checkout inherits it only while the unit is open (0.4.7). Before the work, the probe should fail. In the rehearsal:
 
 ```
 charter/probe block [.taskets/20260925-greet.md]: AC-1 probe failed: ... exited 1: ModuleNotFoundError: No module named 'app.greet'

@@ -2,6 +2,7 @@
 """Stop. Judges a turn only if it attempted an Edit or Write or moved HEAD (a commit landed):
 a final message that claims completion must cite a commit, a path:line or a `$ command` run,
 or say plainly what is not done (R9/R10); an active unit marked done must pass its own gate.
+An anchor that does not resolve from this checkout is a warning Claude reads, not a block.
 Blocks at most once per turn: stop_hook_active lets the second Stop through.
 When a commit landed and the active unit's `## Log` did not move, it tells Claude once through
 `additionalContext`, the Stop channel Claude reads (R5)."""
@@ -33,15 +34,19 @@ def main() -> int:
         moved = bool(before and now and before != now)
         if not touched and not moved:
             return 0     # a turn that changed nothing: an explanation is not a completion claim
-        reasons = []
+        reasons, warn = [], ""
         if checks.DONE_CLAIM_RE.search(msg):
             k = checks.classify_anchors(root, msg)
-            if not (k["sha"] or k["fileline"] or k["run"]) and not ADMITTED_RE.search(msg):
+            if not (k["sha"] or k["fileline"] or k["run"] or k["bad"]) and not ADMITTED_RE.search(msg):
                 reasons.append("the final message claims completion but cites no commit, no path:line and no `$ command` run "
                                "(a file name alone shows nothing); cite them, or say plainly what is not done")
             if k["bad"]:
-                reasons.append(f"the final message cites anchors that do not resolve: {', '.join(k['bad'][:5])}")
-        unit = lib.taskets(root).get(lib.active_unit(root) or "")
+                # A warning, not a block: all 9 of this gate's blocks in tele-claude's first 2.4 days were real
+                # anchors it could not see from this checkout (a bare `file.py:123`, a file or a SHA in another repo).
+                warn = (f"charter: the final message cites anchors that do not resolve from {root.name}: {', '.join(k['bad'][:5])}. "
+                        "If they are in another repository, give the absolute path; if they are wrong, correct them.")
+                lib.log_event(root, "hook", "anchors", "warn", warn[:500], session=sid, event="Stop")
+        unit = lib.taskets(root).get(lib.active_unit(root, sid) or "")
         if unit is not None and str(unit.get("status")) in lib.as_list(cfg.get("done_statuses")):
             for f in checks.check_unit_done(root, cfg, (root / unit["_path"]).read_text(encoding="utf-8"), unit["_path"]):
                 if f.level == "block":
@@ -53,6 +58,7 @@ def main() -> int:
                 note = (f"charter: commit(s) landed this turn ({before[:7]}..{now[:7]}) and {unit['_path']} has no new `## Log` line. "
                         f"Append one dated line under `## Log` saying what landed, then stop.")
                 lib.log_event(root, "hook", "log", "warn", f"commits landed without a log line in {unit['_path']}", session=sid, event="Stop")
+        note = "\n".join(x for x in (note, warn) if x)
         if reasons:
             lib.log_event(root, "hook", "done", "block", "; ".join(reasons)[:500], session=sid, event="Stop")
             lib.block_stop("charter stop gate (blocks once):\n- " + "\n- ".join(reasons) + (f"\n{note}" if note else ""))

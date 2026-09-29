@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import fnmatch
+import glob
 import json
 import os
 import re
@@ -29,13 +30,14 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.6",
+    "version": "0.4.7",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
         "file_lines": 800,        # rule 3: freeze-and-split threshold
         "governance_lines": 400,  # CLAUDE.md, rules, scope, decisions index
         "governance_bytes": 32768,  # the same files, in bytes: one 40,000-character line is 1 line
+        "growth_slack_lines": 0,  # lines one change may add to a non-governance file over its limit (a warning)
     },
     # the governance set (globs); decisions and change requests are always governance
     "governance_files": ["CLAUDE.md", "AGENTS.md", "charter/scope.md", ".claude/rules/*.md"],
@@ -105,7 +107,7 @@ PROBLEMS = "_problems"   # set by config_from: what in the project's config.json
 # the type each setting must have; a dict names the keys a section may hold
 CONFIG_SCHEMA = {
     "version": str, "track": str, "owner": (str, list),
-    "limits": {"file_lines": int, "governance_lines": int, "governance_bytes": int},
+    "limits": {"file_lines": int, "governance_lines": int, "governance_bytes": int, "growth_slack_lines": int},
     "governance_files": list, "size_exceptions": list, "exempt_from_size": list,
     "rails": {"required": bool, "keys": list},
     "done_statuses": list,
@@ -571,14 +573,46 @@ def acceptance(body: str) -> str:
     return ""
 
 
-def active_unit(root: Path) -> str | None:
-    """CHARTER_UNIT from the environment (engines export it), else `charter unit start`'s choice."""
+def session_id(session: str | None = None) -> str:
+    """The Claude Code session asking: a hook passes the id it was given; a command run from a
+    session's shell finds it in CLAUDE_CODE_SESSION_ID. Empty outside a session."""
+    return re.sub(r"[^\w.-]", "_", (session or os.environ.get("CLAUDE_CODE_SESSION_ID", "")).strip())
+
+
+def session_unit_file(root: Path, session: str | None = None) -> Path | None:
+    sid = session_id(session)
+    return local_state_dir(root) / f"active-{sid}" if sid else None
+
+
+def unit_is_open(root: Path, uid: str) -> bool:
+    """False when the unit's tasket says done or a terminal status; True when it says anything
+    else or cannot be read (an unknown unit is reported by whoever uses it, not hidden here)."""
+    d = artifact_root(root) / TASKETS_DIR
+    for p in (d.glob(f"{glob.escape(uid)}*.md") if d.is_dir() else []):
+        fields, _ = read_md(p)
+        if str(fields.get("id") or p.stem) == uid:
+            closed = as_list(load_config(root).get("done_statuses")) + list(TERMINAL_STATUSES)
+            return str(fields.get("status", "")) not in closed
+    return True
+
+
+def active_unit(root: Path, session: str | None = None) -> str | None:
+    """The unit a session works on. CHARTER_UNIT from the environment (engines export it) wins;
+    then the unit this session chose with `charter unit start`; then the checkout's last choice,
+    but only while that unit is open. The checkout's `active` file is shared by every session in
+    the tree: read on its own, it charged 29 of 61 sessions in tele-claude's main checkout to a
+    unit that was already done (2026-09-29), and their Stop gate asked them for its Log line."""
     env = os.environ.get("CHARTER_UNIT", "").strip()
     if env:
         return env
+    own = session_unit_file(root, session)
+    if own is not None and own.exists():
+        return own.read_text().strip() or None
     p = local_state_dir(root) / "active"
     if p.exists():
-        return p.read_text().strip() or None
+        aid = p.read_text().strip() or None
+        if aid and unit_is_open(root, aid):
+            return aid
     return None
 
 
