@@ -112,6 +112,7 @@ Three things live in this one repository. Each goes to a different place and is 
 | `docs/design/migration-workflow.md` | How the survey and the `Migrate` workflow work, and the leCRM rehearsal |
 | `docs/design/charter-next.md` | Why `charter next` exists, what a read-only tool such as NowWhat may call, and what was deferred (0.4.4) |
 | `docs/method-visual.html` | The method in diagrams, offline |
+| `docs/charter-map.html` | **The map**: charter's elements on one interactive SVG (the owner's keys, the written charter, the unit loop, the gate matrix at three lines, main, the records, where charter comes from), with a legend and a panel citing the source of each element. Offline |
 | `docs/cheatsheet.html`, `docs/cheatsheet.pdf` | **The desk sheet**: one A4, both sides. The unit loop, a new project, a migration, the owner's weekly look, and the reference: unit format, evidence, refusals and what to do, every command. Print the PDF |
 | `AGENTS.md` | Working on charter itself: tests and releasing a new package version |
 

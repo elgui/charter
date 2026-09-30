@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charter map</title>
+<meta name="description" content="Charter 0.4.8 on one map: the owner's keys, the written charter, the unit of work, the three gate lines, main, the records and where charter comes from.">
+<style>
+/* Tokens from docs/cheatsheet.html (itself from docs/method-visual.html), with a dark theme. */
+:root{--paper:#ffffff;--page:#e9e6de;--fg:#1c1c1e;--muted:#5d6166;--line:#3c3c40;--faint:#dcd9cf;--panel2:#f2f0ea;
+--block:#4338ca;--block-bg:#e3e7ff;--warn:#a85d00;--warn-bg:#fdf0cf;--pass:#157a3c;--pass-bg:#ddf6e5;
+--owner:#0d7068;--owner-bg:#d6f5f0;--art:#244b77;--art-bg:#edf2f8;--rec:#5b4a9e;--rec-bg:#eeeaf8;--limit:#d42a2a;
+--serif:"Charter","Bitstream Charter","Charis SIL",Georgia,serif;
+--sans:"Liberation Sans Narrow","Arial Narrow","Roboto Condensed","Helvetica Neue",Arial,sans-serif;
+--mono:"Liberation Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#17191d;--page:#0f1013;--fg:#e8e6e1;--muted:#a0a4ab;--line:#8a8d93;--faint:#34373d;--panel2:#23262c;
+--block:#9aa1ff;--block-bg:#232650;--warn:#f0a640;--warn-bg:#3a2b10;--pass:#57d488;--pass-bg:#12301f;
+--owner:#43c9ba;--owner-bg:#0f2f2c;--art:#94b8e4;--art-bg:#1a2432;--rec:#b7a8ee;--rec-bg:#241f37;color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#17191d;--page:#0f1013;--fg:#e8e6e1;--muted:#a0a4ab;--line:#8a8d93;--faint:#34373d;--panel2:#23262c;
+--block:#9aa1ff;--block-bg:#232650;--warn:#f0a640;--warn-bg:#3a2b10;--pass:#57d488;--pass-bg:#12301f;
+--owner:#43c9ba;--owner-bg:#0f2f2c;--art:#94b8e4;--art-bg:#1a2432;--rec:#b7a8ee;--rec-bg:#241f37;color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--fg);font:15px/1.45 var(--sans)}
+.wrap{max-width:1560px;margin:0 auto;padding:22px 16px 40px}
+h1,h2,h3{font-family:var(--serif);margin:0;line-height:1.15}
+h1{font-size:30px;letter-spacing:-.01em}
+h2{font-size:19px;margin-bottom:10px}
+h3{font-size:15px;margin-bottom:6px}
+code,.m{font-family:var(--mono);font-size:.86em;background:var(--panel2);padding:0 .3em;border-radius:3px;overflow-wrap:anywhere}
+a{color:var(--art)}
+.muted{color:var(--muted)}
+
+/* header */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;border-bottom:2px solid var(--fg);padding-bottom:10px;margin-bottom:14px}
+header p{margin:4px 0 0;color:var(--muted);max-width:760px}
+.controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.controls span{font-size:13px;color:var(--muted);margin-right:2px}
+button.lens,button.theme{font:600 13px var(--sans);border:1.5px solid var(--line);background:var(--paper);color:var(--fg);border-radius:16px;padding:4px 12px;cursor:pointer}
+button.lens[aria-pressed="true"]{background:var(--fg);color:var(--paper)}
+button.lens[data-lens="owner"]{border-color:var(--owner)}
+button.lens[data-lens="owner"][aria-pressed="true"]{background:var(--owner);border-color:var(--owner);color:#fff}
+button.lens[data-lens="hard"]{border-color:var(--block)}
+button.lens[data-lens="hard"][aria-pressed="true"]{background:var(--block);border-color:var(--block);color:#fff}
+button.lens[data-lens="record"]{border-color:var(--rec)}
+button.lens[data-lens="record"][aria-pressed="true"]{background:var(--rec);border-color:var(--rec);color:#fff}
+
+/* the map */
+.stage{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+@media (min-width:1280px){.stage{grid-template-columns:minmax(0,1fr) 320px}}
+.mapbox{background:var(--paper);border:1px solid var(--faint);border-radius:10px;padding:6px;overflow:hidden}
+svg.map{display:block;width:100%;height:auto;font-family:var(--sans)}
+.hint{font-size:13px;color:var(--muted);margin:6px 4px 0}
+
+/* detail panel */
+aside.detail{background:var(--paper);border:1px solid var(--faint);border-radius:10px;padding:16px 16px 14px;align-self:start;position:sticky;top:12px;min-height:220px}
+aside.detail .kind{display:inline-block;font:700 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--muted);margin-bottom:8px}
+aside.detail .kind.owner{background:var(--owner-bg);color:var(--owner)}
+aside.detail .kind.art{background:var(--art-bg);color:var(--art)}
+aside.detail .kind.block{background:var(--block-bg);color:var(--block)}
+aside.detail .kind.rec{background:var(--rec-bg);color:var(--rec)}
+aside.detail .kind.pass{background:var(--pass-bg);color:var(--pass)}
+aside.detail h2{font-size:21px;margin-bottom:8px}
+aside.detail p{margin:0 0 9px}
+aside.detail .cmd{font:13px/1.4 var(--mono);background:var(--panel2);border-left:3px solid var(--fg);padding:6px 8px;margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}
+aside.detail .src{font-size:12.5px;color:var(--muted);border-top:1px solid var(--faint);padding-top:7px;margin-top:4px}
+aside.detail .pinned{font-size:12px;color:var(--muted);float:right}
+
+/* legend */
+section.legend{margin-top:18px;background:var(--paper);border:1px solid var(--faint);border-radius:10px;padding:18px 18px 8px}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:4px 26px}
+.lgroup{margin-bottom:14px}
+.lrow{display:grid;grid-template-columns:54px 1fr;gap:10px;align-items:center;padding:4px 0;border-bottom:1px dotted var(--faint)}
+.lrow:last-child{border-bottom:0}
+.lrow svg{width:54px;height:34px;display:block}
+.lrow b{font-weight:700}
+.lrow div{font-size:14px}
+.read ol{margin:4px 0 12px;padding-left:20px}
+.read li{margin-bottom:4px}
+footer{margin-top:14px;font-size:12.5px;color:var(--muted)}
+
+/* ---------- SVG styling ---------- */
+.map text{fill:var(--fg)}
+.map .t-mono{font-family:var(--mono)}
+.map .t-serif{font-family:var(--serif);font-weight:700}
+.map .t-muted{fill:var(--muted)}
+.map .t-cap{font-weight:700;letter-spacing:.09em;text-transform:uppercase;font-size:13px}
+.map .t-b{font-weight:700}
+.region{stroke-width:1.5}
+.r-owner{fill:var(--owner-bg);stroke:var(--owner)}
+.r-art{fill:var(--art-bg);stroke:var(--art)}
+.r-work{fill:var(--panel2);stroke:var(--line);stroke-dasharray:7 5}
+.r-gates{fill:var(--paper);stroke:var(--block)}
+.r-main{fill:var(--pass-bg);stroke:var(--pass)}
+.r-rec{fill:var(--rec-bg);stroke:var(--rec)}
+.r-sup{fill:var(--paper);stroke:var(--muted);stroke-dasharray:2 4}
+.badge circle{stroke:none}
+.badge text{fill:#fff;font-weight:700;font-size:14px;text-anchor:middle;dominant-baseline:central}
+.c-owner{fill:var(--owner)}.c-art{fill:var(--art)}.c-fg{fill:var(--line)}.c-block{fill:var(--block)}.c-pass{fill:var(--pass)}.c-rec{fill:var(--rec)}.c-muted{fill:var(--muted)}
+.tc-owner{fill:var(--owner)!important}.tc-art{fill:var(--art)!important}.tc-block{fill:var(--block)!important}.tc-pass{fill:var(--pass)!important}.tc-rec{fill:var(--rec)!important}.tc-warn{fill:var(--warn)!important}
+
+.doc{fill:var(--paper);stroke:var(--art);stroke-width:1.6}
+.doc.owner{stroke:var(--owner)}
+.doc.gen{stroke-dasharray:3 3}
+.fold{fill:none;stroke:inherit;stroke-width:1.6}
+.stack{fill:var(--paper);stroke:var(--art);stroke-width:1.2;opacity:.8}
+.stamp{fill:var(--paper);stroke:var(--owner);stroke-width:3}
+.stamp-in{fill:none;stroke:var(--owner);stroke-width:1}
+.pill{fill:var(--paper);stroke:var(--line);stroke-width:1.5}
+.pill.done{fill:var(--pass-bg);stroke:var(--pass)}
+.chipr{stroke-width:1.2}
+.chip-art{fill:var(--art-bg);stroke:var(--art)}
+.chip-owner{fill:var(--owner-bg);stroke:var(--owner)}
+.chip-pass{fill:var(--pass-bg);stroke:var(--pass)}
+.chip-warn{fill:var(--warn-bg);stroke:var(--warn);stroke-dasharray:3 2}
+.chip-muted{fill:var(--paper);stroke:var(--muted);stroke-dasharray:1.5 2.5}
+.chip-block{fill:var(--block-bg);stroke:var(--block)}
+.box-rec{fill:var(--paper);stroke:var(--rec);stroke-width:1.6}
+.box-sup{fill:var(--paper);stroke:var(--line);stroke-width:1.4}
+.strip-acc{fill:var(--pass-bg);stroke:var(--pass)}
+.strip-ev{fill:var(--block-bg);stroke:var(--block)}
+.strip-log{fill:var(--panel2);stroke:var(--muted)}
+.strip-out{fill:var(--warn-bg);stroke:var(--warn);stroke-dasharray:3 2}
+.lk-c{fill:var(--owner);stroke:var(--paper);stroke-width:2}
+.lk-s{fill:none;stroke:#fff;stroke-width:1.6}
+.lkp-c{fill:var(--paper);stroke:var(--owner);stroke-width:2}
+.lkp-s{fill:none;stroke:var(--owner);stroke-width:1.6}
+.disc-owner{fill:var(--owner)}
+.disc-agent{fill:var(--paper);stroke:var(--fg);stroke-width:2.5}
+.col-bg{fill:var(--block-bg)}
+.rowline{stroke:var(--faint);stroke-width:1}
+.sym-block{fill:var(--block);stroke:var(--block);stroke-width:1.2}
+.sym-half-out{fill:var(--paper);stroke:var(--block);stroke-width:1.4;stroke-dasharray:3 2}
+.sym-warn{fill:var(--warn-bg);stroke:var(--warn);stroke-width:1.6;stroke-dasharray:3 2}
+.sym-none{fill:var(--faint)}
+.ring{fill:none;stroke:var(--muted);stroke-width:2;stroke-dasharray:2 5}
+.ahead{fill:var(--muted)}
+.flow{fill:none;stroke:var(--pass);stroke-width:9;stroke-linecap:round;opacity:.85}
+.branch{stroke:var(--pass);stroke-width:3}
+.commit{fill:var(--paper);stroke:var(--pass);stroke-width:3}
+.seal{fill:var(--pass);stroke:var(--paper);stroke-width:3}
+
+.edge{fill:none;stroke-width:1.8;transition:opacity .15s}
+.e-art{stroke:var(--art)}
+.e-owner{stroke:var(--owner);stroke-width:3}
+.e-agent{stroke:var(--line);stroke-dasharray:6 4;stroke-width:2}
+.e-rec{stroke:var(--rec);stroke-dasharray:1 5;stroke-linecap:round;stroke-width:3}
+.e-sup{stroke:var(--muted);stroke-width:2.2}
+.mk-art{fill:var(--art)}.mk-owner{fill:var(--owner)}.mk-fg{fill:var(--line)}.mk-rec{fill:var(--rec)}.mk-pass{fill:var(--pass)}.mk-muted{fill:var(--muted)}
+
+/* interaction */
+.node{cursor:pointer;outline:none;transition:opacity .15s}
+.node:focus-visible .hit{stroke:var(--block);stroke-width:3;stroke-dasharray:4 3}
+.hit{fill:transparent;stroke:none}
+.map.focus .node,.map.focus .edge,.map.lensing .node,.map.lensing .edge{opacity:.16}
+.map.focus .node.on,.map.focus .edge.on,.map.lensing .node.lens-on{opacity:1}
+.map.focus .node.self .hit{stroke:var(--fg);stroke-width:2.5;stroke-dasharray:5 3}
+.map .edge.on{stroke-width:3.2}
+@media (prefers-reduced-motion:reduce){.node,.edge{transition:none}}
+@media print{.controls,.hint{display:none}.stage{grid-template-columns:1fr}aside.detail{position:static}body{background:#fff}}
+</style></head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Charter, on one map</h1>
+    <p>Charter 0.4.8: who holds what, where work happens, the three lines a change crosses, and what the machines remember. It goes with the desk sheet (<code>docs/cheatsheet.html</code>), which covers what to do and when.</p>
+  </div>
+  <div class="controls" role="group" aria-label="Lens">
+    <span>Lens</span>
+    <button class="lens" data-lens="all" aria-pressed="true">Everything</button>
+    <button class="lens" data-lens="owner" aria-pressed="false">What the owner does</button>
+    <button class="lens" data-lens="agent" aria-pressed="false">What the agent does</button>
+    <button class="lens" data-lens="hard" aria-pressed="false">What refuses</button>
+    <button class="lens" data-lens="record" aria-pressed="false">What is recorded</button>
+    <button class="theme" id="theme" title="Switch light / dark">◐</button>
+  </div>
+</header>
+
+<div class="stage">
+<div class="mapbox">
+<svg class="map" id="map" viewBox="0 0 1600 1010" role="img" aria-labelledby="maptitle">
+<title id="maptitle">Map of charter: the owner's keys, the written charter, the unit of work, the gates, main, the records, and where charter comes from</title>
+<defs>
+  <marker id="m-art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-art" d="M0 0L10 5L0 10Z"/></marker>
+  <marker id="m-owner" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path class="mk-owner" d="M0 0L10 5L0 10Z"/></marker>
+  <marker id="m-fg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-fg" d="M0 0L10 5L0 10Z"/></marker>
+  <marker id="m-rec" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path class="mk-rec" d="M0 0L10 5L0 10Z"/></marker>
+  <marker id="m-pass" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3" markerHeight="3" orient="auto-start-reverse"><path class="mk-pass" d="M0 0L10 5L0 10Z"/></marker>
+  <marker id="m-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk-muted" d="M0 0L10 5L0 10Z"/></marker>
+  <clipPath id="lefthalf"><rect x="-12" y="-14" width="12" height="28"/></clipPath>
+  <g id="sh-block"><path class="sym-block" d="M0 -12L10 -8V1C10 7 5 11 0 13C-5 11 -10 7 -10 1V-8Z"/></g>
+  <g id="sh-half"><path class="sym-half-out" d="M0 -12L10 -8V1C10 7 5 11 0 13C-5 11 -10 7 -10 1V-8Z"/><path class="sym-block" clip-path="url(#lefthalf)" d="M0 -12L10 -8V1C10 7 5 11 0 13C-5 11 -10 7 -10 1V-8Z"/></g>
+  <g id="sh-warn"><rect class="sym-warn" x="-8" y="-8" width="16" height="16" transform="rotate(45)"/></g>
+  <g id="sh-none"><circle class="sym-none" r="3"/></g>
+  <g id="lock"><circle class="lk-c" r="11"/><path class="lk-s" d="M-4 -1V-4A4 4 0 0 1 4 -4V-1"/><rect class="lk-s" x="-5.5" y="-1" width="11" height="8" rx="1.5"/></g>
+  <g id="lock-part"><circle class="lkp-c" r="11"/><path class="lkp-s" d="M-4 -1V-4A4 4 0 0 1 4 -4V-1"/><rect class="lkp-s" x="-5.5" y="-1" width="11" height="8" rx="1.5"/></g>
+</defs>
+
+<!-- ================= regions ================= -->
+<rect class="region r-owner" x="20" y="20" width="390" height="590" rx="22"/>
+<rect class="region r-art" x="430" y="20" width="590" height="300" rx="22"/>
+<rect class="region r-work" x="430" y="340" width="590" height="370" rx="22"/>
+<rect class="region r-gates" x="1040" y="20" width="340" height="690" rx="22"/>
+<rect class="region r-main" x="1400" y="20" width="180" height="690" rx="22"/>
+<rect class="region r-sup" x="20" y="630" width="390" height="370" rx="22"/>
+<rect class="region r-rec" x="430" y="730" width="1150" height="270" rx="22"/>
+
+<g class="badge"><circle class="c-owner" cx="46" cy="46" r="13"/><text x="46" y="46">1</text></g>
+<text class="t-cap tc-owner" x="68" y="51">The owner's keys</text>
+<g class="badge"><circle class="c-art" cx="456" cy="46" r="13"/><text x="456" y="46">2</text></g>
+<text class="t-cap tc-art" x="478" y="51">The written charter · charter/</text>
+<g class="badge"><circle class="c-fg" cx="456" cy="366" r="13"/><text x="456" y="366">3</text></g>
+<text class="t-cap" x="478" y="371">The work</text>
+<g class="badge"><circle class="c-block" cx="1066" cy="46" r="13"/><text x="1066" y="46">4</text></g>
+<text class="t-cap tc-block" x="1088" y="51">The gates · one engine, three lines</text>
+<g class="badge"><circle class="c-pass" cx="1426" cy="46" r="13"/><text x="1426" y="46">5</text></g>
+<text class="t-cap tc-pass" x="1448" y="51">main</text>
+<g class="badge"><circle class="c-rec" cx="456" cy="756" r="13"/><text x="456" y="756">6</text></g>
+<text class="t-cap tc-rec" x="478" y="761">The records</text>
+<g class="badge"><circle class="c-muted" cx="46" cy="656" r="13"/><text x="46" y="656">7</text></g>
+<text class="t-cap t-muted" x="68" y="661">Where charter comes from</text>
+
+<!-- ================= edges (behind nodes) ================= -->
+<g id="edges">
+  <path class="edge e-art" data-a="unit" data-b="scope" d="M505 430 L512 264" marker-end="url(#m-art)"/>
+  <path class="edge e-art" data-a="unit" data-b="rails" d="M565 430 L650 264" marker-end="url(#m-art)"/>
+  <path class="edge e-art" data-a="unit" data-b="decisions" d="M625 430 L788 264" marker-end="url(#m-art)"/>
+  <text class="t-muted" font-size="12" x="660" y="318" transform="rotate(-50 660 318)">cites</text>
+  <path class="edge e-agent" data-a="agent" data-b="decisions changes" d="M872 508 C960 470 1000 420 985 268" marker-end="url(#m-fg)"/>
+  <text class="t-muted" font-size="12" x="946" y="408">proposes</text>
+  <path class="edge e-owner" data-a="v-rule v-approve v-rail" data-b="decisions changes rails" d="M398 470 C428 470 408 240 440 240" marker-end="url(#m-owner)"/>
+  <text class="tc-owner t-b" font-size="12" x="0" y="0" transform="translate(416 395) rotate(-80)">rulings</text>
+  <path class="edge e-sup" data-a="pkg-repo pkg-project" data-b="k-engine" d="M215 640 L215 598" marker-end="url(#m-muted)"/>
+  <path class="edge e-rec" data-a="gates" data-b="rec-log" d="M1110 712 C1100 752 700 742 650 773" marker-end="url(#m-rec)"/>
+  <path class="edge e-rec" data-a="col-session" data-b="rec-ledger" d="M1180 712 C1176 752 900 748 876 773" marker-end="url(#m-rec)"/>
+  <path class="edge e-rec" data-a="main-merge" data-b="rec-synth" d="M1480 712 C1470 752 1190 748 1160 773" marker-end="url(#m-rec)"/>
+  <path class="edge e-rec" data-a="rec-evidence" data-b="rec-synth" d="M1303 880 L1289 880" marker-end="url(#m-rec)"/>
+  <path class="edge e-art" data-a="s-done" data-b="gates" d="M1013 545 C1034 545 1030 685 1052 685"/>
+</g>
+
+<!-- ================= 1. the owner ================= -->
+<g class="node" data-k="owner" data-role="owner" tabindex="0">
+  <rect class="hit" x="34" y="62" width="360" height="66" rx="10"/>
+  <circle class="disc-owner" cx="72" cy="96" r="28"/>
+  <text x="72" y="97" fill="#fff" style="fill:#fff" font-weight="700" font-size="22" text-anchor="middle" dominant-baseline="central">O</text>
+  <text class="t-serif" x="112" y="92" font-size="22">The owner</text>
+  <text class="t-muted" x="112" y="114" font-size="13.5">holds the keys · rules · approves · merges</text>
+</g>
+<text class="t-cap t-muted" x="40" y="160" font-size="12">Owner-only files</text>
+<g class="node" data-k="k-config" data-role="owner" tabindex="0">
+  <rect class="hit" x="34" y="170" width="362" height="50" rx="8"/>
+  <g transform="translate(42 174)"><path class="doc owner" d="M0 0H22L32 10V42H0Z"/><path class="fold" style="stroke:var(--owner)" d="M22 0V10H32"/></g>
+  <use href="#lock" x="72" y="178"/>
+  <text class="t-mono t-b" x="90" y="192" font-size="14">charter/config.json</text>
+  <text class="t-muted" x="90" y="210" font-size="12.5">track · opt-ins · limits · owner</text>
+</g>
+<g class="node" data-k="k-engine" data-role="owner" tabindex="0">
+  <rect class="hit" x="34" y="226" width="362" height="50" rx="8"/>
+  <g transform="translate(42 230)"><path class="doc owner" d="M0 0H22L32 10V42H0Z"/><path class="fold" style="stroke:var(--owner)" d="M22 0V10H32"/></g>
+  <use href="#lock" x="72" y="234"/>
+  <text class="t-mono t-b" x="90" y="248" font-size="14">.charter/**</text>
+  <text class="t-muted" x="90" y="266" font-size="12.5">the engine, hashed in manifest.json</text>
+</g>
+<g class="node" data-k="k-settings" data-role="owner" tabindex="0">
+  <rect class="hit" x="34" y="282" width="362" height="50" rx="8"/>
+  <g transform="translate(42 286)"><path class="doc owner" d="M0 0H22L32 10V42H0Z"/><path class="fold" style="stroke:var(--owner)" d="M22 0V10H32"/></g>
+  <use href="#lock" x="72" y="290"/>
+  <text class="t-mono t-b" x="90" y="304" font-size="14">.claude/settings.json</text>
+  <text class="t-muted" x="90" y="322" font-size="12.5">wires the session hooks</text>
+</g>
+<g class="node" data-k="k-ci" data-role="owner" tabindex="0">
+  <rect class="hit" x="34" y="338" width="362" height="50" rx="8"/>
+  <g transform="translate(42 342)"><path class="doc owner" d="M0 0H22L32 10V42H0Z"/><path class="fold" style="stroke:var(--owner)" d="M22 0V10H32"/></g>
+  <use href="#lock" x="72" y="346"/>
+  <text class="t-mono t-b" x="90" y="360" font-size="14">.github/workflows/charter.yml</text>
+  <text class="t-muted" x="90" y="378" font-size="12.5">the CI gate</text>
+</g>
+<text class="t-cap t-muted" x="40" y="418" font-size="12">One command, one commit (0.4.8)</text>
+<g class="node" data-k="v-owner" data-role="owner" tabindex="0">
+  <rect class="hit" x="36" y="428" width="178" height="72" rx="6"/>
+  <rect class="stamp" x="40" y="432" width="170" height="64" rx="4"/><rect class="stamp-in" x="45" y="437" width="160" height="54" rx="2"/>
+  <text class="t-mono t-b tc-owner" x="56" y="459" font-size="15">charter owner</text>
+  <text class="t-muted" x="56" y="479" font-size="12">the queue waiting on you</text>
+</g>
+<g class="node" data-k="v-rule" data-role="owner" tabindex="0">
+  <rect class="hit" x="216" y="428" width="178" height="72" rx="6"/>
+  <rect class="stamp" x="220" y="432" width="170" height="64" rx="4"/><rect class="stamp-in" x="225" y="437" width="160" height="54" rx="2"/>
+  <text class="t-mono t-b tc-owner" x="236" y="459" font-size="15">charter rule</text>
+  <text class="t-muted" x="236" y="479" font-size="12">a decision: active · rejected</text>
+</g>
+<g class="node" data-k="v-approve" data-role="owner" tabindex="0">
+  <rect class="hit" x="36" y="506" width="178" height="72" rx="6"/>
+  <rect class="stamp" x="40" y="510" width="170" height="64" rx="4"/><rect class="stamp-in" x="45" y="515" width="160" height="54" rx="2"/>
+  <text class="t-mono t-b tc-owner" x="56" y="537" font-size="15">charter approve</text>
+  <text class="t-muted" x="56" y="557" font-size="12">a change request</text>
+</g>
+<g class="node" data-k="v-rail" data-role="owner" tabindex="0">
+  <rect class="hit" x="216" y="506" width="178" height="72" rx="6"/>
+  <rect class="stamp" x="220" y="510" width="170" height="64" rx="4"/><rect class="stamp-in" x="225" y="515" width="160" height="54" rx="2"/>
+  <text class="t-mono t-b tc-owner" x="236" y="537" font-size="15">charter rail</text>
+  <text class="t-muted" x="236" y="557" font-size="12">a rail's status</text>
+</g>
+<text class="t-muted" x="40" y="596" font-size="12">writes the ruling · commits exactly those files · never pushes</text>
+
+<!-- ================= 2. the written charter ================= -->
+<g class="node" data-k="scope" data-role="owner art" tabindex="0">
+  <rect class="hit" x="444" y="58" width="137" height="210" rx="6"/>
+  <path class="doc owner" d="M450 64H559L575 80V262H450Z"/><path class="fold" style="stroke:var(--owner)" d="M559 64V80H575"/>
+  <use href="#lock" x="568" y="66"/>
+  <text class="t-mono t-b" x="462" y="92" font-size="15">scope.md</text>
+  <text x="462" y="118" font-size="12.5">what is sold</text>
+  <text x="462" y="136" font-size="12.5">what is not</text>
+  <text x="462" y="154" font-size="12.5">what the price assumes</text>
+  <text class="t-muted" x="462" y="178" font-size="12">one item per deliverable</text>
+  <rect class="chipr chip-block" x="460" y="228" width="92" height="22" rx="4"/><text class="tc-block" x="506" y="243" font-size="12" text-anchor="middle">client track</text>
+</g>
+<g class="node" data-k="rails" data-role="owner art" tabindex="0">
+  <rect class="hit" x="584" y="58" width="137" height="210" rx="6"/>
+  <path class="doc owner" d="M590 64H699L715 80V262H590Z"/><path class="fold" style="stroke:var(--owner)" d="M699 64V80H715"/>
+  <use href="#lock" x="708" y="66"/>
+  <text class="t-mono t-b" x="602" y="92" font-size="15">rails.md</text>
+  <text x="602" y="118" font-size="12.5">the road, in order</text>
+  <text class="t-mono" x="602" y="140" font-size="11">todo · next</text>
+  <text class="t-mono" x="602" y="155" font-size="11">in-progress · done</text>
+  <text class="t-mono" x="602" y="170" font-size="11">parked · dropped</text>
+  <text class="t-muted" x="602" y="194" font-size="12">each open unit names one</text>
+  <rect class="chipr chip-art" x="600" y="228" width="72" height="22" rx="4"/><text class="t-mono tc-art" x="636" y="243" font-size="12" text-anchor="middle">rail: r3</text>
+</g>
+<g class="node" data-k="decisions" data-role="art" tabindex="0">
+  <rect class="hit" x="724" y="52" width="148" height="216" rx="6"/>
+  <path class="stack" d="M738 56H847L863 72V254H738Z"/>
+  <path class="stack" d="M734 60H843L859 76V258H734Z"/>
+  <path class="doc" d="M730 64H839L855 80V262H730Z"/><path class="fold" style="stroke:var(--art)" d="M839 64V80H855"/>
+  <use href="#lock-part" x="848" y="66"/>
+  <text class="t-mono t-b" x="742" y="92" font-size="15">decisions/</text>
+  <text x="742" y="118" font-size="12.5">one decision a file</text>
+  <text x="742" y="136" font-size="12.5">## Because · expires:</text>
+  <text x="742" y="154" font-size="12.5">check: a command</text>
+  <text x="742" y="172" font-size="12.5">binds: code globs</text>
+  <text class="t-muted" x="742" y="194" font-size="12">kind: lesson = memory</text>
+  <rect class="chipr chip-muted" x="740" y="202" width="104" height="20" rx="4"/><text class="t-mono t-muted" x="792" y="216" font-size="10.5" text-anchor="middle">INDEX.md · built</text>
+  <rect class="chipr chip-art" x="740" y="228" width="104" height="22" rx="4"/><text class="t-mono tc-art" x="792" y="243" font-size="11.5" text-anchor="middle">charter:&lt;id&gt;</text>
+</g>
+<g class="node" data-k="changes" data-role="art" tabindex="0">
+  <rect class="hit" x="864" y="58" width="146" height="210" rx="6"/>
+  <path class="doc" d="M870 64H979L995 80V262H870Z"/><path class="fold" style="stroke:var(--art)" d="M979 64V80H995"/>
+  <use href="#lock-part" x="988" y="66"/>
+  <text class="t-mono t-b" x="882" y="92" font-size="15">changes/</text>
+  <text x="882" y="118" font-size="12.5">work outside scope</text>
+  <text x="882" y="136" font-size="12.5">the agent proposes</text>
+  <text x="882" y="154" font-size="12.5">the owner approves</text>
+  <text class="t-muted" x="882" y="178" font-size="12">approved_by · _on</text>
+  <rect class="chipr chip-owner" x="880" y="228" width="104" height="22" rx="4"/><text class="tc-owner" x="932" y="243" font-size="11.5" text-anchor="middle">proposed → approved</text>
+</g>
+
+<!-- ================= 3. the work ================= -->
+<g class="node" data-k="unit" data-role="agent art" tabindex="0">
+  <rect class="hit" x="444" y="426" width="262" height="276" rx="6"/>
+  <path class="doc" style="stroke:var(--line);stroke-width:2" d="M450 432H684L700 448V696H450Z"/><path class="fold" style="stroke:var(--line)" d="M684 432V448H700"/>
+  <text class="t-mono t-b" x="462" y="456" font-size="14">.taskets/&lt;id&gt;.md</text>
+  <line x1="450" x2="700" y1="466" y2="466" class="rowline"/>
+  <text class="t-mono" x="462" y="485" font-size="12"><tspan class="tc-art">scope:</tspan> S2  <tspan class="tc-art">rail:</tspan> r3</text>
+  <text class="t-mono" x="462" y="502" font-size="12"><tspan class="tc-art">perimeter:</tspan> app/**</text>
+  <text class="t-mono" x="462" y="519" font-size="12"><tspan class="tc-art">decisions:</tspan> [pick-db]</text>
+  <text class="t-mono" x="462" y="536" font-size="12"><tspan class="tc-art">kind:</tspan> work | split</text>
+  <text class="t-mono" x="462" y="553" font-size="12"><tspan class="tc-art">status:</tspan> next → done</text>
+  <rect class="chipr strip-acc" x="458" y="564" width="234" height="28" rx="3"/><text class="t-mono t-b tc-pass" x="466" y="583" font-size="12">## Acceptance</text><text class="t-muted" x="584" y="583" font-size="11.5">☐ probes</text>
+  <rect class="chipr strip-ev" x="458" y="596" width="234" height="28" rx="3"/><text class="t-mono t-b tc-block" x="466" y="615" font-size="12">## Evidence</text><text class="t-muted" x="566" y="615" font-size="11.5">sha · $ command</text>
+  <rect class="chipr strip-log" x="458" y="628" width="234" height="28" rx="3"/><text class="t-mono t-b" x="466" y="647" font-size="12">## Log</text><text class="t-muted" x="566" y="647" font-size="11.5">dated, append-only</text>
+  <rect class="chipr strip-out" x="458" y="660" width="234" height="28" rx="3"/><text class="t-mono t-b tc-warn" x="466" y="679" font-size="12">## Outside perim.</text><text class="t-muted" x="608" y="679" font-size="11.5">path: why</text>
+</g>
+
+<circle class="ring" cx="855" cy="545" r="110"/>
+<path class="ahead" transform="translate(944 610) rotate(126)" d="M-7 -6L7 0L-7 6Z"/>
+<path class="ahead" transform="translate(821 650) rotate(198)" d="M-7 -6L7 0L-7 6Z"/>
+<path class="ahead" transform="translate(745 545) rotate(270)" d="M-7 -6L7 0L-7 6Z"/>
+<path class="ahead" transform="translate(821 440) rotate(342)" d="M-7 -6L7 0L-7 6Z"/>
+<path class="ahead" transform="translate(944 480) rotate(54)" d="M-7 -6L7 0L-7 6Z"/>
+<g class="node" data-k="agent" data-role="agent" tabindex="0">
+  <rect class="hit" x="790" y="492" width="130" height="100" rx="10"/>
+  <circle class="disc-agent" cx="855" cy="520" r="22"/>
+  <text x="855" y="521" font-weight="700" font-size="19" text-anchor="middle" dominant-baseline="central">A</text>
+  <text class="t-serif" x="855" y="564" font-size="16" text-anchor="middle">The agent</text>
+  <text class="t-muted" x="855" y="581" font-size="11.5" text-anchor="middle">works the loop</text>
+</g>
+<g class="node" data-k="next" data-role="agent owner" tabindex="0">
+  <rect class="pill" x="740" y="356" width="130" height="30" rx="15"/>
+  <text class="t-mono t-b" x="805" y="376" font-size="12.5" text-anchor="middle">charter next</text>
+</g>
+<g class="node" data-k="s-start" data-role="agent" tabindex="0">
+  <rect class="pill" x="841" y="632" width="96" height="36" rx="18"/>
+  <text class="t-b" x="889" y="648" font-size="13.5" text-anchor="middle">1 start</text>
+  <text class="t-mono t-muted" x="889" y="662" font-size="9.5" text-anchor="middle">unit start &lt;id&gt;</text>
+</g>
+<g class="node" data-k="s-edit" data-role="agent" tabindex="0">
+  <rect class="pill" x="718" y="592" width="96" height="36" rx="18"/>
+  <text class="t-b" x="766" y="608" font-size="13.5" text-anchor="middle">2 edit</text>
+  <text class="t-muted" x="766" y="622" font-size="10" text-anchor="middle">inside the perimeter</text>
+</g>
+<g class="node" data-k="s-probe" data-role="agent" tabindex="0">
+  <rect class="pill" x="718" y="462" width="96" height="36" rx="18"/>
+  <text class="t-b" x="766" y="478" font-size="13.5" text-anchor="middle">3 probe</text>
+  <text class="t-mono t-muted" x="766" y="492" font-size="9.5" text-anchor="middle">probe &lt;id&gt;</text>
+</g>
+<g class="node" data-k="s-evidence" data-role="agent" tabindex="0">
+  <rect class="pill" x="841" y="422" width="96" height="36" rx="18"/>
+  <text class="t-b" x="889" y="438" font-size="13.5" text-anchor="middle">4 evidence</text>
+  <text class="t-muted" x="889" y="452" font-size="10" text-anchor="middle">sha · $ command</text>
+</g>
+<g class="node" data-k="s-done" data-role="agent" tabindex="0">
+  <rect class="pill done" x="917" y="527" width="96" height="36" rx="18"/>
+  <text class="t-b tc-pass" x="965" y="543" font-size="13.5" text-anchor="middle">5 done</text>
+  <text class="t-muted" x="965" y="557" font-size="10" text-anchor="middle">+ log · commit</text>
+</g>
+
+<!-- ================= 4. the gates ================= -->
+<g class="node" data-k="col-session" data-role="hard" tabindex="0">
+  <rect class="col-bg" x="1184" y="70" width="56" height="552" rx="6" opacity=".45"/>
+  <text class="t-b tc-block" x="1212" y="88" font-size="13" text-anchor="middle">Session</text>
+  <text class="t-muted" x="1212" y="102" font-size="10.5" text-anchor="middle">hooks</text>
+</g>
+<g class="node" data-k="col-commit" data-role="hard" tabindex="0">
+  <rect class="col-bg" x="1244" y="70" width="56" height="552" rx="6" opacity=".75"/>
+  <text class="t-b tc-block" x="1272" y="88" font-size="13" text-anchor="middle">Commit</text>
+  <text class="t-muted" x="1272" y="102" font-size="10.5" text-anchor="middle">pre-commit</text>
+</g>
+<g class="node" data-k="col-ci" data-role="hard" tabindex="0">
+  <rect class="col-bg" x="1304" y="70" width="56" height="552" rx="6"/>
+  <text class="t-b tc-block" x="1332" y="88" font-size="13" text-anchor="middle">Merge</text>
+  <text class="t-muted" x="1332" y="102" font-size="10.5" text-anchor="middle">CI</text>
+</g>
+<g id="gaterows"></g>
+<text class="t-muted" x="1052" y="660" font-size="12.5">a change crosses all three lines</text>
+<path class="flow" d="M1052 685 H1462" marker-end="url(#m-pass)"/>
+
+<!-- ================= 5. main ================= -->
+<line class="branch" x1="1560" y1="80" x2="1560" y2="680"/>
+<circle class="commit" cx="1560" cy="130" r="6"/><circle class="commit" cx="1560" cy="300" r="6"/><circle class="commit" cx="1560" cy="470" r="6"/>
+<g class="node" data-k="main-accepted" data-role="hard" tabindex="0">
+  <rect class="hit" x="1408" y="72" width="140" height="160" rx="8"/>
+  <circle class="seal" cx="1470" cy="112" r="30"/>
+  <path d="M1456 112l10 10l18 -20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="t-serif tc-pass" x="1414" y="168" font-size="16">Accepted result</text>
+  <text x="1414" y="188" font-size="12">probes passed,</text>
+  <text x="1414" y="204" font-size="12">evidence resolves,</text>
+  <text x="1414" y="220" font-size="12">gates crossed</text>
+</g>
+<g class="node" data-k="main-merge" data-role="owner" tabindex="0">
+  <rect class="hit" x="1408" y="248" width="140" height="110" rx="8"/>
+  <circle class="disc-owner" cx="1428" cy="272" r="13"/>
+  <text x="1428" y="273" style="fill:#fff" font-weight="700" font-size="12" text-anchor="middle" dominant-baseline="central">O</text>
+  <text class="t-b" x="1448" y="277" font-size="13.5">Merging is</text>
+  <text class="t-b" x="1414" y="298" font-size="13.5">the owner's act</text>
+  <text class="t-muted" x="1414" y="318" font-size="12">no gate sees a merge,</text>
+  <text class="t-muted" x="1414" y="334" font-size="12">a deploy, a push</text>
+</g>
+<g class="node" data-k="main-lock" data-role="owner" tabindex="0">
+  <rect class="hit" x="1408" y="372" width="140" height="120" rx="8"/>
+  <use href="#lock" x="1428" y="394"/>
+  <text class="t-b" x="1448" y="399" font-size="13.5">The real lock</text>
+  <text x="1414" y="420" font-size="12">is outside the repo:</text>
+  <text x="1414" y="436" font-size="12">branch protection,</text>
+  <text x="1414" y="452" font-size="12">code owners</text>
+  <text class="t-muted" x="1414" y="474" font-size="11.5">the agent can act as you</text>
+</g>
+<g class="node" data-k="main-failopen" data-role="hard" tabindex="0">
+  <rect class="hit" x="1408" y="506" width="140" height="140" rx="8"/>
+  <text class="t-b" x="1414" y="528" font-size="13.5">Limits, stated</text>
+  <text x="1414" y="549" font-size="12">a gate that crashes</text>
+  <text x="1414" y="565" font-size="12">lets the change through</text>
+  <text x="1414" y="587" font-size="12"><tspan class="t-mono" font-size="11">--no-verify</tspan> skips</text>
+  <text x="1414" y="603" font-size="12">the hook; CI re-runs</text>
+  <text class="t-muted" x="1414" y="625" font-size="11.5">evidence exists ≠ true</text>
+</g>
+<circle class="commit" cx="1490" cy="685" r="11" style="stroke-width:4"/>
+
+<!-- ================= 6. records ================= -->
+<g class="node" data-k="rec-log" data-role="record" tabindex="0">
+  <rect class="box-rec" x="450" y="775" width="265" height="210" rx="10"/>
+  <ellipse cx="478" cy="800" rx="14" ry="5" fill="none" stroke="var(--rec)" stroke-width="2"/><path d="M464 800v18c0 3 28 3 28 0v-18" fill="none" stroke="var(--rec)" stroke-width="2"/>
+  <text class="t-serif tc-rec" x="502" y="812" font-size="17">Gate log</text>
+  <text class="t-mono" x="466" y="846" font-size="12">.git/charter/log.jsonl</text>
+  <text x="466" y="870" font-size="12.5">every finding: gate · level ·</text>
+  <text x="466" y="887" font-size="12.5">path · the event that raised it</text>
+  <text x="466" y="911" font-size="12.5">never committed; one machine</text>
+  <rect class="chipr chip-muted" x="466" y="926" width="92" height="22" rx="4"/><text class="t-mono" x="512" y="941" font-size="12" text-anchor="middle">charter log</text>
+  <text class="t-muted" x="466" y="970" font-size="11.5">a warning ignored often becomes a gate</text>
+</g>
+<g class="node" data-k="rec-ledger" data-role="record" tabindex="0">
+  <rect class="box-rec" x="735" y="775" width="265" height="210" rx="10"/>
+  <ellipse cx="763" cy="800" rx="14" ry="5" fill="none" stroke="var(--rec)" stroke-width="2"/><path d="M749 800v18c0 3 28 3 28 0v-18" fill="none" stroke="var(--rec)" stroke-width="2"/>
+  <text class="t-serif tc-rec" x="787" y="812" font-size="17">Cost ledger</text>
+  <text class="t-mono" x="751" y="846" font-size="12">sessions.jsonl</text>
+  <text class="t-mono" x="751" y="864" font-size="12">  → charter/ledger.jsonl</text>
+  <text x="751" y="888" font-size="12.5">tokens per model, per session,</text>
+  <text x="751" y="905" font-size="12.5">folded per unit (SessionEnd)</text>
+  <rect class="chipr chip-muted" x="751" y="920" width="140" height="22" rx="4"/><text class="t-mono" x="821" y="935" font-size="12" text-anchor="middle">charter ledger fold</text>
+  <text class="t-muted" x="751" y="968" font-size="11.5">→ cost per accepted result</text>
+</g>
+<g class="node" data-k="rec-synth" data-role="record" tabindex="0">
+  <rect class="box-rec" x="1020" y="775" width="265" height="210" rx="10"/>
+  <g transform="translate(1036 790)"><path class="doc gen" style="stroke:var(--rec)" d="M0 0H16L24 8V30H0Z"/></g>
+  <text class="t-serif tc-rec" x="1072" y="812" font-size="17">Progress synthesis</text>
+  <text class="t-mono" x="1036" y="846" font-size="12">charter/progress.md</text>
+  <text x="1036" y="870" font-size="12.5">generated from the repository,</text>
+  <text x="1036" y="887" font-size="12.5">every line anchored; refuses</text>
+  <text x="1036" y="904" font-size="12.5">to write when a line is not</text>
+  <rect class="chipr chip-muted" x="1036" y="920" width="102" height="22" rx="4"/><text class="t-mono" x="1087" y="935" font-size="12" text-anchor="middle">charter synth</text>
+  <rect class="chipr chip-muted" x="1146" y="920" width="118" height="22" rx="4"/><text class="t-mono" x="1205" y="935" font-size="12" text-anchor="middle">charter anchors</text>
+  <text class="t-muted" x="1036" y="968" font-size="11.5">never edited by hand</text>
+</g>
+<g class="node" data-k="rec-evidence" data-role="record" tabindex="0">
+  <rect class="box-rec" x="1305" y="775" width="265" height="210" rx="10"/>
+  <text class="t-serif tc-rec" x="1321" y="806" font-size="17">Evidence classes</text>
+  <rect class="chipr chip-pass" x="1321" y="820" width="233" height="34" rx="6"/><text class="t-b tc-pass" x="1331" y="842" font-size="13">measured</text><text class="t-mono" x="1408" y="842" font-size="10.5">path:line · sha · $ cmd</text>
+  <rect class="chipr chip-art" x="1321" y="860" width="233" height="34" rx="6"/><text class="t-b tc-art" x="1331" y="882" font-size="13">vendor</text><text class="t-mono" x="1408" y="882" font-size="10.5">https://…</text>
+  <rect class="chipr chip-warn" x="1321" y="900" width="233" height="34" rx="6"/><text class="t-b tc-warn" x="1331" y="922" font-size="13">reported</text><text class="t-mono" x="1408" y="922" font-size="10.5">(reported in …)</text>
+  <rect class="chipr chip-muted" x="1321" y="940" width="233" height="34" rx="6"/><text class="t-b t-muted" x="1331" y="962" font-size="13">inference</text><text class="t-mono" x="1408" y="962" font-size="10.5">(estimate …)</text>
+</g>
+
+<!-- ================= 7. supply ================= -->
+<g class="node" data-k="pkg-repo" data-role="owner" tabindex="0">
+  <rect class="box-sup" x="40" y="680" width="160" height="118" rx="10"/>
+  <text class="t-serif" x="54" y="704" font-size="15">charter repo</text>
+  <text class="t-mono" x="54" y="728" font-size="11.5">package/</text>
+  <text class="t-mono" x="54" y="746" font-size="11.5">personal/</text>
+  <text class="t-mono" x="54" y="764" font-size="11.5">bin/charter-pkg</text>
+  <text class="t-muted" x="54" y="786" font-size="11">the source, versioned</text>
+</g>
+<path class="edge e-sup" data-a="pkg-repo" data-b="pkg-project" d="M202 739 H226" marker-end="url(#m-muted)"/>
+<g class="node" data-k="pkg-project" data-role="owner" tabindex="0">
+  <rect class="box-sup" x="230" y="680" width="160" height="118" rx="10"/>
+  <text class="t-serif" x="244" y="704" font-size="15">each project</text>
+  <text class="t-mono" x="244" y="728" font-size="11.5">.charter/ engine</text>
+  <text class="t-mono" x="244" y="746" font-size="11.5">charter/ templates</text>
+  <text class="t-mono" x="244" y="764" font-size="11.5">.claude/ rules·skills</text>
+  <text class="t-muted" x="244" y="786" font-size="11">+ the CI workflow</text>
+</g>
+<text class="t-mono t-muted" x="40" y="818" font-size="11.5">install · upgrade · fleet · survey</text>
+<text class="t-cap t-muted" x="40" y="846" font-size="12">Two tracks · config.json track</text>
+<g class="node" data-k="track-client" data-role="owner" tabindex="0">
+  <rect class="chipr chip-block" x="40" y="856" width="170" height="62" rx="10"/>
+  <text class="t-b tc-block" x="54" y="880" font-size="15">client</text>
+  <text x="54" y="900" font-size="12">signed devis · scope gate on</text>
+</g>
+<g class="node" data-k="track-proto" data-role="owner" tabindex="0">
+  <rect class="chipr chip-warn" x="220" y="856" width="170" height="62" rx="10"/>
+  <text class="t-b tc-warn" x="234" y="880" font-size="15">prototype</text>
+  <text x="234" y="900" font-size="12">no scope · rails optional</text>
+</g>
+<g class="node" data-k="personal" data-role="owner" tabindex="0">
+  <rect class="box-sup" x="40" y="930" width="170" height="54" rx="10" style="stroke-dasharray:4 3"/>
+  <text class="t-b" x="54" y="952" font-size="13">personal layer</text>
+  <text class="t-muted" x="54" y="970" font-size="11.5">CharterAdmin · ~/.claude</text>
+</g>
+<g class="node" data-k="setup" data-role="agent owner" tabindex="0">
+  <rect class="box-sup" x="220" y="930" width="170" height="54" rx="10"/>
+  <text class="t-mono t-b" x="234" y="952" font-size="12.5">charter setup</text>
+  <text class="t-muted" x="234" y="970" font-size="11.5">once per clone: git hook</text>
+</g>
+</svg>
+<p class="hint">Hover or tap anything on the map to read what it is. Click to pin it, press Esc to unpin. The lens buttons light up one role at a time.</p>
+</div>
+
+<aside class="detail" id="detail" aria-live="polite"></aside>
+</div>
+
+<section class="legend" aria-label="Legend">
+  <h2>How to read the map</h2>
+  <div class="lgrid">
+    <div class="lgroup">
+      <h3>Regions, left to right, then the bottom</h3>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--owner-bg)" stroke="var(--owner)" stroke-width="1.5"/></svg><div><b>1 The owner's keys</b>: the files that define the gates, and the owner's commands.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--art-bg)" stroke="var(--art)" stroke-width="1.5"/></svg><div><b>2 The written charter</b>: scope, road, decisions, change requests.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--panel2)" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="5 3"/></svg><div><b>3 The work</b>: the unit of work and its five-step loop.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--paper)" stroke="var(--block)" stroke-width="1.5"/><rect x="18" y="6" width="7" height="22" fill="var(--block-bg)"/><rect x="28" y="6" width="7" height="22" fill="var(--block-bg)"/><rect x="38" y="6" width="7" height="22" fill="var(--block)" opacity=".3"/></svg><div><b>4 The gates</b>: one engine run at three lines. Each column is darker than the one before because it is harder to get round.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--pass-bg)" stroke="var(--pass)" stroke-width="1.5"/></svg><div><b>5 main</b>: what counts as accepted, and where the guarantees stop.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--rec-bg)" stroke="var(--rec)" stroke-width="1.5"/></svg><div><b>6 What the machines remember</b>: the gate log, the cost ledger, the synthesis, and the evidence classes.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="3" y="4" width="48" height="26" rx="7" fill="var(--paper)" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 3"/></svg><div><b>7 Where charter comes from</b>: this repo, the installer, the tracks.</div></div>
+    </div>
+    <div class="lgroup">
+      <h3>Who and what</h3>
+      <div class="lrow"><svg viewBox="0 0 54 34"><circle cx="27" cy="17" r="12" fill="var(--owner)"/><text x="27" y="18" fill="#fff" font-weight="700" font-size="12" text-anchor="middle" dominant-baseline="central">O</text></svg><div><b>Filled disc</b>: the owner, the one person who rules and commits the keys.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><circle cx="27" cy="17" r="11" fill="var(--paper)" stroke="var(--fg)" stroke-width="2"/><text x="27" y="18" fill="var(--fg)" font-weight="700" font-size="12" text-anchor="middle" dominant-baseline="central">A</text></svg><div><b>Outlined disc</b>: the agent. Claude Code, Codex or pi; one session writes one unit.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M16 4H32L38 10V30H16Z" fill="var(--paper)" stroke="var(--art)" stroke-width="1.6"/><path d="M32 4V10H38" fill="none" stroke="var(--art)" stroke-width="1.6"/></svg><div><b>Folded page</b>: a file in the repository. A dashed outline means the file is generated, never edited by hand.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><g transform="translate(16 17)" class="lock"><circle r="10" fill="var(--owner)"/><path d="M-4 -1V-4A4 4 0 0 1 4 -4V-1" fill="none" stroke="#fff" stroke-width="1.6"/><rect x="-5" y="-1" width="10" height="7" rx="1.5" fill="none" stroke="#fff" stroke-width="1.6"/></g><g transform="translate(40 17)"><circle r="10" fill="var(--paper)" stroke="var(--owner)" stroke-width="2"/><path d="M-4 -1V-4A4 4 0 0 1 4 -4V-1" fill="none" stroke="var(--owner)" stroke-width="1.6"/><rect x="-5" y="-1" width="10" height="7" rx="1.5" fill="none" stroke="var(--owner)" stroke-width="1.6"/></g></svg><div><b>Filled lock</b>: the whole file is the owner's. <b>Outlined lock</b>: only some fields are (status, approval, an active decision's check).</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="4" y="5" width="46" height="24" rx="3" fill="var(--paper)" stroke="var(--owner)" stroke-width="3"/><rect x="8" y="9" width="38" height="16" rx="1" fill="none" stroke="var(--owner)"/></svg><div><b>Double-bordered stamp</b>: an owner command that writes a ruling and commits it.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><rect x="4" y="8" width="46" height="18" rx="9" fill="var(--paper)" stroke="var(--line)" stroke-width="1.5"/></svg><div><b>Pill</b>: a step in the agent's loop. The green one is the step a gate judges.</div></div>
+    </div>
+    <div class="lgroup">
+      <h3>What a gate does, at each line</h3>
+      <div class="lrow"><svg viewBox="-27 -17 54 34"><path d="M0 -12L10 -8V1C10 7 5 11 0 13C-5 11 -10 7 -10 1V-8Z" fill="var(--block)"/></svg><div><b>Solid shield</b>: refuses. The refusal names the way forward.</div></div>
+      <div class="lrow"><svg viewBox="-27 -17 54 34"><path d="M0 -12L10 -8V1C10 7 5 11 0 13C-5 11 -10 7 -10 1V-8Z" fill="var(--paper)" stroke="var(--block)" stroke-width="1.4" stroke-dasharray="3 2"/><path d="M0 -12V13C-5 11 -10 7 -10 1V-8Z" fill="var(--block)"/></svg><div><b>Half shield</b>: refuses on the client track or with an opt-in, and warns otherwise. The detail panel says which.</div></div>
+      <div class="lrow"><svg viewBox="-27 -17 54 34"><rect x="-8" y="-8" width="16" height="16" transform="rotate(45)" fill="var(--warn-bg)" stroke="var(--warn)" stroke-width="1.6" stroke-dasharray="3 2"/></svg><div><b>Dashed diamond</b>: warns and logs. Warnings that keep getting ignored are the candidates for becoming gates.</div></div>
+      <div class="lrow"><svg viewBox="-27 -17 54 34"><circle r="3" fill="var(--faint)"/></svg><div><b>Dot</b>: not checked at this line.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H46" stroke="var(--pass)" stroke-width="7" stroke-linecap="round"/></svg><div><b>Green band</b>: the path a change takes to main (commit, push, merge).</div></div>
+    </div>
+    <div class="lgroup">
+      <h3>Links</h3>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H44" stroke="var(--art)" stroke-width="1.8" marker-end="url(#m-art)"/></svg><div><b>Thin navy</b>: the unit cites a record (<code>scope:</code>, <code>rail:</code>, <code>charter:&lt;id&gt;</code>).</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H44" stroke="var(--line)" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#m-fg)"/></svg><div><b>Dashed grey</b>: the agent proposes a record, and it waits on the owner.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H44" stroke="var(--owner)" stroke-width="3" marker-end="url(#m-owner)"/></svg><div><b>Thick teal</b>: the owner rules. Status, a <code>## Ruling</code> line and a commit.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H44" stroke="var(--rec)" stroke-width="3" stroke-dasharray="1 5" stroke-linecap="round" marker-end="url(#m-rec)"/></svg><div><b>Dotted violet</b>: written down by a machine, not by a person.</div></div>
+      <div class="lrow"><svg viewBox="0 0 54 34"><path d="M4 17H44" stroke="var(--muted)" stroke-width="2.2" marker-end="url(#m-muted)"/></svg><div><b>Grey</b>: the package flowing from this repository into projects.</div></div>
+    </div>
+  </div>
+  <div class="read">
+    <h3>Reading it as a story</h3>
+    <ol>
+      <li>The owner writes what is sold (<code>scope.md</code>) or the road (<code>rails.md</code>) and holds the files that define the gates (region 1).</li>
+      <li>The agent starts a unit that cites a scope item or a rail and the decisions it relies on. It edits inside the unit's perimeter, runs the probes, pastes the evidence and closes the unit (region 3).</li>
+      <li>A change passes through the same engine three times: as the agent edits, at commit, and in CI from a clean clone (region 4). Each line catches what the one before it can miss.</li>
+      <li>What the agent cannot settle, it proposes: a decision or a change request. The owner rules on it with one command, which writes the ruling and commits it (the teal arrow).</li>
+      <li>The machines keep the gate log, the cost of each session and an anchored progress synthesis (region 6). Nothing there is written by hand.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>Charter 0.4.8 (<code>package/VERSION</code>). Every panel cites where its claim comes from: <code>README.md</code>, <code>docs/method.md</code>, <code>docs/gates.md</code>, <code>docs/package.md</code> § Versioning and upgrade. Companion to <code>docs/cheatsheet.html</code> and <code>docs/method-visual.html</code>.</footer>
+</div>
+
+<script>
+(() => {
+  const svg = document.getElementById('map');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  /* The gate matrix: [key, name, sub, session, commit, ci]; b refuses, h depends on track or opt-in, w warns, - not checked. */
+  const ROWS = [
+    ['g-done',   'Done needs evidence', 'R9 · no fake done',            'b','b','b'],
+    ['g-stop',   'Completion claim',    'Stop hook · once a turn',      'b','-','-'],
+    ['g-scope',  'Scope',               'R6 · client track only',       'b','b','b'],
+    ['g-size',   'Frozen file',         'R3 · 800 / 400 lines',         'b','b','b'],
+    ['g-dec',    'Decisions',           'R1 · retired · failing check', 'b','b','b'],
+    ['g-owner',  'Owner-only files',    'the keys and fields',          'b','h','b'],
+    ['g-anchors','Anchored reports',    'R10 · synth, reports',         '-','-','h'],
+    ['g-perim',  'Perimeter',           'R4 · leave a note',            'w','h','-'],
+    ['g-rails',  'Rails',               'the road names the work',      '-','h','h'],
+    ['g-memory', 'Memory',              'R8 · lessons expire',          '-','-','w'],
+  ];
+  const HARD = new Set(['g-done','g-scope','g-size','g-dec','g-owner','g-anchors','g-stop']);
+  const rows = document.getElementById('gaterows');
+  const sym = {b:'#sh-block', h:'#sh-half', w:'#sh-warn', '-':'#sh-none'};
+  ROWS.forEach((r, i) => {
+    const y = 135 + i * 51;
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'node');
+    g.setAttribute('data-k', r[0]);
+    g.setAttribute('data-role', HARD.has(r[0]) ? 'hard' : 'warnrow');
+    g.setAttribute('tabindex', '0');
+    g.innerHTML =
+      `<rect class="hit" x="1046" y="${y-24}" width="320" height="48" rx="6"/>` +
+      (i ? `<line class="rowline" x1="1050" x2="1362" y1="${y-25.5}" y2="${y-25.5}"/>` : '') +
+      `<text class="t-b" x="1052" y="${y-2}" font-size="13.5">${r[1]}</text>` +
+      `<text class="t-muted" x="1052" y="${y+14}" font-size="10.5">${r[2]}</text>` +
+      [3,4,5].map((c, j) => `<use href="${sym[r[c]]}" x="${1212 + j*60}" y="${y}"/>`).join('');
+    rows.appendChild(g);
+  });
+
+  /* What each element is. s = where it comes from. */
+  const I = {
+    owner: {k:'owner', t:'The owner', d:`<p>The one person who signs. They write the scope or the road, hold the files that define the gates, rule on what agents propose, and merge. Every rule says where a decision is written and who settles it when it gets stuck. For a solo owner with agents, that is the owner or a reviewer who wrote neither side.</p>`, s:'docs/method.md:16; README.md § The idea'},
+    'k-config': {k:'owner', t:'charter/config.json', d:`<p>The track (<code>client</code> or <code>prototype</code>), the opt-ins (<code>rails.required</code>, <code>probes.at_commit</code>, <code>probes.in_ci</code>, <code>probes.base_must_fail</code>, <code>review.required</code>), size limits and exceptions, and <code>owner</code>, the identity CI checks commits against.</p><p>A config the gates cannot read is refused rather than ignored, so a typo cannot switch a gate off in silence (0.4.3).</p>`, c:'python3 .charter/bin/charter config', s:'docs/gates.md § Config; docs/daily-use.md:17'},
+    'k-engine': {k:'owner', t:'.charter/**, the engine', d:`<p>The gates (<code>checks.py</code>), the hooks, the git hook and the CLI. They are copied from <code>package/</code> and recorded by hash in <code>.charter/manifest.json</code>. CI refuses a file whose hash differs.</p><p>An upgrade whose files match the manifest is not an owner-only change, so an agent may commit it (0.4.6). A hand edit is the owner's.</p>`, s:'docs/gates.md:23 (release_change in package/.charter/checks.py)'},
+    'k-settings': {k:'owner', t:'.claude/settings.json', d:`<p>Wires the five Claude Code hooks: SessionStart, PreToolUse and PostToolUse on Edit, Write and NotebookEdit, Stop, and SessionEnd. An agent's edit is refused, and so is any edit that introduces <code>CHARTER_OWNER</code> into a settings file, because a settings <code>env</code> block would switch the checks off mid-session.</p>`, s:'package/.claude/settings.json; docs/gates.md:19-33'},
+    'k-ci': {k:'owner', t:'The CI workflow', d:`<p><code>.github/workflows/charter.yml</code> runs <code>charter check --all --ci</code> from a clean clone, plus <code>charter anchors</code> on reports and on the PR body. CI is the last line and has no override besides changing the artifacts.</p>`, s:'docs/gates.md § CI; docs/method.md:118'},
+    'v-owner': {k:'owner', t:'charter owner: the owner\'s queue', d:`<p>Lists everything waiting on the owner, each with the command that settles it: proposed decisions and change requests, finished rails, problems in <code>rails.md</code>, staged owner-only files, HUMAN-ONLY units and acceptance lines only the owner can close (<code>— owner: check|do</code>).</p><p><code>charter next</code> prints the same queue from the same function, so the two cannot drift.</p>`, c:'python3 .charter/bin/charter owner [--json]', s:'docs/package.md:103 (queue in package/.charter/owner.py)'},
+    'v-rule': {k:'owner', t:'charter rule', d:`<p>Rules on a proposed decision: <code>active</code>, <code>rejected</code>, or <code>superseded --by &lt;id&gt;</code> for an active one. It writes <code>status:</code>, a dated line under <code>## Ruling</code> and the index, commits exactly those files with the owner switch set for that one commit, and never pushes.</p><p><code>active</code> runs the decision's <code>check:</code> first and refuses if it fails. <code>--dry-run</code> shows the diff and names the check without running it.</p>`, c:'python3 .charter/bin/charter rule pick-db active --note "as recommended"', s:'docs/package.md:103; package/.charter/owner.py (rule)'},
+    'v-approve': {k:'owner', t:'charter approve', d:`<p>Approves or rejects a proposed change request. It sets <code>status:</code>, <code>approved_by:</code> and <code>approved_on:</code>, adds a <code>## Ruling</code> line, and makes one commit. An approved change is what lets work touch a path that is otherwise out of scope.</p>`, c:'python3 .charter/bin/charter approve <change> [--reject]', s:'docs/package.md:103; docs/gates.md:45'},
+    'v-rail': {k:'owner', t:'charter rail', d:`<p>Sets a rail's status cell in <code>charter/rails.md</code> (<code>todo · next · in-progress · done · parked · dropped</code>) and commits it. The note goes into the commit message because <code>rails.md</code> has no Ruling section.</p>`, c:'python3 .charter/bin/charter rail r3 done', s:'docs/package.md:103'},
+    scope: {k:'art', t:'charter/scope.md', d:`<p>What is sold, what is not, and what the price assumes: a summary of the signed devis. It exists on the <b>client</b> track only. There, a path listed as out of scope cannot be edited until the owner approves a change request covering it.</p><p>The file is the owner's. Every unit cites one of its items with <code>scope:</code>.</p>`, s:'docs/method.md:9; docs/gates.md:43-48'},
+    rails: {k:'art', t:'charter/rails.md: the road', d:`<p>The roadmap as a table of ordered items. Every open unit names one with <code>rail: &lt;id&gt;</code>. Starting work the road does not name means the owner adds an item first, and that commit is the recorded re-plan.</p><p>It warns by default and refuses in the change set with <code>rails.required</code>. <code>charter synth</code> prints the rails with their units, which replaces a tracker kept by hand.</p>`, s:'docs/gates.md:50-56'},
+    decisions: {k:'art', t:'charter/decisions/', d:`<p>One design decision per file, each with <code>## Because</code> and an <code>expires:</code> date. It can carry a <code>check:</code> command that proves the decision still holds and <code>binds:</code> globs for the code that depends on it. That code carries a <code>charter:&lt;id&gt;</code> marker.</p><p>Agents may propose a decision; its status is the owner's. <code>INDEX.md</code> is generated. A <code>kind: lesson</code> decision is shared memory with an owner and an expiry (R8).</p>`, s:'docs/method.md:10; docs/method.md:36; docs/gates.md:76-80'},
+    changes: {k:'art', t:'charter/changes/: change requests', d:`<p>Work outside the scope becomes a request here. Any agent may write one as <code>proposed</code>. Only the owner flips it to <code>approved</code>, with <code>approved_by</code> and <code>approved_on</code>. An <code>approved</code> without both fields is refused and unlocks nothing (R7).</p>`, c:'python3 .charter/bin/charter approve <change>', s:'docs/method.md:35; docs/gates.md:47'},
+    agent: {k:'', t:'The agent', d:`<p>Claude Code, Codex, pi or a person at a terminal. One session owns one unit and writes it; parallel agents read. Claude Code gets the session hooks. Every harness gets the git hook and CI.</p><p>What it cannot settle, it proposes: a decision, or a change request.</p>`, s:'docs/method.md:43; README.md § What it does not do'},
+    unit: {k:'art', t:'A unit of work: .taskets/<id>.md', d:`<p>One deliverable. The frontmatter names the scope item or rail it serves, the <code>perimeter:</code> globs it may touch, the decisions it relies on, and its kind (<code>work</code>, or <code>split</code> to unfreeze a file the owner opens).</p><p>The body holds acceptance criteria written as runnable probes, evidence (a commit that resolves or a <code>$ command</code> that was run), a dated append-only log, and notes for any work outside the perimeter.</p>`, s:'docs/method.md:46-84; package/charter/templates/unit.md'},
+    next: {k:'', t:'charter next: what now?', d:`<p>Prints the active unit, the road, and what waits on the owner. It is the first command of a working day, for the agent and for the owner.</p>`, c:'python3 .charter/bin/charter next', s:'docs/daily-use.md:141; docs/design/charter-next.md'},
+    's-start': {k:'', t:'1 · start the unit', d:`<p>Records the active unit for this session, so perimeter checks and cost land on the right unit. From 0.4.7 the choice is per session.</p>`, c:'python3 .charter/bin/charter unit start <id>', s:'docs/package.md:102 (active_unit in package/.charter/lib.py)'},
+    's-edit': {k:'', t:'2 · edit inside the perimeter', d:`<p>Every Edit or Write goes through PreToolUse, which checks owner-only files, scope, size and decision markers before the edit lands. Work outside <code>perimeter:</code> is allowed with a <code>## Outside perimeter</code> note.</p>`, s:'docs/gates.md:13'},
+    's-probe': {k:'', t:'3 · run the probes', d:`<p>Runs each acceptance probe and prints the <code>$ command</code> lines to paste as evidence. A probe that already passed before the work tests nothing: it warns, or refuses with <code>probes.base_must_fail</code>.</p>`, c:'python3 .charter/bin/charter probe <id>', s:'docs/gates.md:69-70'},
+    's-evidence': {k:'', t:'4 · write the evidence', d:`<p>Under <code>## Evidence</code>: a commit SHA that resolves, or a <code>$ command</code> that was run, with its result. A path or a URL on its own does not show that anything ran. With <code>review.required</code>, it also needs a review line from another model.</p>`, s:'docs/gates.md:66-72'},
+    's-done': {k:'pass', t:'5 · done, then commit', d:`<p>Setting <code>status: done</code> is judged at every line: every box is checked and the evidence resolves, or it is refused. Add a line to <code>## Log</code> and commit. If the commit lands without a log line, the Stop hook reminds the agent once.</p>`, s:'docs/gates.md:66-68; docs/gates.md:96'},
+    'col-session': {k:'block', t:'Line 1 · the session hooks', d:`<p>Claude Code hooks act as the agent edits. PreToolUse denies with a reason and a way forward, PostToolUse reports, and Stop blocks an unanchored completion claim once. SessionStart gives the agent the charter index. SessionEnd writes the token counts that the cost ledger folds.</p><p>This line exists only in Claude Code.</p>`, s:'docs/gates.md:7-15'},
+    'col-commit': {k:'block', t:'Line 2 · the git pre-commit hook', d:`<p>Runs <code>charter check --staged</code> on the index, whoever commits: an agent through Bash, Codex, pi or a person. It is activated once per clone with <code>charter setup</code>, or run from lefthook or pre-commit when the project already has hooks.</p><p><code>--no-verify</code> skips it, and nothing records the skip.</p>`, c:'python3 .charter/bin/charter setup', s:'docs/gates.md § Git hook'},
+    'col-ci': {k:'block', t:'Line 3 · CI, from a clean clone', d:`<p>Runs <code>charter check --all --ci --base &lt;sha&gt;</code>, anchors on reports, and a pull-request mode on the PR body. It catches what a skipped or missing local hook let through, and it checks who authored owner-only changes.</p>`, s:'docs/gates.md § CI'},
+    gates: {k:'block', t:'The gates', d:`<p>One engine (<code>package/.charter/checks.py</code>) run at three lines. Every finding goes to the gate log.</p>`, s:'docs/gates.md:3'},
+    'g-done': {k:'block', t:'Done needs evidence (R9)', d:`<p><b>Refuses at all three lines.</b> A unit cannot become <code>done</code> with an unchecked box, or with evidence that names no commit that resolves and no <code>$ command</code> run. There is no override flag: keep the status open, add the evidence, or park the unit.</p><p>This gate is hard because the program reading the status never reads a warning.</p>`, s:'docs/gates.md:66-74; docs/method.md:111'},
+    'g-stop': {k:'block', t:'Completion claim (Stop hook)', d:`<p><b>Blocks once per turn, in session.</b> If the agent says "done", "fixed" or "tests pass" and cites no commit, <code>path:line</code> or <code>$ command</code>, it must cite one. An anchor that does not resolve from this checkout only warns (0.4.7).</p>`, s:'docs/gates.md:93-98'},
+    'g-scope': {k:'block', t:'Scope (R6)', d:`<p><b>Refuses at all three lines, on the client track only.</b> An out-of-scope path cannot be edited without an approved change request that covers it. On the prototype track this gate is off.</p>`, s:'docs/gates.md:43-48'},
+    'g-size': {k:'block', t:'Frozen file (R3)', d:`<p><b>Refuses at all three lines.</b> A file past its limit (800 lines for code; 400 lines or 32 KiB for governance files such as <code>CLAUDE.md</code>) cannot grow. Shrinking is always allowed. The owner can open a <code>kind: split</code> unit or name a budgeted exception. A change that crosses 80% of the limit warns.</p>`, s:'docs/gates.md:58-64'},
+    'g-dec': {k:'block', t:'Decisions (R1)', d:`<p><b>Refuses</b> citing a retired decision, and a decision <code>check:</code> that fails after an edit to a file it binds. The session line reports a failing check once the edit has landed. A bound file missing its marker only warns. To change course, supersede the decision with a new record.</p>`, s:'docs/gates.md:76-80'},
+    'g-owner': {k:'block', t:'Owner-only files and fields', d:`<p><b>Session:</b> refused unless Claude Code was started with <code>CHARTER_OWNER=1</code>. <b>Commit:</b> refused inside Claude Code; outside it only warns, because a terminal committer cannot be told apart from the owner. <b>CI:</b> refused unless the commit's author is the <code>owner</code> named in the base revision's config.</p>`, s:'docs/gates.md:35-37'},
+    'g-anchors': {k:'block', t:'Anchored reports (R10)', d:`<p><b>CI refuses on the client track</b> when a progress report or <code>docs/report*.md</code> has a claim with no anchor. On the prototype track and on the PR body it only warns. <code>charter synth</code> will not write a synthesis that fails the check.</p>`, c:'python3 .charter/bin/charter anchors <file>', s:'docs/gates.md:100-105'},
+    'g-perim': {k:'block', t:'Perimeter (R4)', d:`<p>An edit outside the unit's <code>perimeter:</code> without a note: <b>warns in session</b>, <b>refused at commit on the client track</b>, and only warns at commit on the prototype track. CI does not know the active unit, so it does not check this.</p>`, s:'docs/gates.md:82-86'},
+    'g-rails': {k:'block', t:'Rails', d:`<p>An open unit that names no rail on the road warns by default. With <code>rails.required</code> it is <b>refused at commit and in CI</b>, but only for units in the change set.</p>`, s:'docs/gates.md:50-53'},
+    'g-memory': {k:'block', t:'Memory (R8)', d:`<p><b>Warns only.</b> Flags a lesson or decision past its expiry, one missing <code>## Because</code>, and a lesson without an owner. A habit becomes a rule only through a decision.</p>`, s:'docs/gates.md:88-91'},
+    'main-accepted': {k:'pass', t:'An accepted result', d:`<p>"Done" means accepted: the probes ran and passed, the evidence resolves, and the change got through every gate. Cost per accepted result is the figure the ledger reports.</p>`, s:'docs/method.md:125; docs/method.md § The rules R9, R11'},
+    'main-merge': {k:'owner', t:'Merging is the owner\'s act', d:`<p>A merge into main, a deploy, a production data change or a public release is a commitment, and commitments go to the person who signs (R7). No gate sees these actions. The rules file tells the agent they are the owner's.</p>`, s:'README.md § What it does not do; package/.claude/rules/charter.md:44'},
+    'main-lock': {k:'owner', t:'The real lock is outside the repository', d:`<p>On the owner's machine, the agent commits under the owner's git identity, and a Bash command is not an Edit. The lock that holds is GitHub branch protection with required code-owner review.</p><p>Open issue #2: the 0.4.8 owner commands can still be run from an agent's Bash call.</p>`, s:'docs/gates.md:39; https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners'},
+    'main-failopen': {k:'', t:'Limits, stated plainly', d:`<p>A gate that crashes logs the error and lets the change through: a gate that breaks the tool is worse than one that misses once. <code>--no-verify</code> skips the local hook, and CI runs the checks again.</p><p>The gates check that evidence exists and resolves, not that it proves the claim. The reviewer and the owner check the truth.</p>`, s:'README.md § What it does not do; docs/method.md:123'},
+    'rec-log': {k:'rec', t:'The gate log', d:`<p>Every finding (gate, level, path, the event) is appended to <code>log.jsonl</code> in the git common directory. It is shared by worktrees and never committed. <code>charter log</code> summarises it; it is the owner's weekly look.</p><p>The log decides promotions: a warning that is ignored often enough becomes a gate.</p>`, c:'python3 .charter/bin/charter log', s:'docs/gates.md:3; docs/method.md:12'},
+    'rec-ledger': {k:'rec', t:'The cost ledger', d:`<p>The SessionEnd hook sums tokens per model from each transcript and its subagents into <code>sessions.jsonl</code>. <code>charter ledger fold</code> folds them per unit into <code>charter/ledger.jsonl</code>, priced from <code>config.json</code>. Nobody edits it by hand. Every figure is an estimate.</p>`, c:'python3 .charter/bin/charter ledger fold', s:'docs/method.md:14; docs/gates.md:15'},
+    'rec-synth': {k:'rec', t:'The progress synthesis', d:`<p><code>charter synth</code> generates progress from the repository on demand: rails, units, cost. Every line carries an anchor, and it refuses to write when its own anchor check fails. This replaces per-phase progress files and roadmaps kept by hand.</p>`, c:'python3 .charter/bin/charter synth', s:'docs/method.md:13; docs/method.md:173-186'},
+    'rec-evidence': {k:'rec', t:'Evidence classes', d:`<p>Every claim in a checked deliverable is one of four classes. <b>measured</b>: an anchor that resolves here. <b>vendor</b>: a URL. <b>reported</b>: an operator's word, marked <code>(reported in …)</code>. <b>inference</b>: marked <code>(estimate …)</code> or <code>(unverified)</code>. The first two anchor a claim; the last two are admitted because they say what they are.</p>`, s:'docs/method.md:150-161'},
+    'pkg-repo': {k:'', t:'This repository', d:`<p><code>package/</code> is what gets copied into projects. <code>personal/</code> is the layer for this machine, linked into <code>~/.claude</code>. <code>bin/charter-pkg</code> installs, upgrades, surveys and runs the fleet. A change to <code>package/</code> is a release.</p>`, c:'python3 bin/charter-pkg fleet --upgrade', s:'README.md § What is in here; AGENTS.md'},
+    'pkg-project': {k:'', t:'What lands in a project', d:`<p><code>.charter/</code> (the engine, hashed), <code>charter/</code> (templates, config, decisions and the rest), <code>.claude/</code> rules, skills and agents, an <code>AGENTS.md</code> section, and the CI workflow. The project commits the copy. The install commit is the owner's; an upgrade matching the manifest can be committed by an agent.</p>`, s:'docs/package.md § What lands in a project; docs/install.md'},
+    'track-client': {k:'block', t:'The client track', d:`<p>For work under a signed devis. <code>scope.md</code> is required and the scope gate is hard. Perimeter notes are hard at commit, and anchored reports are hard in CI.</p>`, s:'docs/method.md:201-218'},
+    'track-proto': {k:'', t:'The prototype track', d:`<p>No scope file and no scope gate. Every other gate stays on: decisions, size and done-needs-evidence are hard, and acceptance may be a single probe. <code>rails.md</code> keeps a prototype on its road. It moves to the client track by writing a scope and setting <code>track</code>.</p>`, s:'docs/method.md:201-218'},
+    personal: {k:'owner', t:'The personal layer', d:`<p>The CharterAdmin skill and the <code>charter-personal.py</code> hook, linked from this checkout into <code>~/.claude</code>. An edit is live on the machine at once. It administers charter across projects; no project depends on it.</p>`, s:'README.md § What is in here; personal/README.md'},
+    setup: {k:'', t:'charter setup', d:`<p><code>core.hooksPath</code> is repository config and is not cloned, so each new clone runs this once to turn the pre-commit gate on. The SessionStart banner says when it is missing.</p>`, c:'python3 .charter/bin/charter setup', s:'docs/gates.md § Git hook'},
+  };
+  /* Links that light up together. */
+  const REL = {
+    owner:['k-config','k-engine','k-settings','k-ci','v-owner','v-rule','v-approve','v-rail','main-merge','main-lock'],
+    'v-rule':['decisions','owner'], 'v-approve':['changes','owner','g-scope'], 'v-rail':['rails','owner'], 'v-owner':['decisions','changes','rails','next'],
+    scope:['unit','g-scope','track-client','changes'], rails:['unit','g-rails','v-rail','rec-synth'], decisions:['unit','g-dec','v-rule','agent','g-memory'], changes:['agent','v-approve','scope','g-scope'],
+    agent:['unit','decisions','changes','s-start'], unit:['scope','rails','decisions','agent','g-done','g-perim','s-done','rec-ledger'],
+    's-done':['g-done','g-stop','col-session','col-commit','col-ci','main-accepted'], 's-probe':['g-done','unit'], 's-evidence':['g-done','rec-evidence'], 's-edit':['col-session','g-perim','g-size','g-owner'], 's-start':['unit','rec-ledger'],
+    'col-session':['rec-ledger','k-settings','g-stop'], 'col-commit':['setup'], 'col-ci':['k-ci','g-anchors'],
+    'rec-log':['col-session','col-commit','col-ci'], 'rec-ledger':['col-session','unit','main-accepted'], 'rec-synth':['rec-evidence','g-anchors','rails','main-merge'], 'rec-evidence':['rec-synth','s-evidence','g-anchors'],
+    'pkg-repo':['pkg-project','k-engine','personal'], 'pkg-project':['pkg-repo','k-engine','k-settings','k-ci','setup'],
+    'track-client':['scope','g-scope','k-config'], 'track-proto':['rails','k-config'], 'k-config':['track-client','track-proto','owner'],
+    'g-scope':['scope','changes','track-client'], 'g-rails':['rails'], 'g-dec':['decisions'], 'g-done':['unit','s-done'], 'g-owner':['k-config','k-engine','k-settings','k-ci','owner'], 'g-anchors':['rec-synth','rec-evidence'], 'g-memory':['decisions'], 'g-perim':['unit'],
+    'main-merge':['owner','main-lock'], 'main-lock':['owner','g-owner'], next:['v-owner','unit'],
+  };
+  const LENS = {
+    owner: el => /\bowner\b/.test(el.dataset.role||''),
+    agent: el => /\bagent\b/.test(el.dataset.role||''),
+    hard:  el => /\bhard\b/.test(el.dataset.role||''),
+    record:el => /\brecord\b/.test(el.dataset.role||''),
+  };
+
+  const detail = document.getElementById('detail');
+  const nodes = [...svg.querySelectorAll('.node')];
+  const edges = [...svg.querySelectorAll('.edge')];
+  const byKey = Object.fromEntries(nodes.map(n => [n.dataset.k, n]));
+  let pinned = null;
+
+  function related(k){
+    const set = new Set([k, ...(REL[k]||[])]);
+    for (const [a, list] of Object.entries(REL)) if (list.includes(k)) set.add(a);
+    return set;
+  }
+  function render(k){
+    const x = I[k];
+    if (!x){ intro(); return; }
+    detail.innerHTML =
+      (pinned ? '<span class="pinned">pinned · Esc</span>' : '') +
+      `<span class="kind ${x.k||''}">${{owner:'the owner',art:'a record',block:'a gate',rec:'recorded',pass:'accepted'}[x.k]||'the work'}</span>` +
+      `<h2>${x.t}</h2>${x.d}` + (x.c ? `<div class="cmd">$ ${x.c}</div>` : '') +
+      `<div class="src">Source: ${x.s}</div>`;
+  }
+  function intro(){
+    detail.innerHTML = `<span class="kind">start here</span><h2>Seven regions, one flow</h2>
+      <p>The owner holds the keys (1) and writes the charter (2). The agent works a unit (3), and each change crosses three gate lines (4) on its way to main (5). The machines keep the records (6). Charter itself comes from this repository (7).</p>
+      <p>Point at anything to see what it is, where it lives and the command that drives it.</p>
+      <div class="src">Charter 0.4.8 · package/VERSION</div>`;
+  }
+  function focus(k){
+    const rel = related(k);
+    svg.classList.add('focus');
+    nodes.forEach(n => { n.classList.toggle('on', rel.has(n.dataset.k)); n.classList.toggle('self', n.dataset.k === k); });
+    edges.forEach(e => {
+      const a = (e.dataset.a||'').split(' '), b = (e.dataset.b||'').split(' ');
+      const hit = (a.includes(k) && b.some(x => rel.has(x))) || (b.includes(k) && a.some(x => rel.has(x))) || (k.startsWith('g-') && (a.includes('gates')||b.includes('gates')));
+      e.classList.toggle('on', hit);
+    });
+    render(k);
+  }
+  function clear(){
+    svg.classList.remove('focus');
+    nodes.forEach(n => n.classList.remove('on','self'));
+    edges.forEach(e => e.classList.remove('on'));
+    if (pinned) focus(pinned); else intro();
+  }
+  nodes.forEach(n => {
+    const k = n.dataset.k;
+    n.addEventListener('mouseenter', () => { if (!pinned) focus(k); });
+    n.addEventListener('mouseleave', () => { if (!pinned) clear(); });
+    n.addEventListener('focus', () => { if (!pinned) focus(k); });
+    n.addEventListener('blur', () => { if (!pinned) clear(); });
+    n.addEventListener('click', ev => { ev.stopPropagation(); pinned = (pinned === k) ? null : k; if (pinned) focus(k); else clear(); });
+    n.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); n.dispatchEvent(new MouseEvent('click')); } });
+    if (I[k]) n.setAttribute('aria-label', I[k].t);
+  });
+  svg.addEventListener('click', () => { if (pinned){ pinned = null; clear(); } });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && pinned){ pinned = null; clear(); } });
+
+  /* Lenses */
+  const buttons = [...document.querySelectorAll('button.lens')];
+  buttons.forEach(b => b.addEventListener('click', () => {
+    buttons.forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    const f = LENS[b.dataset.lens];
+    svg.classList.toggle('lensing', !!f);
+    nodes.forEach(n => n.classList.toggle('lens-on', !!f && f(n)));
+  }));
+
+  /* Theme */
+  const root = document.documentElement;
+  try { const t = localStorage.getItem('charter-map-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById('theme').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('charter-map-theme', root.dataset.theme); } catch (e) {}
+  });
+
+  intro();
+})();
+</script>
+</body></html>
