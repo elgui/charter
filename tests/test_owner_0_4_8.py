@@ -276,6 +276,15 @@ class RuleVerb(unittest.TestCase):
         self.assertEqual(git(self.root, "rev-parse", "HEAD").stdout, head)
         self.assertEqual(git(self.root, "status", "--porcelain", "--", "charter").stdout, "")
 
+    def test_rule_dry_run_does_not_run_the_check(self):
+        """A check may write files; a dry run names it and leaves it unrun."""
+        put(self.root, "charter/decisions/pick-db.md", PROPOSED.format(check="touch check-ran && true"))
+        commit_all(self.root, "a check that writes a file")
+        r = self.rule("pick-db", "active", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("would run the check first: touch check-ran && true", r.stdout)
+        self.assertFalse((self.root / "check-ran").exists())
+
     def test_rule_refuses_an_uncommitted_proposal(self):
         p = self.root / "charter" / "decisions" / "pick-db.md"
         p.write_text(p.read_text().replace("Postgres.", "MySQL."))
