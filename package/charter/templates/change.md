@@ -1,7 +1,7 @@
 ---
 id: <slug-same-as-filename>
 title: <one line>
-# status: proposed | approved | rejected | folded (anything but proposed is set by the owner)
+# status: proposed | approved | rejected | folded (anything but proposed is set by the owner: `charter approve <id> [--reject]`)
 status: proposed
 date: <YYYY-MM-DD>
 paths: [<globs this change may touch>]

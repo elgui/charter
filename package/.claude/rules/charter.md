@@ -35,7 +35,7 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - Opening or widening a `kind: split` unit.
 - Setting `CHARTER_OWNER` anywhere.
 
-The owner edits these by hand or in a Claude Code session started with `CHARTER_OWNER=1`.
+The owner edits these by hand or in a Claude Code session started with `CHARTER_OWNER=1`. A ruling is one owner command: `charter rule <decision> active|rejected|superseded`, `charter approve <change> [--reject]` or `charter rail <id> <status>` writes it and commits it as the owner. An agent never runs these; it proposes, and `charter owner` shows the owner what waits.
 
 ## Decisions and memory
 
@@ -60,3 +60,4 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
     python3 .charter/bin/charter setup            # activate the git hook in this clone
     python3 .charter/bin/charter config           # the track and opt-ins the gates read; problems in charter/config.json
     python3 .charter/bin/charter next             # the road, the next units, what waits on the owner; writes nothing
+    python3 .charter/bin/charter owner [--json]   # what waits on the owner, with the command for each; writes nothing
