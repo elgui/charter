@@ -18,7 +18,7 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
 | `bin/make-testbed`, `bin/trial-run` | Trial tooling |
 | `personal/` | The personal layer, not installed by the installer (`personal/README.md`) |
 | `tests/` | The command is in `AGENTS.md` at the repository root. `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found, `test_migration.py` the survey and the defects the 2026-09-13 leCRM rehearsal found; the others are named after the feature or review they test |
-| `docs/` | Reference: `install.md`, `daily-use.md`, `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `design/`. History: `trials/`, `review/`, `briefs/`, `report-2026-09-11.md`, `session-log.md` |
+| `docs/` | Reference: `install.md`, `daily-use.md`, `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `cheatsheet.html` and `cheatsheet.pdf` (the A4 desk sheet), `design/`. History: `trials/`, `review/`, `briefs/`, `report-2026-09-11.md`, `session-log.md` |
 
 ## What lands in a project
 
