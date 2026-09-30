@@ -313,6 +313,23 @@ class RuleVerb(unittest.TestCase):
         self.assertEqual(git(self.root, "status", "--porcelain", "--", "charter").stdout, "")
         self.assertEqual(git(self.root, "diff", "--cached", "--name-only").stdout.split(), ["notes.md"])
 
+    def test_rule_refused_commit_keeps_a_staged_index(self):
+        """An index another session staged is staged again, as it was, when the commit is refused."""
+        ip = self.root / "charter" / "decisions" / "INDEX.md"
+        staged = ip.read_text() + "\nstaged by another session\n"
+        ip.write_text(staged)
+        git(self.root, "add", "charter/decisions/INDEX.md")
+        hook = self.root / ".charter" / "githooks" / "pre-commit"
+        saved = hook.read_text()
+        hook.write_text("#!/bin/sh\necho refused by a test >&2\nexit 1\n")
+        try:
+            r = self.rule("pick-db", "active")
+        finally:
+            hook.write_text(saved)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(git(self.root, "show", ":charter/decisions/INDEX.md").stdout, staged)
+        self.assertEqual(ip.read_text(), staged)
+
 
 class ApproveAndRailVerbs(unittest.TestCase):
     def setUp(self):

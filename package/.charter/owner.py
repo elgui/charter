@@ -326,6 +326,7 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
         print(f"\nwould commit, as the owner (the owner switch set for this one commit only):\n  {shlex.join(args)}")
         return 0
     before = set(lib.git(root, "diff", "--cached", "--name-only", "--", *writes).stdout.split())
+    staged = [l.split(None, 3) for l in lib.git(root, "ls-files", "-s", "--", *before).stdout.splitlines()] if before else []
     for rp, new in writes.items():
         (root / rp).parent.mkdir(parents=True, exist_ok=True)
         (root / rp).write_text(new, encoding="utf-8")
@@ -341,6 +342,8 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
         unstage = [rp for rp in writes if rp not in before]
         if unstage:
             lib.git(root, "reset", "-q", "--", *unstage)
+        for mode, blob, _, rp in staged:   # what another session staged goes back into the index as it was
+            lib.git(root, "update-index", "--cacheinfo", f"{mode},{blob},{rp}")
         raise Refused("the commit was refused, so nothing changed:\n" + (r.stdout + r.stderr).strip())
     sha = lib.git(root, "rev-parse", "--short", "HEAD").stdout.strip()
     print(f"committed {sha} as the owner: {message} ({', '.join(writes)}); not pushed")
