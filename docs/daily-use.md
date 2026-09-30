@@ -105,7 +105,7 @@ To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` 
 2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
 4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
-5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:559`).
+5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:738`).
 
 A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
@@ -129,15 +129,16 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 | When | What | How |
 |---|---|---|
 | The agent staged an owner-only file (install, upgrade, config) | Commit it | Paste the command the agent handed over, after `!` in the Claude Code prompt; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
-| A change request is `proposed` | Approve it, or refuse it | Set `status: approved`, `approved_by:` and `approved_on:` in `charter/changes/<id>.md`; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
-| A decision is superseded | Retire the old one | Set its `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
+| A decision is `proposed` | Adopt it, or reject it | `python3 .charter/bin/charter rule <id> active` (or `rejected`): status, a `## Ruling` line, the index and the commit in one command; `active` first runs the decision's `check:` (`rule` in `package/.charter/owner.py`) |
+| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
+| A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |
-| The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`) |
+| The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`); `python3 .charter/bin/charter rail <id> done` closes one in one commit |
 | A pull request is ready | Push, open, merge | The agent never pushes, opens or merges (`docs/install.md` § Rules for the agent) |
 
 ## The owner's weekly look
 
-- `python3 .charter/bin/charter next`: under "Waiting on the owner" it lists proposed decisions and change requests, each rail whose units are all finished (close it, or have a unit written for what is left), and owner-only files staged for your commit (`cmd_next` in `package/.charter/bin/charter`).
+- `python3 .charter/bin/charter next`: under "Waiting on the owner" it lists proposed decisions and change requests, each rail whose units are all finished (close it, or have a unit written for what is left), and owner-only files staged for your commit (`cmd_next` in `package/.charter/bin/charter`). `python3 .charter/bin/charter owner` prints the same queue alone, with HUMAN-ONLY units and acceptance lines only you can close, and the command for each (`--json` for a tool).
 - `python3 .charter/bin/charter log`: what the gates refused and warned about over 30 days. A warning that keeps firing on real problems is the evidence for turning it into a gate; one that fires on nothing is noise to remove (`docs/method.md:12`).
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
   - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:31`);

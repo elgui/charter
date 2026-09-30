@@ -1,0 +1,443 @@
+"""The owner's queue and the owner's verbs (0.4.8).
+
+`queue` lists what waits on the owner, from the project's own files: proposed decisions and change
+requests, rails whose every unit is finished, problems in charter/rails.md, staged owner-only files,
+HUMAN-ONLY units, and unchecked acceptance lines only the owner can close. `charter next` prints it
+under "Waiting on the owner" and `charter owner [--json]` prints it alone, from this one function, so
+the two cannot drift. It reports commands (a decision's `check:`, a line's probe); it never runs one.
+
+`rule`, `approve` and `rail` record a ruling in one command: they write the status, a dated `## Ruling`
+line (decisions and change requests) and the decision index, then commit exactly those paths as the
+owner. The owner switch is set in the environment of that one `git commit` and nowhere else. A verb
+never pushes, merges, or writes a settings or permission file.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import difflib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+import checks
+import lib
+import rails
+
+CHARTER_BIN = ".charter/bin/charter"
+KINDS = ("decide", "do", "check")
+FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform")
+# `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
+# tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
+OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
+# a legacy line that names a human step without the segment
+HUMAN_SEG_RE = re.compile(r"\s[—–]\s*human:", re.I)
+DECISION_RULINGS = ("active", "rejected", "superseded")
+CHANGE_RULINGS = ("approved", "rejected")
+TRAILER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*: \S.*$")
+OWNER_SWITCH = "CHARTER_OWNER"
+
+
+# ---------------------------------------------------------------- the queue
+
+def _item(**kw) -> dict:
+    it = {f: None for f in FIELDS}
+    it.update(options=[], marked=True)
+    it.update(kw)
+    return it
+
+
+def perform_argv(root: Path, *args: str) -> list[str]:
+    """A charter command as an argv list that runs from any directory."""
+    return ["python3", str(root / CHARTER_BIN), "--root", str(root), *args]
+
+
+def _line_of(text: str, pattern: str) -> int:
+    """1-based line of the first match of `pattern` (multiline), or 1."""
+    m = re.search(pattern, text, re.M)
+    return text.count("\n", 0, m.start()) + 1 if m else 1
+
+
+def _read(root: Path, rp: str) -> str:
+    p = lib.artifact_root(root) / rp
+    return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
+
+
+def _options(root: Path, verb: str, ident: str, values: tuple[str, ...], labels: dict[str, str]) -> list[dict]:
+    return [{"value": v, "label": labels.get(v, v), "perform": perform_argv(root, verb, ident, v)} for v in values]
+
+
+def owner_names(root: Path, cfg: dict) -> list[str]:
+    """Who "the owner" is in prose: the config's `owner`, the decisions' `owner:` (who settles them) and git's user.name."""
+    names = [n for n in lib.as_list(cfg.get("owner"))]
+    names += [str(d.get("owner")) for d in lib.decisions(root).values() if d.get("owner")]
+    names.append(lib.git(root, "config", "user.name").stdout.strip())
+    out: list[str] = []
+    for n in names:
+        n = n.split("@", 1)[0].strip()
+        if n and n.lower() not in (x.lower() for x in out) and not n.startswith("<"):
+            out.append(n)
+    return out
+
+
+def _legacy_re(names: list[str]) -> re.Pattern:
+    alts = "|".join(re.escape(n) for n in names + ["the owner"])
+    return re.compile(rf"\((?:{alts})\)|\b(?:{alts}) runs\b|\bafter (?:{alts}) restarts\b", re.I)
+
+
+def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]:
+    """Unchecked acceptance lines of an open unit that only the owner can close: marked with `— owner:`, or
+    (unmarked, `marked: false`) naming a human step or the owner the way units did before the segment."""
+    text = _read(root, u["_path"])
+    lines = text.splitlines()
+    first = len(lines) - len(u.get("_body", "").splitlines())   # the body's first line, past the frontmatter
+    heads = tuple(h.lower() for h in lib.ACCEPTANCE_HEADINGS)
+    out, level = [], 0
+    for lineno, line in enumerate(lines[first:], first + 1):
+        h = re.match(r"^(#{1,6})\s+(.*)", line)
+        if h:
+            if level and len(h.group(1)) <= level:
+                level = 0
+            if not level and len(h.group(1)) > 1 and h.group(2).strip().lower().startswith(heads):
+                level = len(h.group(1))
+            continue
+        box = re.match(r"^\s*-\s*\[( )\]\s*(AC-\d+)?", line) if level else None
+        if not box:
+            continue
+        seg = OWNER_SEG_RE.search(line)
+        if not seg and not HUMAN_SEG_RE.search(line) and not legacy.search(line):
+            continue
+        ac = box.group(2) or f"L{lineno}"
+        probe = checks.PROBE_RE.match(line)
+        what = re.sub(r"^\s*-\s*\[ \]\s*(AC-\d+:?\s*)?", "", line)
+        what = re.split(r"\s[—–]\s*(?:owner|human|probe):", what)[0].strip()
+        out.append(_item(key=f"owner-line:{uid}:{ac}", kind=(seg.group(1) or "check").lower() if seg else "check",
+                         title=f"{uid} {ac}: {what}"[:200], file=u["_path"], line=lineno,
+                         probe=probe.group(2) if probe else None, marked=bool(seg)))
+    return out
+
+
+def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str]) -> list[dict]:
+    """What waits on the owner, in the order `charter next` prints it. `states` maps a unit id to its state
+    (`_unit_state` in the CLI); a finished unit is accepted, closed or done before charter."""
+    items: list[dict] = []
+    finished = ("accepted", "closed", "done-before-charter")
+    loaded = rails.load(root, cfg)
+    if loaded is not None:
+        ritems, problems = loaded
+        keys = rails.config(cfg)["keys"]
+        on = {uid: rails.rails_of(u, keys, ritems) for uid, u in units.items()}
+        for rid, it in rails.ordered(ritems):
+            if it["status"] in rails.CLOSED or it["status"] == "todo":
+                continue
+            citing = [uid for uid in units if rid in on[uid]]
+            if citing and all(states.get(uid) in finished for uid in citing):
+                items.append(_item(key=f"rail:{rid}", kind="decide", file=rails.FILE, line=it["line"], recommend="done",
+                                   title=f"rail {rid} is {it['status']} and every unit on it is finished: close it, or a unit for what is left is written first",
+                                   ask=f"Close rail {rid} ({it['title']})?",
+                                   options=_options(root, "rail", rid, rails.CLOSED, {}),
+                                   perform=perform_argv(root, "rail", rid, "{answer}")))
+        if problems:
+            items.append(_item(key="rails-file", kind="do", file=rails.FILE, line=1,
+                               title=f"{rails.FILE}: " + "; ".join(problems)))
+    for k, v in lib.decisions(root).items():
+        if str(v.get("status")) != "proposed":
+            continue
+        rec = str(v.get("recommend") or "").strip().lower() or None
+        items.append(_item(key=f"decision:{k}", kind="decide", title=str(v.get("title", "")), file=v["_path"],
+                           line=_line_of(_read(root, v["_path"]), r"^status:"),
+                           ask=str(v.get("ask") or "") or None, recommend=rec if rec in DECISION_RULINGS else None,
+                           options=_options(root, "rule", k, ("active", "rejected"), {"active": "adopt it", "rejected": "reject it"}),
+                           check=str(v.get("check") or "") or None,
+                           perform=perform_argv(root, "rule", k, "{answer}")))
+    for k, v in lib.change_requests(root).items():
+        if str(v.get("status")) != "proposed":
+            continue
+        items.append(_item(key=f"change:{k}", kind="decide", title=str(v.get("title", "")), file=v["_path"],
+                           line=_line_of(_read(root, v["_path"]), r"^status:"), ask=str(v.get("ask") or "") or None,
+                           options=_options(root, "approve", k, CHANGE_RULINGS, {}),
+                           perform=perform_argv(root, "approve", k, "{answer}")))
+    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
+    mine = list(checks.owner_only_staged(root, cfg, staged))
+    if mine:
+        cmd = shlex.split(lib.commit_command(root, staged, handover_message(root, staged, mine)))
+        items.append(_item(key="staged", kind="do", file=mine[0], line=1,
+                           title=f"staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""),
+                           perform=["env", f"{OWNER_SWITCH}=1", *cmd]))
+    closed = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
+    legacy = _legacy_re(owner_names(root, cfg))
+    for uid, u in units.items():
+        if str(u.get("status", "")) in closed:
+            continue
+        reason = str(u.get("gate_reason") or "")
+        if reason.upper().startswith("HUMAN-ONLY"):
+            items.append(_item(key=f"human:{uid}", kind="do", title=str(u.get("title", "")), file=u["_path"],
+                               line=_line_of(_read(root, u["_path"]), r"^gate_reason:"), ask=reason))
+        items += owner_lines(root, uid, u, legacy)
+    return items
+
+
+def next_line(it: dict) -> str:
+    """The item as `charter next` prints it under "Waiting on the owner"."""
+    key = it["key"]
+    if key.startswith("rail:"):
+        return f"- {it['title']} ({it['file']}:{it['line']})"
+    if key == "rails-file":
+        return f"- {it['title']}"
+    if key.startswith("decision:"):
+        return f"- decision {key.split(':', 1)[1]} — {it['title']} is proposed ({it['file']})"
+    if key.startswith("change:"):
+        return f"- change request {key.split(':', 1)[1]} — {it['title']} is proposed ({it['file']})"
+    if key == "staged":
+        return f"- {it['title']}; `python3 .charter/bin/charter handover` prints the command"
+    if key.startswith("human:"):
+        return f"- HUMAN-ONLY unit {key.split(':', 1)[1]} — {it['title']} ({it['file']}:{it['line']})"
+    return f"- {'owner line' if it['marked'] else 'unmarked owner line'} {it['title']} ({it['file']}:{it['line']})"
+
+
+def handover_message(root: Path, staged: list[str], mine: list[str]) -> str:
+    """The default message of the owner's commit of what is staged: `charter <version>` for an upgrade."""
+    vp = f"{lib.CHARTER_DIR}/VERSION"
+    ver = checks.staged_text(root, vp) if vp in staged else None
+    if ver:
+        return f"charter {ver.strip()}"
+    if mine:
+        return f"Owner-only change: {mine[0]}" + (f" and {len(mine) - 1} more" if len(mine) > 1 else "")
+    return "Staged changes"
+
+
+def report(root: Path, cfg: dict, items: list[dict]) -> dict:
+    ver = root / lib.CHARTER_DIR / "VERSION"
+    return {"project": str(root), "charter": ver.read_text().strip() if ver.exists() else None,
+            "owner": ", ".join(lib.as_list(cfg.get("owner"))) or None, "items": items}
+
+
+def human(rep: dict) -> str:
+    """The queue grouped by kind, each with the command that performs it."""
+    L = [f"Waiting on the owner in {rep['project']} (charter {rep['charter']}): {len(rep['items'])} item(s)"]
+    titles = {"decide": "Decide", "do": "Do", "check": "Check"}
+    for kind in KINDS:
+        its = [i for i in rep["items"] if i["kind"] == kind]
+        if not its:
+            continue
+        L += ["", f"{titles[kind]}:"]
+        for i in its:
+            L.append(f"- [{i['key']}] {i['title']} ({i['file']}:{i['line']})" + ("" if i["marked"] else " (unmarked)"))
+            if i["ask"]:
+                L.append(f"    ask: {i['ask']}")
+            if i["recommend"]:
+                L.append(f"    recommended: {i['recommend']}")
+            if i["check"]:
+                L.append(f"    check (not run): {i['check']}")
+            if i["probe"]:
+                L.append(f"    probe (not run): {i['probe']}")
+            for o in i["options"]:
+                L.append(f"    {o['value']}: {shlex.join(o['perform'])}")
+            if i["perform"] and not i["options"]:
+                L.append(f"    perform: {shlex.join(i['perform'])}")
+    if not rep["items"]:
+        L.append("- nothing")
+    return "\n".join(L)
+
+
+# ---------------------------------------------------------------- the verbs
+
+class Refused(Exception):
+    pass
+
+
+def warn_in_session() -> None:
+    """Until the tool path refuses these verbs (tele-claude's owner desk, unit od5), say what they are."""
+    if lib.in_claude_code():
+        print("charter: this is the owner's act. From Claude Code only the owner runs it, as a `!` command; "
+              "an agent proposes the ruling and does not run it.", file=sys.stderr)
+
+
+def owner_name(root: Path, cfg: dict) -> str:
+    names = lib.as_list(cfg.get("owner"))
+    return names[0] if names else (lib.git(root, "config", "user.name").stdout.strip() or "the owner")
+
+
+def set_field(text: str, key: str, value: str) -> str:
+    """Set a top-level frontmatter field, keeping every other line; a missing field goes after `status:`."""
+    m = re.match(r"\A(---\s*\n)(.*?\n)(---\s*(?:\n|\Z))", text, re.S)
+    if not m:
+        raise Refused("the file has no frontmatter")
+    fm = m.group(2)
+    pat = re.compile(rf"^{re.escape(key)}:[^\n]*$", re.M)
+    new = f"{key}: {value}"
+    if pat.search(fm):
+        fm = pat.sub(lambda _: new, fm, count=1)
+    else:
+        st = re.search(r"^status:[^\n]*\n", fm, re.M)
+        at = st.end() if st else len(fm)
+        fm = fm[:at] + new + "\n" + fm[at:]
+    return m.group(1) + fm + m.group(3) + text[m.end():]
+
+
+def add_ruling(text: str, line: str) -> str:
+    """Append `line` under `## Ruling` at the end of the file, opening the section when it is not the last one."""
+    heads = re.findall(r"^##\s+(.*)$", text, re.M)
+    body = text.rstrip("\n")
+    if heads and heads[-1].strip().lower().startswith("ruling"):
+        return body + "\n" + line + "\n"
+    return body + "\n\n## Ruling\n\n" + line + "\n"
+
+
+def _clean(root: Path, rp: str) -> None:
+    """The file ruled on must be the committed one: what the owner read is what is ruled."""
+    if lib.git(root, "ls-files", "--error-unmatch", "--", rp).returncode != 0:
+        raise Refused(f"{rp} is not committed; commit the proposal first, then rule on it")
+    if lib.git(root, "status", "--porcelain", "--", rp).stdout.strip():
+        raise Refused(f"{rp} has uncommitted changes; commit or discard them first, so the ruling is on what was proposed")
+
+
+def _committed_decisions(root: Path, override: tuple[str, str]) -> dict[str, dict]:
+    """The decisions as HEAD has them, with one file replaced by its new text: the index committed with a
+    ruling lists no decision that another session has not committed yet."""
+    d = f"{lib.CHARTER_DIR}/decisions"
+    names = [p for p in lib.git(root, "ls-tree", "--name-only", "HEAD", f"{d}/").stdout.splitlines() if p.endswith(".md")]
+    if override[0] not in names:
+        names.append(override[0])
+    out = {}
+    for rp in sorted(names, key=lambda p: Path(p).name):
+        if Path(rp).name.lower() in ("readme.md", "index.md"):
+            continue
+        text = override[1] if rp == override[0] else lib.git(root, "show", f"HEAD:{rp}").stdout
+        fields, _, body = lib.split_frontmatter(text)
+        fields["_path"], fields["_body"] = rp, body
+        fields.setdefault("status", "active")
+        out[str(fields.get("id") or Path(rp).stem)] = fields
+    return out
+
+
+def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | None, dry_run: bool) -> int:
+    """Write the files, stage them and commit exactly them as the owner; roll back when the commit is refused."""
+    if trailer and not TRAILER_RE.match(trailer):
+        raise Refused(f"--trailer {trailer!r} is not a `Key: value` git trailer")
+    old = {rp: ((root / rp).read_text(encoding="utf-8") if (root / rp).exists() else None) for rp in writes}
+    args = ["git", "-C", str(root), "commit", "-q", "-m", message] + (["-m", trailer] if trailer else []) + ["--", *writes]
+    if dry_run:
+        for rp, new in writes.items():
+            sys.stdout.writelines(difflib.unified_diff((old[rp] or "").splitlines(True), new.splitlines(True), f"a/{rp}", f"b/{rp}"))
+        print(f"\nwould commit, as the owner (the owner switch set for this one commit only):\n  {shlex.join(args)}")
+        return 0
+    before = set(lib.git(root, "diff", "--cached", "--name-only", "--", *writes).stdout.split())
+    for rp, new in writes.items():
+        (root / rp).parent.mkdir(parents=True, exist_ok=True)
+        (root / rp).write_text(new, encoding="utf-8")
+    lib.git(root, "add", "--", *writes, check=True)
+    env = dict(os.environ, **{OWNER_SWITCH: "1"})
+    r = subprocess.run(args, env=env, capture_output=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        for rp, text in old.items():
+            if text is None:
+                (root / rp).unlink(missing_ok=True)
+            else:
+                (root / rp).write_text(text, encoding="utf-8")
+        unstage = [rp for rp in writes if rp not in before]
+        if unstage:
+            lib.git(root, "reset", "-q", "--", *unstage)
+        raise Refused("the commit was refused, so nothing changed:\n" + (r.stdout + r.stderr).strip())
+    sha = lib.git(root, "rev-parse", "--short", "HEAD").stdout.strip()
+    print(f"committed {sha} as the owner: {message} ({', '.join(writes)}); not pushed")
+    return 0
+
+
+def _run_check(root: Path, cfg: dict, did: str, cmd: str) -> None:
+    timeout = int((cfg.get("probes") or {}).get("timeout_s", 120))
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise Refused(f"decision {did}: its check did not finish in {timeout} s, so it cannot be made active: {cmd}")
+    if r.returncode != 0:
+        out = (r.stdout + r.stderr).strip()
+        raise Refused(f"decision {did}: its check exits {r.returncode}, so it cannot be made active: {cmd}" + (f"\n{out}" if out else ""))
+
+
+def rule(root: Path, cfg: dict, did: str, status: str, by: str | None = None, note: str | None = None,
+         trailer: str | None = None, dry_run: bool = False) -> int:
+    decs = lib.decisions(root)
+    d = decs.get(did)
+    if d is None:
+        raise Refused(f"no decision {did} in {lib.CHARTER_DIR}/decisions/")
+    if status not in DECISION_RULINGS:
+        raise Refused(f"a decision is ruled {', '.join(DECISION_RULINGS)}, not {status}")
+    cur = str(d.get("status", "active"))
+    if not (cur == "proposed" or (cur == "active" and status == "superseded")):
+        raise Refused(f"decision {did} is {cur}; only a proposed decision is ruled, and an active one only superseded")
+    if status == "superseded":
+        if not by:
+            raise Refused("superseded needs --by <decision> naming its successor")
+        if by == did or by not in decs:
+            raise Refused(f"--by {by}: no other decision has that id in {lib.CHARTER_DIR}/decisions/")
+    elif by:
+        raise Refused("--by is only for superseded")
+    rp = d["_path"]
+    _clean(root, rp)
+    if status == "active" and d.get("check"):
+        _run_check(root, cfg, did, str(d["check"]))
+    text = set_field((root / rp).read_text(encoding="utf-8"), "status", status)
+    if by:
+        text = set_field(text, "superseded_by", by)
+    who = owner_name(root, cfg)
+    text = add_ruling(text, f"- {dt.date.today().isoformat()} {status}" + (f" (by {by})" if by else "") + f" by {who}" + (f": {note}" if note else ""))
+    index = lib.decision_index_text(_committed_decisions(root, (rp, text)))
+    ip = f"{lib.CHARTER_DIR}/decisions/INDEX.md"
+    rc = _commit(root, {rp: text, ip: index}, f"decision {did}: {status}", trailer, dry_run)
+    if not dry_run:
+        live = lib.decision_index_text(lib.decisions(root))
+        if live != index:   # another session's uncommitted decisions go back into its working copy of the index
+            (root / ip).write_text(live, encoding="utf-8")
+    return rc
+
+
+def approve(root: Path, cfg: dict, cid: str, status: str = "approved", note: str | None = None,
+            trailer: str | None = None, dry_run: bool = False) -> int:
+    c = lib.change_requests(root).get(cid)
+    if c is None:
+        raise Refused(f"no change request {cid} in {lib.CHARTER_DIR}/changes/")
+    if status not in CHANGE_RULINGS:
+        raise Refused(f"a change request is {' or '.join(CHANGE_RULINGS)}, not {status}")
+    if str(c.get("status")) != "proposed":
+        raise Refused(f"change request {cid} is {c.get('status')}; only a proposed one is approved or rejected")
+    rp = c["_path"]
+    _clean(root, rp)
+    who, day = owner_name(root, cfg), dt.date.today().isoformat()
+    text = (root / rp).read_text(encoding="utf-8")
+    for k, v in (("status", status), ("approved_by", who), ("approved_on", day)):
+        text = set_field(text, k, v)
+    text = add_ruling(text, f"- {day} {status} by {who}" + (f": {note}" if note else ""))
+    return _commit(root, {rp: text}, f"change {cid}: {status}", trailer, dry_run)
+
+
+def rail(root: Path, cfg: dict, rid: str, status: str, note: str | None = None, trailer: str | None = None,
+         dry_run: bool = False) -> int:
+    rid, status = rid.strip().lower(), status.strip().lower()
+    loaded = rails.load(root, cfg)
+    if loaded is None:
+        raise Refused(f"{rails.FILE} does not exist")
+    items, _ = loaded
+    if rid not in items:
+        raise Refused(f"no rail {rid} in {rails.FILE}")
+    if status not in rails.STATUSES:
+        raise Refused(f"a rail's status is one of {', '.join(rails.STATUSES)}, not {status}")
+    if items[rid]["status"] == status:
+        raise Refused(f"rail {rid} is already {status}")
+    _clean(root, rails.FILE)
+    lines = (root / rails.FILE).read_text(encoding="utf-8").split("\n")
+    n = items[rid]["line"] - 1
+    header = next(l for l in lines[:n] if l.lstrip().startswith("|") and all(c in [x.strip().lower() for x in l.split("|")] for c in rails.COLUMNS))
+    col = [x.strip().lower() for x in header.split("|")].index("status")
+    cells = lines[n].split("|")
+    cells[col] = f" {status} "
+    lines[n] = "|".join(cells)
+    msg = f"rail {rid}: {status}" + (f"\n\n{note}" if note else "")   # rails.md has no Ruling section: the note is in the commit
+    return _commit(root, {rails.FILE: "\n".join(lines)}, msg, trailer, dry_run)
+
+
+def dumps(rep: dict) -> str:
+    return json.dumps(rep, indent=2, ensure_ascii=False)

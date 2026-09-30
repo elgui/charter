@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.7. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.8. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 

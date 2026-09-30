@@ -23,7 +23,9 @@ kind: work
 
 - [ ] AC-1: <binary, observable state> — probe: `<command>`
 - [ ] AC-2: <...> — probe: `<command>`
-<!-- A probe must fail before the work. A criterion that protects behaviour which already exists says `(guard)`. -->
+<!-- A probe must fail before the work. A criterion that protects behaviour which already exists says `(guard)`.
+     A criterion only the owner can close carries an `— owner: check` (or `— owner: do`) segment before its probe:
+     `- [ ] AC-3: rows arrive after the restart — owner: check — probe: `<command>``. `charter owner` lists it. -->
 
 ## Evidence
 

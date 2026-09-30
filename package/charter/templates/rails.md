@@ -3,7 +3,8 @@
 The road this project is on, in order. Every open unit names one item with `rail: <id>` (or a
 `roadmap:` link whose anchor is the id). `charter check --rails` warns on an open unit that names
 none; with `"rails": {"required": true}` in `charter/config.json` such a unit is refused when it is
-in the change set. This file is the owner's: adding an item is the recorded re-plan.
+in the change set. This file is the owner's: adding an item is the recorded re-plan, and
+`charter rail <id> <status>` sets an item's status in one commit.
 
 To use it, copy this file to `charter/rails.md` and replace the example rows.
 
