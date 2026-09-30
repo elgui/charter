@@ -379,7 +379,10 @@ def rule(root: Path, cfg: dict, did: str, status: str, by: str | None = None, no
     rp = d["_path"]
     _clean(root, rp)
     if status == "active" and d.get("check"):
-        _run_check(root, cfg, did, str(d["check"]))
+        if dry_run:   # a check may write files: a dry run names it and does not run it
+            print(f"would run the check first: {d['check']}")
+        else:
+            _run_check(root, cfg, did, str(d["check"]))
     text = set_field((root / rp).read_text(encoding="utf-8"), "status", status)
     if by:
         text = set_field(text, "superseded_by", by)
