@@ -60,3 +60,4 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
     python3 .charter/bin/charter setup            # activate the git hook in this clone
     python3 .charter/bin/charter config           # the track and opt-ins the gates read; problems in charter/config.json
     python3 .charter/bin/charter next             # the road, the next units, what waits on the owner; writes nothing
+    python3 .charter/bin/charter chain status     # a continuous chain of sessions (`/charter-chain`); in a chain session, .charter/chain-rules.md also binds

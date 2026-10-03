@@ -1,0 +1,12 @@
+2026-10-04T00:53:17 chain started: chain 20261004-005317: unit t1, new branch chain/20261004-005317 from main; budget: hand over at 25%, cap 30% of 150,000 tokens; model sonnet, effort low; launcher: headless (/var/folders/ld/tt9p6nns00b34bw2nz5zgjpm0000gn/T/cmux-cli-shims/2B896AEE-503D-47B4-A28B-A3361B63AAD7/claude); at most 4 sessions; mission: go with unit t1. Optimize context window, and as long as things go well, iterate on the next unit until it's done.
+2026-10-04T00:53:17 s01 launched: session 1 in headless
+2026-10-04T00:53:20 s01 joined: Claude Code session b32a5485
+2026-10-04T00:53:38 s01 closed: continue; 2 commit(s), closed t1, peak 25%
+2026-10-04T00:53:38 s02 launched: session 2 in headless
+2026-10-04T00:53:40 s02 joined: Claude Code session c0fe9c8b
+2026-10-04T00:53:50 s02 closed: continue; 0 commit(s), peak 24%
+2026-10-04T00:53:50 s03 launched: session 3 in headless
+2026-10-04T00:53:51 s03 joined: Claude Code session 512f0a59
+2026-10-04T00:54:05 s03 wrap: context 26% >= 25%
+2026-10-04T00:54:10 s03 closed: complete; 4 commit(s), closed t2, t3, peak 26%
+2026-10-04T00:54:10 chain complete: session 3 found the road finished

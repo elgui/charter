@@ -1,0 +1,16 @@
+Permission allow rule (/Users/gui/.claude-lean/settings.json): Write(~/Projects/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(~/Projects/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (/Users/gui/.claude-lean/settings.json): Write(~/dev/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(~/dev/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (/Users/gui/.claude-lean/settings.json): Write(~/.claude-lean/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(~/.claude-lean/**) instead (Edit rules cover all file-editing tools).
+The chain is complete. All three units (t1, t2, t3) are done and committed, and I ran each unit's probe in this session. Each exited 0.
+
+| Unit | What landed | Commit |
+|---|---|---|
+| t1 | `app/greet.py` with `greet(name)` returning `Hello, <name>!` | c9f351a |
+| t2 | `app/slug.py` with `slugify(s)` | 4e5781b |
+| t3 | `app/stats.py` with `mean(xs)`, raising `ValueError` on an empty list | bb135c7 |
+
+- **pycache commit:** My first t1 commit included `app/__pycache__`. I removed it in a follow-up commit and set `PYTHONDONTWRITEBYTECODE=1` for the later probes.
+- **Size warning:** The three unit files are at 29 of 30 lines, which the size gate flags as a warning. It doesn't block.
+- **Chain state:** `charter next` lists no open units. I wrote the handoff with `status: complete`, and `charter chain next` closed session 1 and the chain.
+- **Context:** I stayed well under the hand-over line (the hook reported 16% at the last reading).
+- **Not run:** I didn't run the `cross-review` agent. That was optional here, since this is the prototype track and nothing was merged.

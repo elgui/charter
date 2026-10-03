@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.6. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.7. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 
@@ -221,6 +221,10 @@ A prototype that acquires a client switches track by writing `charter/scope.md` 
 Recorded per session by the `SessionEnd` hook into `sessions.jsonl` in the git common directory (per machine, shared by worktrees, never committed): session id, active unit, input, output, cache-read and cache-write tokens summed per model, with 5-minute and 1-hour cache writes apart (Claude Code writes most of its cache with the 1-hour TTL, priced at twice the input rate: https://platform.claude.com/docs/en/about-claude/pricing), turn count. The sums cover the session's transcript and every subagent transcript Claude Code writes beside it, `<session id>/subagents/*.jsonl`; the main transcript holds none of the subagents' usage (docs/review/2026-09-12-astra-harmonization.md, E-17). The subagents' share is kept apart as well, and `children_included: true` records that their files were read. A session without a readable transcript has `usage: null`. `charter ledger fold` folds these into `charter/ledger.jsonl` (committed) with an estimated cost from `prices_usd_per_mtok`, a per-model table in the config taken from that pricing page and labelled an estimate in every output, and the subagents' share of it (`subagent_est_usd`, null for a record made before charter 0.2.1). A session with no usage has `est_usd: null`, which the synthesis counts as unknown, not as zero. Acceptance is read from the unit when `charter synth` runs, not frozen at fold time. Rework is the number of sessions that ended after the first commit that set the unit's status to done (`git log -G`). Headless runs report cost directly in their result JSON (`total_cost_usd`); `charter ledger add --result <json>` records those, and `charter ledger add --human-minutes N --unit <id>` records a person's time. Limits: a session is charged whole to the unit active when it ends, so a session that moved between units is misattributed; splitting it would need unit start and stop times matched against the transcript's timestamps.
 
 Cost of the recording itself: a few milliseconds per session end, one JSON line per session.
+
+## The continuous chain
+
+A unit's `## Log` is the state a resumed session reads, and the same holds across sessions that follow each other. `/charter-chain` runs the road as a chain of fresh sessions. Each one verifies its predecessor's work, works unit after unit, and hands over before its context passes a budget: 25% of the window to hand over, 30% hard (`package/.charter/chain.py`). The rules every session obeys are an owner-only file injected verbatim by a hook (`package/.charter/chain-rules.md`), so they do not degrade as they pass from session to session. The handoff carries state only, in a template that `charter chain next` validates (`package/charter/templates/handoff.md`). Why each part is built the way it is: `docs/design/continuous-chain.md`.
 
 ## Seams designed, not built
 

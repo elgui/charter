@@ -29,7 +29,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.6",
+    "version": "0.4.7",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -51,6 +51,10 @@ DEFAULT_CONFIG = {
     },
     # done also needs a `review:` evidence line naming an independent verdict (off by default)
     "review": {"required": False},
+    # the continuous chain (chain.py): the sessions' model and effort, the window the budget is a share of
+    # (0: 1M for a [1m] model, else 200k), the hand-over line and the hard cap in percent, the launcher
+    "chain": {"model": "opus[1m]", "effort": "high", "window_tokens": 0, "wrap_pct": 25, "cap_pct": 30,
+              "max_sessions": 12, "launcher": "auto"},
     # estimates for the ledger, USD per million tokens; keys are model-id prefixes (the longest match
     # wins), "default" for the rest; cache_write is the 5-minute TTL, cache_write_1h the 1-hour one
     "prices_usd_per_mtok": {
@@ -111,6 +115,7 @@ CONFIG_SCHEMA = {
     "done_statuses": list,
     "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
     "review": {"required": bool},
+    "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str},
     "prices_usd_per_mtok": dict,
 }
 

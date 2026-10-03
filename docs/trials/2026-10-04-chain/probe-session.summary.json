@@ -1,0 +1,16 @@
+{
+  "command": "claude -p 'Run `echo \"sid=$CLAUDE_CODE_SESSION_ID\"` with the Bash tool, then reply with its output only.' --model sonnet --effort low --permission-prompts none --output-format stream-json --verbose --max-budget-usd 0.3",
+  "cwd": "the trial test bed",
+  "responses": [
+    {
+      "context_tokens": 32743
+    },
+    {
+      "context_tokens": 32918
+    }
+  ],
+  "init_session_id": "93efca1f-48f0-4ac2-81f5-7225da6f446d",
+  "model": "claude-sonnet-5-5",
+  "result": "sid=93efca1f-48f0-4ac2-81f5-7225da6f446d",
+  "total_cost_usd": 0.09981200000000001
+}

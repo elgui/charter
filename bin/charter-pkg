@@ -34,22 +34,23 @@ import checks as charter_checks  # noqa: E402  and its gate decides which staged
 
 # Files copied verbatim and owned by the package (relative to the package root).
 OWNED = [
-    ".charter/lib.py", ".charter/checks.py", ".charter/rails.py", ".charter/bin/charter",
+    ".charter/lib.py", ".charter/checks.py", ".charter/rails.py", ".charter/chain.py", ".charter/chain-rules.md", ".charter/bin/charter",
     ".charter/hooks/_common.py", ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py",
-    ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py",
+    ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py",
     ".charter/githooks/pre-commit", ".charter/githooks/README.md",
     ".claude/rules/charter.md",
     ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md", ".claude/skills/charter-progress/SKILL.md",
+    ".claude/skills/charter-chain/SKILL.md",
     ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml",
     "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
-    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md",
+    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md",
 ]
 # Created once from the package if absent; owned by the project afterwards.
 SEEDED = ["charter/config.json"]
 EXECUTABLE = {".charter/bin/charter", ".charter/githooks/pre-commit",
               ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py", ".charter/hooks/stop_gate.py",
-              ".charter/hooks/session_start.py", ".charter/hooks/session_end.py"}
+              ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py"}
 HOOK_TAG = "/.charter/hooks/"
 AGENTS_BEGIN, AGENTS_END = "<!-- charter-section:begin -->", "<!-- charter-section:end -->"
 GITIGNORE_LINE = ".charter/state/"

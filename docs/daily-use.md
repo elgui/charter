@@ -122,6 +122,19 @@ python3 .charter/bin/charter synth --write    # charter/progress.md, refused if 
 
 The synthesis lists scope, done and accepted units with their evidence, work in progress, blocked units, open decisions and change requests, and cost per accepted unit (`docs/method.md` § The progress synthesis). Units done before charter was installed are listed apart, because the done gate never asked them for evidence (0.4.4). It is generated; nobody edits it by hand. For a client, send the scope section and the accepted units.
 
+## Running units in a chain
+
+To the agent: `/charter-chain` with the first unit and the instruction, for example `/charter-chain u1 go with unit 1, and keep going while things go well` (`package/.claude/skills/charter-chain/SKILL.md`). The session you type it in starts the chain and monitors it; the work happens in fresh sessions, one after another:
+
+1. `charter chain start` checks that the tree is clean, no chain runs and a launcher exists, creates the branch `chain/<id>` when you are on main, and opens session 1. With the spawn plugin installed it opens as a tab beside yours, titled `[s] chain <id> s01`; otherwise pass `--launcher headless` (`resolve_launcher` in `package/.charter/chain.py`).
+2. Each session gets the rules from `.charter/chain-rules.md` through the hook, your instruction verbatim, and its predecessor's handoff and verification. It verifies that work first, then works unit after unit, and hands over at 25% of its context window. It cannot go past 30%: there the hook refuses everything but the handoff (`docs/gates.md` § Chain budget and hand-over).
+3. `charter chain next`, run by the session, refuses a malformed handoff, records what the session committed, re-runs the probes of the units it closed, runs the gates on its change set, and opens the next session with all of that in its briefing. It closes the tab of the session before (`cmd_next` in `package/.charter/chain.py`).
+4. The chain ends on its own: `complete` when the road is finished, `halted` when a session needs you (the reason is the question), `stopped` by `charter chain stop`. Two sessions in a row that land nothing halt it, and so does the session limit (12 by default; `chain` in `lib.DEFAULT_CONFIG`, `package/.charter/lib.py`).
+
+The monitoring session tells you each hand-over in one line (`package/.claude/skills/charter-chain/SKILL.md` § Monitor). You answer a halt by deciding, then `charter chain resume --note "<your answer>"`, or ask the monitoring session to. `charter chain status` shows every session's peak context and what it landed, from any terminal. The commits are on `chain/<id>`: review and merge them as usual (merging is yours).
+
+Don't work in the same clone while a chain runs: both sessions would share one active unit (`docs/bugs/2026-10-02-concurrent-sessions-in-one-clone-share-one-active-unit.md`). A folder Claude Code has not trusted stops a new tab at the trust menu; the monitoring session reports `waiting`, and the session starts once you answer it.
+
 ## What only the owner does
 
 The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:28-38`):

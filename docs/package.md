@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.6. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.7. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -25,11 +25,11 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
 ```
 <project>/
   .charter/            tooling (owned by the package)
-  .git/charter/        gate log and session records (per machine, shared by worktrees, never committed)
+  .git/charter/        gate log, session records and chain state (per machine, shared by worktrees, never committed)
   charter/             scope.md, rails.md (optional), decisions/, changes/, config.json, legacy-taskets.txt, VERSION, ledger.jsonl, progress.md, templates/
   .claude/settings.json      hook entries added (existing keys kept)
   .claude/rules/charter.md   the rules every Claude Code session loads
-  .claude/skills/charter-unit|charter-decision|charter-progress
+  .claude/skills/charter-unit|charter-decision|charter-progress|charter-chain
   .claude/agents/charter-reviewer.md
   .github/workflows/charter.yml
   .taskets/            created if absent
@@ -37,7 +37,7 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
   .gitignore           `.charter/state/` appended (where 0.1.0 kept its state; `charter setup` moves it)
 ```
 
-Owned files (24, listed in `bin/charter-pkg` `OWNED`) are recorded with their SHA-256 in `.charter/manifest.json`; CI refuses a file under `.charter/` that differs from it. Seeded files (`charter/config.json`) are created once and never touched again. `charter/legacy-taskets.txt` is written once, listing the taskets found without an acceptance section. Project files (`charter/scope.md`, decisions, changes, ledger, taskets) are never written by the installer.
+Owned files (29, listed in `bin/charter-pkg` `OWNED`) are recorded with their SHA-256 in `.charter/manifest.json`; CI refuses a file under `.charter/` that differs from it. Seeded files (`charter/config.json`) are created once and never touched again. `charter/legacy-taskets.txt` is written once, listing the taskets found without an acceptance section. Project files (`charter/scope.md`, decisions, changes, ledger, taskets) are never written by the installer.
 
 ## Commands
 
@@ -71,8 +71,13 @@ setup [--replace-hooks]
 config
 next [--limit N]
 handover [-m MESSAGE]
+chain start --unit ID [--mission TEXT | --mission-file F] [--model M] [--effort E] [--window N] [--wrap PCT] [--cap PCT]
+            [--max-sessions N] [--launcher auto|spawn|headless|TEMPLATE] [--here] [--dry-run]
+chain next [--session N] [--early WHY] [--check] | join ID N | status [ID] | watch [ID] [--from LINE] | stop [ID] | resume [ID] [--note TEXT | --note-file F] [--more N]
 version
 ```
+
+`chain` runs a continuous chain of sessions over the road; `docs/design/continuous-chain.md` says how it holds, and `/charter-chain` (`package/.claude/skills/charter-chain/SKILL.md`) is the way to start one.
 
 ## Versioning and upgrade
 
@@ -95,6 +100,7 @@ Upgrade notes, by version:
 - 0.4.4 adds `charter next`, which answers "what comes next" from the project's own files: the active unit, the open rails and the units on them in the road's order, units off the road, what waits on the owner, and the gate log over 7 days. It writes nothing, not even the gate log, so any agent or tool can run it (`cmd_next` in `package/.charter/bin/charter`). The synthesis lists units the done gate never judged under **Done before charter** instead of "Done but not accepted". These are units done before the commit that added `charter/VERSION` and not reopened since, and legacy units without `## Acceptance`. In skill-delivery that moved 17 units (`$ python3 package/.charter/bin/charter --root ~/Projects/skill-delivery synth`, 2026-09-24). The perimeter gate ignores files that git ignores and does not track, such as a tool's local journal (`lib.ignored`); a tracked file is judged as before. A path in a unit's evidence that this user may not read no longer crashes the synthesis: on 2026-09-24, leCRM's crashed on a path under `/root` with 0.3.0 and 0.4.3 alike. No gate is added and no step is needed.
 - 0.4.5 changes how the owner's commit is handed over. `install`, `upgrade` and `uninstall` stage what they wrote or removed, by name, and end with one command for the owner, `git -C <project> commit -m 'charter <version>' -- <paths>`, in the form typed after `!` in a Claude Code prompt and in the form for the owner's own terminal (`stage_and_hand_over` in `bin/charter-pkg`, `lib.handover`). The paths after `--` commit exactly those files, so untracked or other staged work stays out (https://git-scm.com/docs/git-commit#Documentation/git-commit.txt---only). `charter handover` prints the same block from the index. `charter-pkg fleet` lists every charter project under a directory, and with `--upgrade` upgrades the ones behind and hands over one command for all of them (`do_fleet` in `bin/charter-pkg`). The gate's refusal of an owner-only commit now says to leave it staged and run `charter handover`, where it used to suggest starting Claude Code with `CHARTER_OWNER=1` (`OWNER_COMMIT_OVERRIDE` in `package/.charter/checks.py`). Motivated by upgrade reports of 2026-09-25 that gave the owner a count of files, no command, and that suggestion (`tests/test_handover_0_4_5.py`). No gate changes and no step is needed; the upgrade to 0.4.5 is itself handed over this way.
 - 0.4.6 lets an agent commit an upgrade. A package file whose content hashes to what `.charter/manifest.json` records at the same revision, and a manifest whose every listed file matches, is no longer an owner-only change at commit or in CI (`release_change` in `package/.charter/checks.py`). A hand edit of the engine does not match and is refused as before, and `.claude/settings.json` stays the owner's, so an upgrade that merges new hook entries into it still waits on the owner. The installer's block and `charter handover` say which case applies; `charter-pkg fleet --upgrade` commits the projects whose gate agrees and hands over the rest (`tests/test_release_commit_0_4_6.py`). The in-session Edit and Write gate on `.charter/**` is unchanged. The upgrade to 0.4.6 is itself the agent's to commit: the commit runs the new gate from the working tree. No step is needed.
+- 0.4.7 adds the continuous chain: `charter chain` and the `/charter-chain` skill run the road as a chain of fresh Claude Code sessions, each verifying its predecessor and handing over under a context budget (hand over at 25%, hard cap 30% of the window), with the rules in `.charter/chain-rules.md` and the handoff in `charter/templates/handoff.md` (`package/.charter/chain.py`, `docs/design/continuous-chain.md`). One new hook, `.charter/hooks/chain_gate.py`, is wired on UserPromptSubmit, Stop, and PreToolUse and PostToolUse with no matcher, so it starts on every tool call; in a session that is not in a chain it tests one file and exits (`main` in `package/.charter/hooks/chain_gate.py`). `charter/config.json` takes an optional `chain` section (`lib.DEFAULT_CONFIG`). The upgrade merges the new hook entries into `.claude/settings.json`, so it waits on the owner's commit, as 0.4.6 says. No gate changes for a session outside a chain (`tests/test_chain_0_4_7.py`).
 
 ## What must stay true
 
