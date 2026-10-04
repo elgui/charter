@@ -115,4 +115,6 @@ A group is the units of one item of `charter/rails.md`: a unit's group is its fi
 
 `docs/trials/2026-10-04-chain-tab.md`: a chain in cmux tabs whose sessions all started past the hand-over line, and the four defects it showed.
 
+`docs/trials/2026-10-04-chain-tab-rerun.md`: the same bed on 0.4.8 in tabs, where the review runner opened the next session's tab and the chain completed in 3 minutes.
+
 `docs/trials/2026-10-04-groups.md`: a chain over two rails with the Codex review at each group's end (0.4.8). The first review found a real defect, the next session fixed it, and the chain completed on its own.

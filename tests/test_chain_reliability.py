@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-from helpers import PKG, git
+from helpers import PKG, cleanup, git, make_project
 from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, transcript
 from test_groups_0_4_8 import CODEX_SAMPLE, GroupCase
 from test_review_regressions import commit_all
@@ -21,6 +21,7 @@ from test_review_regressions import commit_all
 sys.path.insert(0, str(PKG / ".charter"))
 import chain as chainlib  # noqa: E402
 import chain_groups as groups  # noqa: E402
+import checks  # noqa: E402
 
 TRAILER = "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
@@ -212,6 +213,21 @@ class GroupFindings(GroupCase):
         rep = cli(self.root, "report").stdout
         self.assertIn("- [P1] Average the middle pair — app/health.py:2", rep)
         self.assertIn("Review of this range skipped by the owner.", rep)
+
+
+class PackageFilesAndSize(unittest.TestCase):
+    def test_a_file_the_installer_owns_is_not_held_to_the_projects_size_limit(self):
+        # tab trial, 2026-10-04: `charter-pkg upgrade` staged 0.4.8 and said an agent commits it, then the bed's
+        # 30-line limit refused the package's own .claude/skills/charter-chain/SKILL.md and charter/templates/handoff.md
+        root = make_project(track="prototype")
+        self.addCleanup(cleanup, root)
+        cfg = {"limits": {"file_lines": 30}}
+        owned = json.loads((root / ".charter" / "manifest.json").read_text())["files"]
+        self.assertTrue([rp for rp in owned if not rp.startswith(".charter/")])
+        for rp in owned:   # every file the installer owns, and nothing the project writes beside them
+            self.assertIsNone(checks.size_budget_for(root, cfg, rp), rp)
+        for rp in ("app/health.py", ".claude/skills/mine/SKILL.md", "charter/notes.md"):
+            self.assertEqual(checks.size_budget_for(root, cfg, rp).lines, 30, rp)
 
 
 class StopAndRunner(ChainCase):
