@@ -339,7 +339,7 @@ class AfterTheCrossReview(GroupCase):
         for review, why in ((f"- R1 R2 fixed {fix[:7]}", "answers R2 ([P2] Name the constant) 0 times"),
                             (f"- R1 not fixed {fix[:7]}\n- R2 fixed {fix[:7]}", "answers R1 ([P1] Average"),
                             (f"- R1 fixed {fix[:7]}\n- R1 fixed {fix[:7]}\n- R2 fixed {fix[:7]}", "answers R1 ([P1] Average the middle pair for even-length inputs) 2 times"),
-                            (f"- R1 fixed {fix[:7]}\n- R2 halt: the client decides", "`halt` needs the handoff's `status: halt`")):
+                            (f"- R1 fixed {fix[:7]}\n- R2 halt: the client decides", "`halt` needs the handoff's `status: wait` (an owner act, under `## Wait`) or `status: halt`")):
             problems = chainlib.check_handoff(self.root, ch, 2, self.review_handoff(review))
             self.assertTrue(any(why in x for x in problems), (review, problems))
         ok = self.review_handoff(f"- R1 fixed {fix[:7]}\n- R2: dismissed, `$ grep -n MAX app/health.py` shows the name")
