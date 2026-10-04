@@ -159,13 +159,30 @@ class OwnerGate(WaitCase):
         self.assertIn("- [x] AC-2", u2.read_text())
         self.assertIn("- [ ] AC-2", self.u1.read_text())
 
-    def test_a_note_that_starts_with_a_word_closes_nothing(self):
-        self.waiting()
+    def test_a_bare_note_while_lines_are_open_asks_done_or_not(self):
+        # the owner should not have to know a line's id (the owner, 2026-10-04)
+        at = self.waiting()
         r = resume(self.root, "all good, carry on")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not resumed: the chain waits on u1 AC-2\n  - turn on FileVault", r.stdout)
+        self.assertIn("Done? `/resume-chain ok <note>` closes it as yours. Not done: `/resume-chain skip <note>`", r.stdout)
+        self.assert_still_waiting(at)
+
+    def test_ok_closes_every_waited_line_and_skip_none(self):
+        self.waiting()
+        r = resume(self.root, "skip not yet, do the rest")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("still open, and no chain session may close them: u1 AC-2", r.stdout)
         self.assertIn("- [ ] AC-2", self.u1.read_text())
-        self.assertIn("all good, carry on", self.launched(2))
+        self.assertIn("not yet, do the rest", self.launched(2))
+
+    def test_ok_closes_the_waited_line_without_its_id(self):
+        self.waiting()
+        r = resume(self.root, "OK FileVault is on")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("closed u1 AC-2 as the owner", r.stdout)
+        self.assertIn("- [x] AC-2", git(self.root, "show", "HEAD:.taskets/u1.md").stdout)
+        self.assertIn("FileVault is on", self.launched(2))
 
     def test_a_box_the_owner_ticked_by_hand_is_closed_by_naming_it(self):
         self.waiting()
@@ -185,7 +202,7 @@ class OwnerGate(WaitCase):
         self.u1.write_text(self.u1.read_text().replace("- [ ] AC-2", "- [x] AC-2"))
         git(self.root, "commit", "-qam", "tick by hand")
         sha = self.head()[:7]
-        r = resume(self.root, "going on")
+        r = resume(self.root, "skip going on")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn(f"closed since the wait by a commit that was not your /resume-chain: u1 AC-2 in {sha} ('tick by hand', Test Owner)", r.stdout)
         last = chainlib.load(self.root)["last_resume"]
@@ -239,6 +256,8 @@ class OwnerLines(unittest.TestCase):
         self.assertEqual(p(f"  {NOTE}  ")[1:], ([], NOTE, ""))
         self.assertEqual(p("--skip-review review it by hand later")[0]["skip_review"], True)
         self.assertEqual(p("--skip-review review it by hand later")[2], "review it by hand later")
+        self.assertEqual((p("ok  it's fine")[0]["mode"], p("ok  it's fine")[2]), ("ok", "it's fine"))
+        self.assertEqual((p("skip")[0]["mode"], p("okay then")[0]["mode"], p("okay then")[2]), ("skip", "", "okay then"))
         self.assertEqual(p("")[1:], ([], "", ""))
         self.assertEqual(p("--wrap")[3], "--wrap takes a whole number, not 'nothing'")
         self.assertIsNone(chainlib.RESUME_RE.match("/resume-chainx go"))

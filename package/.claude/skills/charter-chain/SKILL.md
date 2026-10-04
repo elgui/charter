@@ -36,7 +36,7 @@ Run `python3 .charter/bin/charter chain status <id>` and report:
 
 - `status`: `python3 .charter/bin/charter chain status`, relayed as printed.
 - `stop`: `python3 .charter/bin/charter chain stop`. The live session is told to hand over, and no session follows it.
-- Resuming is the owner's own command, typed in any Claude Code session of the project: `/resume-chain [AC-n ...] [note]`. Leading `AC-n` (or `<unit>:AC-n`) close those `— owner:` lines as the owner; the rest is the note, verbatim. `--more N` raises the session limit; `--window <tokens>`, `--wrap <pct>`, `--cap <pct>` set the budget (when the halt says a session's start-up reached the hand-over line); `--skip-review` clears a group whose review could not run. Tell the owner the line to type; once they have, monitor again from the next event.
+- Resuming is the owner's own command, typed in any Claude Code session of the project: `/resume-chain ok <note>` when the acts are done (it closes the `— owner:` lines the wait names, as the owner), `/resume-chain skip <note>` when they are not; `AC-n` or `<unit>:AC-n` name lines one by one. The rest is the note, verbatim. A bare `/resume-chain <note>` while lines are open is refused with the lines listed. The owner types it in a session of their own, never in a chain tab. `--more N` raises the session limit; `--window <tokens>`, `--wrap <pct>`, `--cap <pct>` set the budget (when the halt says a session's start-up reached the hand-over line); `--skip-review` clears a group whose review could not run. Tell the owner the line to type; once they have, monitor again from the next event.
 - `report`: `python3 .charter/bin/charter chain report`, relayed as printed.
 
 ## What holds the chain

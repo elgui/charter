@@ -793,7 +793,7 @@ def owner_only_changes(rp: str, old: str | None, new: str | None, context: str =
         lines = owner_line_changes(old, new)
         if lines:
             why.append(f"it closes {', '.join(lines[:4])}, marked `— owner:`: only the owner closes such a line "
-                       "(`/resume-chain <AC-n> <note>` when a chain waits on it)")
+                       "(`/resume-chain ok <note>` when a chain waits on it)")
         o, n = _fm(old), _fm(new)
         if str(n.get("kind", "")) == "split":
             was_split = str(o.get("kind", "")) == "split"

@@ -123,8 +123,8 @@ session n: does what does not need the owner, commits, marks the unit's lines `�
 chain next ── clean tree? ──> chain state `waiting`, event `wait`
                               ├─ macOS notification, chain.notify_command
                               └─ `charter owner` / `charter next`: the chain, its acts, the line to type
-owner: does the acts, types `/resume-chain AC-2 <note>` in a Claude Code session
-         └─ prompt hook: closes AC-2 in a commit made as the owner, resumes; the prompt never reaches the model
+owner: does the acts, types `/resume-chain ok <note>` (or `skip <note>`) in a Claude Code session of their own
+         └─ prompt hook: closes the waited lines in a commit made as the owner, resumes; the prompt never reaches the model
 session n+1: briefing says the chain waited and which lines the owner closed; checks each act first; waits again on any not done
 ```
 

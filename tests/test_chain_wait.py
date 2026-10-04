@@ -108,14 +108,14 @@ class Wait(WaitCase):
         nxt = charter(self.root, "next").stdout
         self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1", nxt)
         self.assertEqual(it[f"chain:{self.cid}"]["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
-        self.assertIn("then type in a Claude Code session here: /resume-chain u1:AC-2 <your note>", nxt)
+        self.assertIn("then type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)", nxt)
         self.assertNotIn("chain resume", nxt)
 
         r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"chain {self.cid} waits on the owner", r.stdout)
 
-        r = resume(self.root, "FileVault is on")
+        r = resume(self.root, "ok FileVault is on")
         self.assertEqual(r.returncode, 0, r.stdout)
         b = self.launched(2)
         self.assertIn("## The chain waited on the owner", b)
@@ -199,7 +199,7 @@ class WaitSecondReview(WaitCase):
         self.assertEqual(self.next("s1").returncode, 0)
         it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
         self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1",
-                                                    WAIT + "\nthen type in a Claude Code session here: /resume-chain u1:AC-2 <your note>"))
+                                                    WAIT + "\nthen type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)"))
 
     def test_a_stop_requested_before_the_wait_wins(self):
         self.join(1, "s1")

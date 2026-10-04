@@ -33,7 +33,7 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
 - In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
 - Opening or widening a `kind: split` unit.
-- Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain AC-n <note>` when a chain waits on it.
+- Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain ok <note>` when a chain waits on it.
 - Setting `CHARTER_OWNER` anywhere (the hook denies a Bash command that names it).
 - Resuming a chain: `charter chain resume` refuses; the owner types `/resume-chain`.
 

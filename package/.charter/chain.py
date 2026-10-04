@@ -63,7 +63,7 @@ OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|r
 # the owner resumes a paused chain by typing this command; the prompt hook performs it (`owner_prompt`), and nothing else does
 RESUME_CMD = "resume-chain"
 RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
-RESUME_HOW = "type `/resume-chain [AC-n ...] [note]` in a Claude Code session of this project"
+RESUME_HOW = "type `/resume-chain ok|skip [note]` in a Claude Code session of your own in this project"
 CHARTER_CLI_RE = re.compile(r"^(?:python3?\s+(?:-B\s+)?)?(?:\./)?\.charter/bin/charter(?:\s|$)")
 
 
@@ -753,7 +753,8 @@ def owner_items(root: Path) -> list[dict]:
         title = (f"chain {cid} waits on you: {len(asks)} act(s) from session {n}" if ch["state"] == "waiting" else
                  f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200])
         lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)] if ch["state"] == "waiting" else []
-        how = f"then type in a Claude Code session here: /{RESUME_CMD} " + "".join(f"{x} " for x in lines) + "<your note>"
+        how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
+               if lines else f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>")
         return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
                  "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
@@ -1271,13 +1272,14 @@ def cmd_resume(root: Path, a) -> int:
     ran this command with a note in the owner's name, and the chain went on; nothing told its act from the owner's
     (docs/trials/2026-10-04-owner-gate.md). The owner types `/resume-chain`, which the prompt hook performs."""
     print(f"charter chain resume: refused. Resuming a chain is the owner's act: {RESUME_HOW}. The charter hook performs it "
-          "from the owner's own prompt, which no command of an agent's produces. `/resume-chain AC-2 <note>` closes the "
-          "`— owner:` line AC-2 as the owner and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
+          "from the owner's own prompt, which no command of an agent's produces. `/resume-chain ok <note>` closes the "
+          "`— owner:` lines the wait names as the owner (`skip` leaves them open, `AC-2` names one) and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
           "`--more` and `--skip-review` work there as they did here. An agent never resumes a chain: it tells the owner what to type.")
     return 1
 
 
-def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None = None, by: str = "", event_name: str = "") -> int:
+def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None = None, by: str = "", event_name: str = "",
+            mode: str = "") -> int:
     """Resume a paused chain under its lock; only `owner_resume` calls it. `refs` are the owner's lines to close first,
     in one commit made as the owner; `by` is the Claude Code session the owner typed `/resume-chain` in."""
     chain = load(root, cid)
@@ -1302,7 +1304,19 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         print(f"not resumed: {chain.get('branch')} no longer holds {end[:7]}, session {n}'s last commit; "
               "the next session would build on a history without the chain's work. Put the branch back, or stop the chain")
         return 1
-    writes, closed, problem = owner_ticks(root, refs or [])
+    refs = list(refs or [])
+    waited = open_waited_lines(root, chain, n) if chain.get("state") == "waiting" else []
+    if waited and not refs and not mode:
+        # the owner should not have to know a line's id: they say whether the acts are done (the owner, 2026-10-04)
+        hp = link_dir(root, chain["id"], n) / "handoff.md"
+        acts = wait_acts(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2]) if hp.exists() else []
+        print(f"not resumed: the chain waits on {', '.join(waited)}" + "".join(f"\n  - {x}" for x in acts)
+              + f"\nDone? `/{RESUME_CMD} ok <note>` closes {'it' if len(waited) == 1 else 'them'} as yours. "
+              f"Not done: `/{RESUME_CMD} skip <note>` goes on and leaves {'it' if len(waited) == 1 else 'them'} open.")
+        return 1
+    if mode == "ok":
+        refs += [(u, k) for u, k in (w.split(" ", 1) for w in waited) if re.fullmatch(r"AC-\d+", k) and (u, k) not in refs]
+    writes, closed, problem = owner_ticks(root, refs)
     if problem:
         print(f"not resumed, and no line closed: {problem}")
         return 1
@@ -1312,7 +1326,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         # as theirs, not taken up by a session. After a halt or a stall, a session's named leftovers go on as before
         print(f"not resumed: {len(dirty)} uncommitted change(s): {', '.join(dirty[:6])}. The next session starts from a commit, "
               "so commit them first from your own terminal, for instance:\n  git commit -m \"owner: done during the chain's wait\" -- "
-              + " ".join(shlex.quote(d) for d in dirty) + "\nthen type `/resume-chain` again. An `— owner:` line is closed by naming it: `/resume-chain AC-2 <note>`")
+              + " ".join(shlex.quote(d) for d in dirty) + "\nthen type `/resume-chain` again. An `— owner:` line the wait names is closed by `/resume-chain ok <note>`")
         return 1
     budget = {k: v for k, v in (("window", a.window), ("wrap_pct", a.wrap), ("cap_pct", a.cap)) if v is not None}
     new = dict(chain, **budget)
@@ -1377,9 +1391,9 @@ INT_FLAGS = ("--window", "--wrap", "--cap", "--more")
 
 def parse_resume(text: str) -> tuple[dict, list[tuple[str | None, str]], str, str]:
     """(options, line refs, note, problem) from what follows `/resume-chain`: a chain id first if any, the flags, the
-    owner's lines to close (`AC-2`, `w1:AC-2`), then the note, kept verbatim. A note that starts with any other word
-    closes nothing: `/resume-chain all good` is a note."""
-    opts = {"id": None, "window": None, "wrap": None, "cap": None, "more": None, "skip_review": False}
+    owner's lines to close (`ok` for every line the wait names, `skip` for none, or `AC-2`, `w1:AC-2`), then the note,
+    kept verbatim. A note that starts with any other word closes nothing: `/resume-chain all good` is a note."""
+    opts = {"id": None, "window": None, "wrap": None, "cap": None, "more": None, "skip_review": False, "mode": ""}
     refs: list[tuple[str | None, str]] = []
     rest = text
     while True:
@@ -1400,6 +1414,8 @@ def parse_resume(text: str) -> tuple[dict, list[tuple[str | None, str]], str, st
             if not val.isdigit():
                 return opts, refs, "", f"{name} takes a whole number, not {val or 'nothing'!r}"
             opts[name[2:]] = int(val)
+        elif not opts["mode"] and not refs and tok.lower() in ("ok", "skip"):
+            opts["mode"] = tok.lower()
         elif opts["id"] is None and not refs and re.fullmatch(r"\d{8}-\d{6}", tok):
             opts["id"] = tok
         elif REF_RE.fullmatch(tok):
@@ -1518,10 +1534,11 @@ def owner_resume(root: Path, sid: str, args: str, event_name: str = "") -> tuple
         return False, "no chain here" + (f" with id {opts['id']}" if opts["id"] else "")
     a = argparse.Namespace(window=opts["window"], wrap=opts["wrap"], cap=opts["cap"], more=opts["more"],
                            skip_review=opts["skip_review"], note=note)
+    mode = opts["mode"]
     out = io.StringIO()
     # two resumes, or a resume and a stop, would each act on a stale state (cross-review, 2026-10-04)
     with chain_lock(root, cid), contextlib.redirect_stdout(out):
-        code = _resume(root, cid, a, refs, sid, event_name)
+        code = _resume(root, cid, a, refs, sid, event_name, mode)
     return code == 0, out.getvalue().strip()
 
 

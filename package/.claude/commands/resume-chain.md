@@ -1,6 +1,6 @@
 ---
 description: "Owner only: resume the paused charter chain, closing the owner lines you name, with your note"
-argument-hint: "[AC-n ...] [note]"
+argument-hint: "ok|skip [note]"
 disable-model-invocation: true
 ---
 
