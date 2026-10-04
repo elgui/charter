@@ -702,33 +702,37 @@ OWNER_MARK_RE = re.compile(r"\s[—–]\s*owner:", re.I)
 BOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s*(.*)$")
 
 
-def _acceptance_boxes(text: str) -> dict[str, tuple[bool, bool]]:
-    """{key: (checked, marked for the owner)} for the acceptance lines of a unit; the key is the line's AC id, else
-    its text before the first ` — ` segment."""
-    out = {}
-    for l in lib.acceptance(lib.split_frontmatter(text or "")[2]).splitlines():
-        m = BOX_LINE_RE.match(l)
-        if not m:
-            continue
-        ac = re.match(r"(AC-\d+)\b", m.group(2))
-        key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
-        out[key] = (m.group(1) != " ", bool(OWNER_MARK_RE.search(l)))
+def acceptance_boxes(text: str) -> list[tuple[int, str, bool, bool]]:
+    """(offset in text, key, checked, marked for the owner) for each checkbox of a unit's acceptance section; the key
+    is the line's AC id, else its text before the first ` — ` segment."""
+    sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
+    base = (text or "").find(sec) if sec else -1
+    out, pos = [], 0
+    for l in sec.splitlines(keepends=True) if base >= 0 else []:
+        m = BOX_LINE_RE.match(l.rstrip("\n"))
+        if m:
+            ac = re.match(r"(AC-\d+)\b", m.group(2))
+            key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
+            out.append((base + pos, key, m.group(1) != " ", bool(OWNER_MARK_RE.search(l))))
+        pos += len(l)
     return out
 
 
 def owner_line_changes(old: str | None, new: str | None) -> list[str]:
     """The owner's lines of a unit that this change closes: an open `— owner:` line that is ticked, unmarked or
-    removed, and a line that arrives ticked with the mark. Marking a line, and reopening one, stay free: a session
-    marks what it waits on, and the owner closes it (0.4.9, after an agent ticked one in the wait trial)."""
-    o, n = _acceptance_boxes(old or ""), _acceptance_boxes(new or "")
-    closed = []
-    for k, (checked, marked) in o.items():
-        if marked and not checked and (k not in n or n[k][0] or not n[k][1]):
-            closed.append(k)
-    for k, (checked, marked) in n.items():
-        if checked and marked and k not in closed and not (k in o and o[k][0]):
-            closed.append(k)
-    return closed
+    removed, and a line that arrives ticked with the mark. Counted per key, so a duplicate id hides nothing (cross-review,
+    2026-10-04). Marking a line, and reopening one, stay free: a session marks what it waits on, and the owner closes it
+    (0.4.9, after an agent ticked one in the wait trial). A line without an AC id is known by its text, so rewording
+    it reads as closing it: give such a line an id."""
+    def counts(text):
+        c: dict[str, list[int]] = {}
+        for _, k, checked, marked in acceptance_boxes(text or ""):
+            if marked:
+                c.setdefault(k, [0, 0])[1 if checked else 0] += 1
+        return c
+    o, n = counts(old), counts(new)
+    return [k for k in dict.fromkeys(list(o) + list(n))
+            if n.get(k, [0, 0])[1] > o.get(k, [0, 0])[1] or n.get(k, [0, 0])[0] < o.get(k, [0, 0])[0]]
 
 
 # The files Claude Code reads settings from, by name, and reloads mid-session

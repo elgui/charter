@@ -211,6 +211,47 @@ class OwnerGate(WaitCase):
         self.assertIn("## Owner's lines closed outside the owner's resume", b)
         self.assertIn("Reopen each line the owner's note above does not say is theirs", b)
 
+    def test_a_line_without_an_id_is_closed_by_ok_and_a_same_named_box_elsewhere_is_left(self):
+        # cross-review of d54a9dd: `ok` printed a ref the parser refused, and the tick went to the first `AC-2` box in the file
+        self.u1.write_text(self.u1.read_text().replace("- [ ] AC-2: FileVault is on — owner: do", "- [ ] FileVault is on — owner: do")
+                           .replace("## Context\n", "## Context\n\n- [ ] AC-2 scratch step\n"))
+        commit_all(self.root, "u1: an owner line without an id, and a scratch box named AC-2")
+        self.join(1, "s1")
+        self.wait_handoff(1)
+        self.assertEqual(self.next("s1").returncode, 0)
+        r = resume(self.root, "ok done")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        text = self.u1.read_text()
+        self.assertIn("- [x] FileVault is on — owner: do", text)
+        self.assertIn("- [ ] AC-2 scratch step", text)
+
+    def test_a_prompt_without_a_session_is_refused(self):
+        at = self.waiting()
+        r = resume(self.root, "ok", sid="")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no Claude Code session named this prompt", r.stdout)
+        self.assert_still_waiting(at)
+
+    def test_a_launch_that_fails_after_the_owners_commit_says_so_and_a_retry_keeps_the_lines(self):
+        self.waiting()
+        c = chainlib.load(self.root)
+        good = c["launcher"]
+        c["launcher"] = "/nonexistent/launcher {briefing}"
+        chainlib.save(self.root, c)
+        r = resume(self.root, "ok FileVault is on")
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(r.stdout.startswith("charter /resume-chain: partly done"), r.stdout)
+        self.assertIn("closed u1 AC-2 as the owner", r.stdout)
+        c = chainlib.load(self.root)
+        self.assertEqual(c["state"], "halted")
+        c["launcher"] = good
+        chainlib.save(self.root, c)
+        r = resume(self.root, "launcher fixed")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(chainlib.load(self.root)["last_resume"]["closed"], ["u1 AC-2"])
+        self.assertNotIn("not your /resume-chain", r.stdout)
+        self.assertIn("which closed u1 AC-2 in commit", self.launched(3))
+
     def test_every_resume_is_the_owners_after_a_stop_too(self):
         self.waiting()
         self.assertEqual(cli(self.root, "stop").returncode, 0)
@@ -235,6 +276,10 @@ class OwnerLines(unittest.TestCase):
         self.assertEqual(self.changed(o, o.replace("- [ ] AC-2", "- [x] AC-9")), ["AC-2", "AC-9"])          # renamed and ticked
         self.assertEqual(self.changed(o, o.replace("- [ ] AC-3: docs", "- [x] AC-3: docs — owner: do")), ["AC-3"])   # arrives ticked
         self.assertEqual(self.changed("", o.replace("- [ ] AC-2", "- [x] AC-2")), ["AC-2"])                # a new unit
+        dup = o.replace("- [ ] AC-2", "- [x] AC-2").replace("- [ ] AC-3", "- [ ] AC-2 copy — owner: check\n- [ ] AC-3")
+        self.assertEqual(self.changed(o, dup), ["AC-2"])                                                    # a duplicate id hides nothing
+        noid = o.replace("AC-2: the owner", "the owner")
+        self.assertEqual(self.changed(noid, noid.replace("approves the tone", "approves the final tone")), ["the owner approves the tone"])
         self.assertIn("only the owner closes such a line",
                       "; ".join(checks.owner_only_changes(".taskets/u1.md", o, o.replace("- [ ] AC-2", "- [x] AC-2"), "commit")))
 
@@ -259,6 +304,11 @@ class OwnerLines(unittest.TestCase):
         self.assertEqual((p("ok  it's fine")[0]["mode"], p("ok  it's fine")[2]), ("ok", "it's fine"))
         self.assertEqual((p("skip")[0]["mode"], p("okay then")[0]["mode"], p("okay then")[2]), ("skip", "", "okay then"))
         self.assertEqual(p("")[1:], ([], "", ""))
+        self.assertEqual(p("--more=²")[3], "--more takes a whole number, not '²'")
+        self.assertEqual(p("AC-2 --cap 50 is too high")[0]["cap"], None)
+        self.assertEqual(p("AC-2 --cap 50 is too high")[1:3], ([(None, "AC-2")], "--cap 50 is too high"))
+        self.assertEqual(p("AC-2: tone approved")[1:3], ([(None, "AC-2")], "tone approved"))
+        self.assertEqual(p("AC-2,w1:AC-3 ok")[1:3], ([(None, "AC-2"), ("w1", "AC-3")], "ok"))
         self.assertEqual(p("--wrap")[3], "--wrap takes a whole number, not 'nothing'")
         self.assertIsNone(chainlib.RESUME_RE.match("/resume-chainx go"))
         self.assertEqual(chainlib.RESUME_RE.match("/resume-chain\nline two").group(1), "\nline two")
@@ -272,14 +322,16 @@ class Installed(unittest.TestCase):
         for ev in ("UserPromptSubmit", "UserPromptExpansion"):
             h = hooks[ev][0]["hooks"][0]
             self.assertTrue(h["args"][-1].endswith("/.charter/hooks/chain_gate.py"), ev)
-            self.assertGreaterEqual(h["timeout"], 300, ev)   # the resume launches the next tab, which takes seconds
+            self.assertGreaterEqual(h["timeout"], 900, ev)   # a resume after a stall re-runs the gates and launches a tab
         self.assertIn(".claude/commands/resume-chain.md", charter_pkg().OWNED)
 
     def test_any_session_is_denied_the_owner_switch_and_nothing_else(self):
         from helpers import cleanup, make_project
         root = make_project(track="prototype")
         self.addCleanup(lambda: cleanup(root))
-        for cmd, deny in (("CHARTER_OWNER=1 git commit -qm x", True), ("export CHARTER_OWNER=1", True), ("git status", False)):
+        for cmd, deny in (("CHARTER_OWNER=1 git commit -qm x", True), ("export CHARTER_OWNER=1", True), ("git status", False),
+                          ("env -u CLAUDECODE git commit -qm x", True), ("unset CLAUDECODE; git commit", True), ("CLAUDECODE= git commit", True),
+                          ("echo $CLAUDECODE", False)):
             code, out, so, se = run_hook(root, "chain_gate", {"hook_event_name": "PreToolUse", "session_id": "any",
                                                              "tool_name": "Bash", "tool_input": {"command": cmd}})
             self.assertEqual(bool(denied(out)), deny, cmd + so + se)

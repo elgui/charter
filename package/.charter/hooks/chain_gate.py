@@ -10,6 +10,7 @@ the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_
 sets it. Fails open on its own errors, as every charter gate does."""
 import json
 import os
+import re
 import sys
 sys.dont_write_bytecode = True
 from pathlib import Path
@@ -53,7 +54,13 @@ def gate() -> int:
     prompt = data.get("prompt") or ""
     resume = (ev == "UserPromptExpansion" and (data.get("command_name") or "").lstrip("/") == "resume-chain") or (
         ev == "UserPromptSubmit" and prompt.lstrip().startswith("/resume-chain"))
-    if ev == "PreToolUse" and data.get("tool_name") == "Bash" and "CHARTER_OWNER" in str((data.get("tool_input") or {}).get("command") or ""):
+    command = str((data.get("tool_input") or {}).get("command") or "") if data.get("tool_name") == "Bash" else ""
+    if ev == "PreToolUse" and re.search(r"(?:-u\s*|unset\s+(?:-v\s+)?|\b)CLAUDECODE\b(?!=1)", command) and not re.fullmatch(r"\s*(?:echo|printenv)\s+\$?CLAUDECODE\s*", command):
+        # without CLAUDECODE the commit gate takes the committer for the owner and only warns (cross-review, 2026-10-04)
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
+                          "charter: an agent never unsets or changes CLAUDECODE; the commit gate reads it to tell an agent from the owner."}}))
+        return 0
+    if ev == "PreToolUse" and "CHARTER_OWNER" in command:
         # the owner switch turns the owner-only checks off for one commit; the owner sets it from their own prompt (`!`)
         # or terminal, and an agent never does (.claude/rules/charter.md). Every session of the project, not only a chain's
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":

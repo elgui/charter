@@ -1272,7 +1272,7 @@ def cmd_resume(root: Path, a) -> int:
     ran this command with a note in the owner's name, and the chain went on; nothing told its act from the owner's
     (docs/trials/2026-10-04-owner-gate.md). The owner types `/resume-chain`, which the prompt hook performs."""
     print(f"charter chain resume: refused. Resuming a chain is the owner's act: {RESUME_HOW}. The charter hook performs it "
-          "from the owner's own prompt, which no command of an agent's produces. `/resume-chain ok <note>` closes the "
+          "from the owner's own prompt, in an interactive session that is not a chain's. `/resume-chain ok <note>` closes the "
           "`— owner:` lines the wait names as the owner (`skip` leaves them open, `AC-2` names one) and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
           "`--more` and `--skip-review` work there as they did here. An agent never resumes a chain: it tells the owner what to type.")
     return 1
@@ -1315,7 +1315,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
               f"Not done: `/{RESUME_CMD} skip <note>` goes on and leaves {'it' if len(waited) == 1 else 'them'} open.")
         return 1
     if mode == "ok":
-        refs += [(u, k) for u, k in (w.split(" ", 1) for w in waited) if re.fullmatch(r"AC-\d+", k) and (u, k) not in refs]
+        refs += [(u, k) for u, k in (w.split(" ", 1) for w in waited) if (u, k) not in refs]
     writes, closed, problem = owner_ticks(root, refs)
     if problem:
         print(f"not resumed, and no line closed: {problem}")
@@ -1334,7 +1334,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         print(f"not resumed: the budget needs a window above 0 and 0 < wrap ({new['wrap_pct']}) < cap ({new['cap_pct']}) <= 100")
         return 1
     note = (a.note or "").strip()
-    outside = closed_outside(root, end)
+    outside = closed_outside(root, end, chain["id"])
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
     commit = ""
@@ -1346,6 +1346,9 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
             print(f"not resumed, and no line closed: {e}")
             return 1
         commit = head(root)
+    prev = chain.get("last_resume") or {}
+    if not closed and prev.get("next") in (n, n + 1) and prev.get("closed"):
+        closed, commit = prev["closed"], prev.get("commit", "")   # a retry after a launch that failed (cross-review, 2026-10-04)
     sha = rules_sha(root)
     if sha != chain.get("rules_sha"):
         event(root, chain["id"], "chain", "rules", f"resumed under new rules sha256 {sha[:12]} (was {chain.get('rules_sha', '')[:12]})")
@@ -1385,7 +1388,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
 
 # ---------------------------------------------------------------- the owner's resume
 
-REF_RE = re.compile(r"(?:([\w.-]+):)?(AC-\d+)[,;.]?", re.I)
+REF_RE = re.compile(r"(?:([\w.-]+):)?(AC-\d+)[,;.:]?", re.I)
 INT_FLAGS = ("--window", "--wrap", "--cap", "--more")
 
 
@@ -1404,6 +1407,8 @@ def parse_resume(text: str) -> tuple[dict, list[tuple[str | None, str]], str, st
         tok, after = m.group(1), s[m.end():]
         if tok == "--":
             return opts, refs, after.strip(), ""
+        if refs and tok.startswith("--") and tok != "--":
+            return opts, refs, s.strip(), ""   # flags come before the lines; after them, it is the note
         if tok == "--skip-review":
             opts["skip_review"] = True
         elif tok.split("=", 1)[0] in INT_FLAGS:
@@ -1411,16 +1416,15 @@ def parse_resume(text: str) -> tuple[dict, list[tuple[str | None, str]], str, st
             if not val:
                 m2 = re.match(r"(\S+)(?:\s+|\Z)", after)
                 val, after = (m2.group(1), after[m2.end():]) if m2 else ("", "")
-            if not val.isdigit():
+            if not re.fullmatch(r"[0-9]+", val):
                 return opts, refs, "", f"{name} takes a whole number, not {val or 'nothing'!r}"
             opts[name[2:]] = int(val)
         elif not opts["mode"] and not refs and tok.lower() in ("ok", "skip"):
             opts["mode"] = tok.lower()
         elif opts["id"] is None and not refs and re.fullmatch(r"\d{8}-\d{6}", tok):
             opts["id"] = tok
-        elif REF_RE.fullmatch(tok):
-            r = REF_RE.fullmatch(tok)
-            refs.append((r.group(1), r.group(2).upper()))
+        elif all(REF_RE.fullmatch(t) for t in tok.split(",") if t) and tok.strip(","):
+            refs += [(r.group(1), r.group(2).upper()) for r in (REF_RE.fullmatch(t) for t in tok.split(",") if t)]
         else:
             return opts, refs, s.strip(), ""
         rest = after
@@ -1446,7 +1450,7 @@ def owner_ticks(root: Path, refs: list[tuple[str | None, str]]) -> tuple[dict[st
     if not refs:
         return {}, [], ""
     units = _open_owner_units(root)
-    opened = [(uid, rp, k) for uid, rp, text in units for k, (checked, marked) in checks._acceptance_boxes(text).items()
+    opened = [(uid, rp, k) for uid, rp, text in units for _, k, checked, marked in checks.acceptance_boxes(text)
               if marked and not checked]
     writes: dict[str, str] = {}
     closed: list[str] = []
@@ -1459,7 +1463,10 @@ def owner_ticks(root: Path, refs: list[tuple[str | None, str]]) -> tuple[dict[st
             return {}, [], f"{ac} is an owner line of {len(found)} units; name one: " + ", ".join(f"{u}:{ac}" for u, _, _ in found)
         uid, rp, _ = found[0]
         base = writes.get(rp) or next(t for u, p, t in units if p == rp)
-        writes[rp] = re.sub(rf"(?m)^(\s*-\s*)\[ \](\s*{re.escape(ac)}\b)", r"\1[x]\2", base, count=1)
+        # the owner line itself, in the acceptance section: not a same-named box elsewhere (cross-review, 2026-10-04)
+        at = next(o for o, k, checked, marked in checks.acceptance_boxes(base) if k == ac and marked and not checked)
+        i = base.index("[ ]", at)
+        writes[rp] = base[:i] + "[x]" + base[i + 3:]
         closed.append(f"{uid} {ac}")
     for rp, new in writes.items():
         at_head = next(t for u, p, t in units if p == rp)
@@ -1472,7 +1479,7 @@ def owner_ticks(root: Path, refs: list[tuple[str | None, str]]) -> tuple[dict[st
     return writes, closed, ""
 
 
-def closed_outside(root: Path, since: str) -> list[str]:
+def closed_outside(root: Path, since: str, cid: str = "") -> list[str]:
     """The owner's lines closed by a commit after `since` (the commit the chain paused at), as "w1 AC-2 in <sha>
     (<subject>, <author>)": the owner from their own terminal, or an agent past the gates (docs/gates.md § What a
     gate cannot see). The resume names them and the next session reopens those the owner's note does not claim."""
@@ -1481,6 +1488,8 @@ def closed_outside(root: Path, since: str) -> list[str]:
     out = []
     for line in lib.git(root, "log", "--format=%H%x00%s%x00%an", f"{since}..HEAD", "--", lib.TASKETS_DIR).stdout.splitlines():
         sha, subject, author = (line.split("\0") + ["", ""])[:3]
+        if cid and subject.startswith("owner: closes ") and subject.endswith(f"(/{RESUME_CMD}, chain {cid})"):
+            continue   # the owner's own resume, whose launch failed; `last_resume` carries its lines
         for rp in lib.git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", sha, "--", lib.TASKETS_DIR).stdout.split():
             if not rp.endswith(".md"):
                 continue
@@ -1501,7 +1510,7 @@ def open_waited_lines(root: Path, chain: dict, n: int) -> list[str]:
         if not re.search(rf"(?<![\w-]){re.escape(uid)}(?![\w-])", acts):
             continue
         text = (root / u["_path"]).read_text(encoding="utf-8", errors="replace")
-        out += [f"{uid} {k}" for k, (checked, marked) in checks._acceptance_boxes(text).items() if marked and not checked]
+        out += [f"{uid} {k}" for _, k, checked, marked in checks.acceptance_boxes(text) if marked and not checked]
     return out
 
 
@@ -1514,7 +1523,9 @@ def typed_by_owner(root: Path, sid: str) -> str:
     if ep.startswith("sdk") or att == "0":
         return (f"this session is headless (CLAUDE_CODE_ENTRYPOINT={ep or '-'}, CLAUDE_CODE_SESSION_ATTENDED={att or '-'}): "
                 "a program wrote this prompt, not the owner. Type it in an interactive Claude Code session")
-    j = joined(root, sid) if sid else None
+    if not sid:
+        return "no Claude Code session named this prompt; the owner types /resume-chain in an interactive session"
+    j = joined(root, sid)
     if j:
         return (f"this is session {j[1]} of chain {j[0]['id']}, whose prompts come from the chain. "
                 "Type it in a Claude Code session of your own")
@@ -1542,6 +1553,11 @@ def owner_resume(root: Path, sid: str, args: str, event_name: str = "") -> tuple
     return code == 0, out.getvalue().strip()
 
 
+def _header(ok: bool, text: str) -> str:
+    """done, refused (nothing changed), or partly done: the owner's lines were committed but no session started."""
+    return "done" if ok else ("partly done" if "as the owner in" in text else "refused")
+
+
 def owner_prompt(root: Path, data: dict) -> dict | None:
     """UserPromptSubmit and UserPromptExpansion: the owner typed `/resume-chain`. The hook resumes the chain itself and
     blocks the prompt, so the model never reads it and never acts on it; the owner reads the outcome. Claude Code runs
@@ -1556,7 +1572,7 @@ def owner_prompt(root: Path, data: dict) -> dict | None:
             return None
         args = m.group(1)
     ok, text = owner_resume(root, data.get("session_id") or "", args, data.get("hook_event_name") or "")
-    return {"block": f"charter /{RESUME_CMD}: {'done' if ok else 'refused'}\n{text}"}
+    return {"block": f"charter /{RESUME_CMD}: {_header(ok, text)}\n{text}"}
 
 
 def main(argv: list[str], root: Path) -> int:

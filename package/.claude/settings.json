@@ -4,10 +4,10 @@
       { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/session_start.py"], "timeout": 20 } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/chain_gate.py"], "timeout": 300 } ] }
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/chain_gate.py"], "timeout": 900 } ] }
     ],
     "UserPromptExpansion": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/chain_gate.py"], "timeout": 300 } ] }
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/chain_gate.py"], "timeout": 900 } ] }
     ],
     "PreToolUse": [
       { "matcher": "Edit|Write|NotebookEdit", "hooks": [ { "type": "command", "command": "python3", "args": ["-B", "${CLAUDE_PROJECT_DIR}/.charter/hooks/pre_tool_gate.py"], "timeout": 30 } ] },
