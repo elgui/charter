@@ -76,7 +76,7 @@ def main() -> int:
             return 0
         sid = data.get("session_id", "")
         rec = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "session": sid,
-               "unit": lib.active_unit(root) or "", "reason": data.get("reason", ""), "usage": None, "note": ""}
+               "unit": lib.active_unit(root, sid) or "", "reason": data.get("reason", ""), "usage": None, "note": ""}
         tp = data.get("transcript_path")
         if tp and Path(tp).exists():
             try:
@@ -89,9 +89,9 @@ def main() -> int:
         st.mkdir(parents=True, exist_ok=True)
         with (st / "sessions.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
-        sf = lib.local_state_dir(root) / f"session-{sid}.json"   # per-session scratch is spent
-        if sf.exists():
-            sf.unlink()
+        for sf in (lib.local_state_dir(root) / f"session-{sid}.json", lib.session_unit_file(root, sid)):
+            if sf is not None and sf.exists():   # per-session scratch and unit choice are spent
+                sf.unlink()
         return 0
     except Exception:
         return 0

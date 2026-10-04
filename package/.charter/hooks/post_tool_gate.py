@@ -30,7 +30,7 @@ def main() -> int:
         write_session(root, sid, cur)
 
         units = lib.taskets(root)
-        unit = units.get(lib.active_unit(root) or "")
+        unit = units.get(lib.active_unit(root, sid) or "")
         rep = checks.Report()
         rep.add(*checks.check_perimeter(root, cfg, unit, [rp], at_commit=False))
         rep.add(*checks.run_decision_checks(root, checks.decision_index(root), only_bound_to=[rp]))

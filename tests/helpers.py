@@ -103,7 +103,7 @@ Client wants retries in /health.
 
 def clean_env(**extra):
     """The test process may itself run inside Claude Code; keep its markers out of the hooks."""
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CHARTER_OWNER", "CHARTER_UNIT")}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CHARTER_OWNER", "CHARTER_UNIT", "CLAUDE_CODE_SESSION_ID")}
     env.update(extra)
     return env
 

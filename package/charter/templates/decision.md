@@ -1,7 +1,7 @@
 ---
 id: <slug-same-as-filename>
 title: <one line>
-# status: proposed | active | superseded | retired (changing it on an existing decision is the owner's act)
+# status: proposed | active | rejected | superseded | retired (changing it on an existing decision is the owner's act: `charter rule <id> <status>`)
 status: active
 date: <YYYY-MM-DD>
 owner: <who settles it>
@@ -17,6 +17,10 @@ expires: <YYYY-MM-DD or a condition in words>
 supersedes:
 # superseded_by: set by the owner when this decision is superseded
 superseded_by:
+# ask: while proposed, the question the owner answers, in plain words; optional, `charter owner` shows it
+ask:
+# recommend: while proposed, active | rejected, with the reason under ## Recommendation; optional
+recommend:
 ---
 
 ## Decision
@@ -30,3 +34,9 @@ superseded_by:
 ## Stops applying when
 
 <The condition under which this decision should be retired.>
+
+## Recommendation
+
+<Optional, while proposed: one line on why `recommend:` says what it says.>
+
+<!-- `charter rule` appends a dated line under `## Ruling` at the end of this file when the owner rules. -->

@@ -50,7 +50,7 @@ Each row is a gate running today (`docs/gates.md` gives each gate's exact trigge
 | Cite a decision that has been retired, or break a decision's `check:` | Refused, and the message names the decision that replaced it (`docs/gates.md:77-78`) |
 | Grow a file past its size limit (800 lines for code; 400 lines or 32 KiB for governance files such as `CLAUDE.md`) | Refused. Shrinking is always allowed. The owner can open a split unit or name a budgeted exception (`docs/gates.md:60-63`) |
 | Close a unit whose probes already passed before the work started | Where probes run (at commit or in CI, when the project turns them on), flagged, because such a probe tests nothing; refused with `probes.base_must_fail` (`docs/gates.md:69-70`) |
-| Publish a progress report with an unanchored claim | `charter synth` will not write it (`package/.charter/bin/charter:422`), and on the client track CI fails `charter anchors` on reports (`docs/gates.md:98-103`) |
+| Publish a progress report with an unanchored claim | `charter synth` will not write it (`package/.charter/bin/charter:475`), and on the client track CI fails `charter anchors` on reports (`docs/gates.md:98-103`) |
 | Edit or commit the scope, the config, the tooling or the CI workflow | Refused to an agent; the owner makes that change (`docs/gates.md:19-37`) |
 
 This is the exact output when a tasket is committed as `done` with an unchecked box and "it works" as its evidence (in the scratchpad: a scratch repository, 2026-09-24):

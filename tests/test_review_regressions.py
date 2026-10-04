@@ -610,6 +610,9 @@ class Ledger(Base):
         time.sleep(1.1)
         self.accept_u1()
         time.sleep(1.1)
+        # 0.4.7: a session is charged to a done unit only if it started that unit itself; the
+        # checkout's shared choice stops at done (tests/test_gate_noise_0_4_7.py). Rework starts it.
+        charter(self.root, "unit", "start", "u1", env={"CLAUDE_CODE_SESSION_ID": "after"})
         self.end_session("after")
         charter(self.root, "ledger", "fold")
         r = charter(self.root, "synth")
