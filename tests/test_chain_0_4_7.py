@@ -73,7 +73,9 @@ class ChainCase(unittest.TestCase):
         cleanup(self.out)
 
     def start(self, *extra, mission="go with unit 1, keep going while things go well"):
-        r = cli(self.root, "start", "--unit", "u1", "--mission", mission, "--window", str(self.WINDOW), "--launcher", self.launcher, *extra)
+        # the group review of 0.4.8 is off here: `auto` is Codex wherever it is on PATH (tests/test_groups_0_4_8.py has it)
+        r = cli(self.root, "start", "--unit", "u1", "--mission", mission, "--window", str(self.WINDOW), "--launcher", self.launcher,
+                "--review", "off", *extra)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.chain = chainlib.load(self.root)
         return r

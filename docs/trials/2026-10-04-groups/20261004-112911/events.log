@@ -1,0 +1,17 @@
+2026-10-04T11:29:11 chain started: chain 20261004-112911: unit t1, new branch chain/20261004-112911 from main; budget: hand over at 25%, cap 30% of 200,000 tokens; model sonnet, effort low; launcher: headless (/var/folders/ld/tt9p6nns00b34bw2nz5zgjpm0000gn/T/cmux-cli-shims/6424C521-BCE7-4259-8756-BB6474D64671/claude); at most 12 sessions; review: codex, effort high, at the end of each group (the items of charter/rails.md, else the tasket `group:`); the chain starts on group `r1`; mission: go with unit t1. Optimize context window, and as long as things go well, iterate on the next unit until it's done.; warning: a 200,000-token window leaves little room: start-up alone takes about 33,000 tokens (16% of it). A [1m] model gives each session ten times the work for the same start-up
+2026-10-04T11:29:11 s01 launched: session 1 in headless
+2026-10-04T11:29:15 s01 joined: Claude Code session 7e86acc2
+2026-10-04T11:29:47 s01 closed: continue; 4 commit(s), closed t1, t2, peak 20%
+2026-10-04T11:29:47 chain review: group `r1`, sessions 1-1, 6e2d601..c8be877: Codex (`codex exec review`, effort high) started; the next session starts when it ends
+2026-10-04T11:31:00 chain reviewed: group `r1`: 1 finding(s) (P2 1); session 2 answers them (/private/tmp/claude-501/-Users-gui-dev-charter/4eb8e82d-da16-4592-b477-c9a7f9660264/scratchpad/bed048b/.git/charter/chain/20261004-112911/g01/review.md)
+2026-10-04T11:31:00 s02 launched: session 2 in headless
+2026-10-04T11:31:03 s02 joined: Claude Code session 41bf9bb1
+2026-10-04T11:31:28 s02 closed: continue; 2 commit(s), peak 20%
+2026-10-04T11:31:28 chain cleared: group `r1` is cleared at 3576677 (session 2 answered every finding); the owner can merge up to it
+2026-10-04T11:31:28 s03 launched: session 3 in headless
+2026-10-04T11:31:30 s03 joined: Claude Code session f3208d39
+2026-10-04T11:32:02 s03 closed: complete; 2 commit(s), closed t3, peak 20%
+2026-10-04T11:32:02 chain review: group `r2`, sessions 3-3, 3576677..7b8f19c: Codex (`codex exec review`, effort high) started; the next session starts when it ends
+2026-10-04T11:33:17 chain reviewed: group `r2`: no findings
+2026-10-04T11:33:17 chain cleared: group `r2` is cleared at 7b8f19c (its review found nothing); the owner can merge up to it
+2026-10-04T11:33:17 chain complete: session 3 found the road finished, and every group is reviewed

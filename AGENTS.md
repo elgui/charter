@@ -11,7 +11,7 @@ Follow `docs/install.md`, step by step. It is the only install, setup and upgrad
 - **Tests**, about 90 s, from `tests/`:
 
   ```
-  python3 -B -m unittest test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails test_review_20260923 test_probe_at_base test_review_required test_config_0_4_3 test_next_0_4_4 test_handover_0_4_5 test_release_commit_0_4_6 test_chain_0_4_7
+  python3 -B -m unittest test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails test_review_20260923 test_probe_at_base test_review_required test_config_0_4_3 test_next_0_4_4 test_handover_0_4_5 test_release_commit_0_4_6 test_chain_0_4_7 test_groups_0_4_8
   ```
 
   Add each new test module to this list. Run without `-q` and look for `^FAIL:` or `^ERROR:`, so that a failure block is kept. One test is known to be flaky: `docs/review/findings-2026-09-23.md:37`.

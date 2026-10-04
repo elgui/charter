@@ -27,6 +27,10 @@ next_unit: <tasket id>
 
 <What failed, what was ruled out and why, traps in the code or the environment. "none" is an answer.>
 
+## Review
+
+<Only when your briefing carries a group's review: one line per finding, starting with its id, `R1 fixed <commit>` or `R2 dismissed <path:line> <why>`. With `status: halt`, answer what you could; the session after the owner's answer gets the whole review again.>
+
 ## Halt
 
 <Only with `status: halt`: what the owner must decide or do before the chain can go on.>

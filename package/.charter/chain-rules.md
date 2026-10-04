@@ -14,7 +14,7 @@ Session 1 has no predecessor; it writes `first session` under `## Verified`.
 ## 2. Work the road
 
 - Work each unit the charter way: `python3 .charter/bin/charter unit start <id>`, baseline probes, stay inside `perimeter:`, a dated `## Log` line when something lands, close with probes and `## Evidence`.
-- When a unit is done and committed, take the next one from `python3 .charter/bin/charter next` and keep going in this session. A session that ends early pays its start-up again for nothing.
+- When a unit is done and committed, take the next one from `python3 .charter/bin/charter next` and keep going in this session. A session that ends early pays its start-up again for nothing. The one exception is the end of a group (section 6).
 - Commit every step that lands. Nothing uncommitted crosses to the next session unless your handoff's `## State` names the file and why it is not committed.
 
 ## 3. Spend context like it is the budget, because it is
@@ -42,6 +42,14 @@ Set `status: halt` and write under `## Halt` what the owner must decide or do, w
 - the mission and the road disagree.
 
 Set `status: complete` when `charter next` names no open unit left for the mission, or the mission's goal is met. You never ask the owner a question mid-session: the halt is the question, and the owner answers it by resuming the chain.
+
+## 6. A group ends with its review
+
+The road's units come in groups: the items of `charter/rails.md`, or the tasket `group:` where the project keeps no rails file. The chain works one group at a time. At the end of each group, a reviewer of another model family reviews all of the group's commits before the next group starts.
+
+- When the next unit is in a group that has not started, `charter unit start` refuses it. Commit everything (a group ends at a commit, so nothing uncommitted may cross it), write your handoff with that unit as `next_unit:`, and run `charter chain next`. This hand-over is allowed under the hand-over line. The next session starts once the review is done.
+- If your briefing carries a group's review, your session is the verification of section 1 and that review, nothing else. Judge each finding against the code. Fix a real defect inside its unit's perimeter (reopen a done unit with a dated `## Log` line) and commit. Dismiss a finding that is not a defect with the `path:line` or `$ command` that shows why. Halt on a finding that needs the owner. Under `## Review` in your handoff, write one line per finding, starting with its id (`R1 fixed <commit>`, `R2 dismissed <path:line> <why>`), commit everything, then hand over as your briefing says.
+- If you find a defect in an earlier group, fix it forward: reopen its unit, fix it and commit on the chain's branch. The next review covers the fix.
 
 ## Never
 

@@ -732,6 +732,15 @@ def cmd_unit(a) -> int:
         if a.id not in units:
             print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
             return 1
+        try:   # in a chain session, a unit of a group that has not started waits for the current group's review
+            import chain_groups
+            why = chain_groups.unit_start_refusal(root, a.id)
+        except Exception as e:
+            why = ""
+            lib.log_event(root, "cli", "chain", "error", f"unit start: group check failed, so it allows: {e!r}"[:500])
+        if why:
+            print(why)
+            return 1
         (st / "active").write_text(a.id + "\n")
         cfg = lib.load_config(root)
         for f in checks.check_unit_scope(root, cfg, units[a.id]) + checks.check_unit_decisions(root, checks.decision_index(root), units[a.id]):

@@ -40,6 +40,7 @@ from pathlib import Path
 
 import lib
 import checks
+import chain_groups as groups
 
 RULES = ".charter/chain-rules.md"
 TEMPLATE = "charter/templates/handoff.md"
@@ -84,7 +85,7 @@ def _read_json(p: Path) -> dict:
 
 def _write_json(p: Path, data: dict) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")   # one per writer: a shared name tears under two
     tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     tmp.replace(p)
 
@@ -273,6 +274,7 @@ def check_handoff(root: Path, chain: dict, n: int, text: str) -> list[str]:
     bad = checks.classify_anchors(root, lib.section(body, "Done") + "\n" + lib.section(body, "Verified"))["bad"]
     if bad:
         problems.append(f"anchors that do not resolve: {', '.join(bad[:5])}")
+    problems += groups.check_review(root, chain, n, text)
     lines = text.count("\n") + 1
     if lines > MAX_LINES or len(text.encode()) > MAX_BYTES:
         problems.append(f"{lines} lines, {len(text.encode())} bytes: a handoff holds at most {MAX_LINES} lines and {MAX_BYTES} bytes; "
@@ -304,7 +306,7 @@ def facts(root: Path, chain: dict, n: int, rec: dict) -> tuple[str, dict]:
     commits = lib.git(root, "log", "--format=%h %s", rng).stdout.splitlines() if rng else []
     out = [f"Session {n}: {len(commits)} commit(s) {start[:7]}..{end[:7]}" + (f", peak context {rec.get('peak_pct', 0):.0f}%" if rec.get("peak_pct") else "")]
     out += [f"- {c}" for c in commits[:15]] + ([f"- +{len(commits) - 15} more"] if len(commits) > 15 else [])
-    moved, closed, box_delta, failed = [], [], 0, 0
+    moved, moved_ids, closed, box_delta, failed = [], [], [], 0, 0
     paths = lib.git(root, "diff", "--name-only", start, end, "--", lib.TASKETS_DIR).stdout.split() if rng else []
     units = {u["_path"]: (uid, u) for uid, u in lib.taskets(root).items()}
     done = lib.as_list(cfg.get("done_statuses"))
@@ -318,9 +320,11 @@ def facts(root: Path, chain: dict, n: int, rec: dict) -> tuple[str, dict]:
         (bc, _), (ac, at) = _boxes(before), _boxes(after)
         box_delta += ac - bc
         moved.append(f"- {uid}: {b_status} -> {u.get('status')}, {ac}/{at} criteria checked ({p})")
+        moved_ids.append((uid, before))
         if str(u.get("status")) in done and b_status not in done:
             closed.append((uid, p, after))
-    out += ["Units moved:"] + (moved or ["- none"])
+    changed = lib.git(root, "diff", "--name-only", start, end).stdout.split() if rng else []
+    out += ["Units moved:"] + (moved or ["- none"]) + groups.crossing(root, chain, moved_ids, changed)
     timeout = int((cfg.get("probes") or {}).get("timeout_s", 120))
     for uid, p, text in closed:
         found, lines = checks.run_probes(root, text, p, timeout)
@@ -369,6 +373,7 @@ def briefing(root: Path, chain: dict, n: int, prev: tuple[str, str] | None = Non
         L += [f"## Handoff from session {n - 1} (verbatim)", "", handoff.strip(), "",
               f"## Mechanical verification of session {n - 1} (computed by `charter chain next`)", "", fact.strip(), "",
               "Verify that work first (chain rules, step 1), then go on from its `## Next`.", ""]
+    L += groups.briefing_lines(root, chain, n)
     L += ["## Your handoff", "",
           f"Write it to `{hp}` from `{TEMPLATE}`, with `chain: {cid}` and `session: {n}`, "
           "then run `python3 .charter/bin/charter chain next` and end your turn."]
@@ -718,6 +723,9 @@ def cmd_start(root: Path, a) -> int:
     kind, detail = resolve_launcher(launcher)
     if not kind:
         problems.append(detail)
+    review, review_why = groups.resolve_review(a.review or str(cc.get("review", "auto")))
+    if not review:
+        problems.append(review_why)
     if problems:
         print("charter chain start: not started.\n- " + "\n- ".join(problems))
         return 1
@@ -731,6 +739,7 @@ def cmd_start(root: Path, a) -> int:
     plan = [f"chain {cid}: unit {a.unit}, " + (f"new branch {new_branch} from {branch}" if new_branch else f"on branch {branch}"),
             f"budget: hand over at {wrap}%, cap {cap}% of {window:,} tokens; model {model or '(settings)'}, effort {effort or '(settings)'}",
             f"launcher: {kind} ({detail}); at most {a.max_sessions or int(cc.get('max_sessions', 12))} sessions",
+            groups.plan_line(review, review_why, str(cc.get("review_effort", "high")), groups.unit_group(root, a.unit) or ""),
             f"mission: {mission.splitlines()[0][:160]}"]
     if window < 500_000:
         # a session's start-up (system prompt, tools, skills, CLAUDE.md, rules, briefing) was 33k tokens on 2026-10-04
@@ -748,7 +757,10 @@ def cmd_start(root: Path, a) -> int:
     chain = {"id": cid, "created": now(), "root": str(root), "branch": branch, "base": head(root), "unit": a.unit,
              "mission": mission, "model": model, "effort": effort, "window": window, "wrap_pct": wrap, "cap_pct": cap,
              "max_sessions": a.max_sessions or int(cc.get("max_sessions", 12)), "launcher": launcher, "rules_sha": rules_sha(root),
-             "state": "running", "reason": "", "sessions": 0, "started_by": os.environ.get("CLAUDE_CODE_SESSION_ID", "")}
+             "state": "running", "reason": "", "sessions": 0, "started_by": os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+             "review": review_why if review == "command" else review, "review_effort": str(cc.get("review_effort", "high")),
+             "review_timeout_s": int(cc.get("review_timeout_s", 1800))}
+    groups.begin(root, chain, a.unit)
     save(root, chain)
     (base_dir(root) / "current").write_text(cid + "\n")
     event(root, cid, "chain", "started", "; ".join(plan))
@@ -791,12 +803,17 @@ def cmd_next(root: Path, a) -> int:
     if unnamed:
         problems.append(f"uncommitted change(s) the handoff's `## State` does not name: {', '.join(unnamed[:8])}. Commit them, "
                         "or name each one under `## State` with why it is not committed")
+    elif dirty and groups.needs_commit(root, chain, status, next_unit):
+        problems.append(f"uncommitted change(s) where a group ends: {', '.join(dirty[:8])}. A group ends at a commit, which its "
+                        "review reads and the owner merges up to: commit them, or undo them")
     p = pct(chain, context_tokens(rec.get("transcript")))
     start = rec.get("start_head") or rec.get("launch_head") or ""
     landed = bool(start) and lib.git(root, "rev-list", "--count", f"{start}..HEAD").stdout.strip() not in ("", "0")
     # a session pays its start-up whatever it does, so it hands over only once it has used its budget (trial 2026-10-04:
     # a session handed over at 24% with nothing landed, and the next one paid the start-up again)
-    if not problems and status == "continue" and p is not None and not a.early and (p < chain["wrap_pct"] / 2 or (p < chain["wrap_pct"] and not landed)):
+    # ending a group is not early: its review comes before the next group, whatever the context (0.4.8)
+    if (not problems and status == "continue" and p is not None and not a.early and not groups.ends_group(root, chain, status, next_unit)
+            and (p < chain["wrap_pct"] / 2 or (p < chain["wrap_pct"] and not landed))):
         problems.append(f"context is at {p:.0f}%, under the {chain['wrap_pct']}% hand-over line, " + ("" if landed else "nothing is committed yet, ")
                         + "and the handoff says continue: keep working in this session. If ending here is right, run this again with `--early \"<why>\"`")
     if problems:
@@ -821,7 +838,7 @@ def cmd_next(root: Path, a) -> int:
         halt(root, chain, f"session {n} says the road is finished, but {' and '.join(broken)}: "
              f"see {link_dir(root, chain['id'], n) / 'facts.md'}")
     elif status == "complete":
-        halt(root, chain, f"session {n} found the road finished", state="complete")
+        groups.advance(root, chain, n, status, next_unit)   # the last group's review first, when there is one
     elif status == "halt":
         halt(root, chain, f"session {n}: {halt_why}")
     elif (chain_dir(root, chain["id"]) / "stop").exists():
@@ -833,10 +850,13 @@ def cmd_next(root: Path, a) -> int:
     elif rules_sha(root) != chain.get("rules_sha"):
         halt(root, chain, f"{RULES} changed while the chain ran; the owner resumes with `charter chain resume`")
     else:
-        start_link(root, chain, n + 1, prev_material(root, chain, n))
+        groups.advance(root, chain, n, status, next_unit)
     chain = load(root, chain["id"])
+    g = groups.current(chain)
+    then = (f", the review of group {groups.label(g['key'])} is running and the next session starts when it ends"
+            if g and g["state"] == "reviewing" else f", session {n + 1} launched")
     print(f"session {n} closed ({status}); chain {chain['id']} is {chain['state']}" +
-          (f": {chain['reason']}" if chain.get("reason") else f", session {n + 1} launched") + ". End your turn now.")
+          (f": {chain['reason']}" if chain.get("reason") else then) + ". End your turn now.")
     return 0
 
 
@@ -869,6 +889,8 @@ def cmd_status(root: Path, a) -> int:
                 + (f", closed {', '.join(nums['closed'])}" if nums.get("closed") else "")) if r.get("closed_at") else (
             "stopped without handing over" if r.get("stopped_unclosed") else "working" if r.get("session_id") else "launched, not joined")
         print(f"  s{n:02d}  {(r.get('session_id') or '-')[:8]:8}  peak {float(r.get('peak_pct') or 0):4.0f}%  {live}")
+    for line in groups.status_lines(root, chain):
+        print(line)
     ev = chain_dir(root, chain["id"]) / "events.log"
     tail = ev.read_text(encoding="utf-8").splitlines()[-5:] if ev.exists() else []
     if tail:
@@ -923,6 +945,10 @@ def cmd_resume(root: Path, a) -> int:
         return 1
     n = int(chain.get("sessions") or 0)
     rec = link(root, chain["id"], n)
+    if groups.review_running(root, chain):
+        print(f"chain {chain['id']}: the review of group {groups.label(groups.current(chain)['key'])} is still running; "
+              "`charter chain watch` shows when it ends, and what follows")
+        return 1
     live = chain.get("state") == "running" and not (rec.get("closed_at") or rec.get("stopped_unclosed"))
     if live or chain.get("state") == "complete":
         print(f"chain {chain['id']} is {chain['state']}" + (f" and session {n} is live" if live else "") + "; nothing to resume")
@@ -939,6 +965,14 @@ def cmd_resume(root: Path, a) -> int:
     chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0))
     save(root, chain)
     event(root, chain["id"], "chain", "resumed", note[:200] or "by the owner")
+    by_groups = groups.on_resume(root, chain, n, note, a.skip_review)
+    if by_groups is not None:
+        chain = load(root, chain["id"])
+        g = groups.current(chain)
+        what = (f"the review of group {groups.label(g['key'])} runs again" if g and g["state"] == "reviewing" else
+                f"session {chain.get('sessions')} launched" if chain.get("state") == "running" else f"{chain['state']}: {chain.get('reason', '')}")
+        print(f"chain {chain['id']} resumed: {what}")
+        return 0 if by_groups else 1
     ok = start_link(root, chain, n + 1, prev_material(root, chain, n), note)
     print(f"chain {chain['id']} resumed: session {n + 1} " + ("launched" if ok else "NOT launched: " + load(root, chain["id"]).get("reason", "")))
     return 0 if ok else 1
@@ -958,6 +992,7 @@ def main(argv: list[str], root: Path) -> int:
     s.add_argument("--max-sessions", type=int, default=None)
     s.add_argument("--launcher", default=None, help="auto | spawn | headless | a command template with {briefing}")
     s.add_argument("--here", action="store_true", help="stay on main/master instead of creating chain/<id>")
+    s.add_argument("--review", default=None, help="review at the end of each group: auto | codex | off | a command template with {base} and {out}")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_start)
     n = sub.add_parser("next", help="validate this session's handoff, record its work, launch the next session")
@@ -976,6 +1011,11 @@ def main(argv: list[str], root: Path) -> int:
     r = sub.add_parser("resume", help="after a halt or a stop: launch the next session, with the owner's note")
     r.add_argument("id", nargs="?"); r.add_argument("--note", default=None); r.add_argument("--note-file", default=None)
     r.add_argument("--more", type=int, default=None, help="raise max_sessions by this many")
+    r.add_argument("--skip-review", action="store_true", help="after a review that could not run: clear the group without it")
     r.set_defaults(fn=cmd_resume)
+    rr = sub.add_parser("review-run", help="(started by `chain next`) review a group, then launch the session that answers it")
+    rr.add_argument("id"); rr.add_argument("--group", type=int, required=True); rr.set_defaults(fn=groups.cmd_review_run)
+    rp = sub.add_parser("report", help="each group's review and its answers, as one pull-request comment")
+    rp.add_argument("id", nargs="?"); rp.set_defaults(fn=groups.cmd_report)
     a = ap.parse_args(argv)
     return a.fn(root, a)
