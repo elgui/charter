@@ -57,6 +57,8 @@ ONE_M = 1_000_000
 SESSION_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT",
                "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
                "CLAUDE_PID", "CLAUDE_EFFORT", "CHARTER_OWNER", "CHARTER_UNIT")
+# a Bash command that performs an owner act: one of the owner's verbs, or the owner switch set by hand
+OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|rail)\b|\bCHARTER_OWNER\b")
 CHARTER_CLI_RE = re.compile(r"^(?:python3?\s+(?:-B\s+)?)?(?:\./)?\.charter/bin/charter(?:\s|$)")
 
 
@@ -195,7 +197,8 @@ def uncommitted(root: Path, rec: dict) -> list[str]:
     stat = rec.get("untracked_stat_at_launch")
     now_un = untracked(root)
     changed = untracked_stat(root, [p for p in now_un if p in before]) if stat is not None else {}
-    return tracked + [p for p in now_un if p not in before or (stat is not None and changed.get(p) != stat.get(p))]
+    gone = [p for p in (stat or {}) if p not in now_un and not (root / p).exists()]   # deleted (or committed: then not gone)
+    return tracked + [p for p in now_un if p not in before or (stat is not None and changed.get(p) != stat.get(p))] + gone
 
 
 def joined(root: Path, sid: str) -> tuple[dict, int, dict] | None:
@@ -346,9 +349,16 @@ def check_handoff(root: Path, chain: dict, n: int, text: str) -> list[str]:
             problems.append(f"`## {s}` is missing or empty")
     if st == "halt" and not _filled(lib.section(body, "Halt")):
         problems.append("`status: halt` needs `## Halt`: what went wrong, and what the owner must decide")
-    if st == "wait" and not _filled(lib.section(body, "Wait")):
-        problems.append("`status: wait` needs `## Wait`: one line per act of the owner's, what it is and how it is done, "
-                        "and the unit line (`— owner: do` or `— owner: check`) it closes")
+    if st == "wait":
+        acts = wait_acts(body)
+        if not acts:
+            problems.append("`status: wait` needs `## Wait`: one line per act of the owner's, what it is and how it is done, "
+                            "and the unit line (`— owner: do` or `— owner: check`) it closes")
+        ids = set(lib.taskets(root)) | set(lib.decisions(root)) | set(lib.change_requests(root))
+        vague = [a for a in acts if not any(re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", a) for i in ids)]
+        if vague:
+            problems.append(f"`## Wait` lines that name no unit, decision or change request: {'; '.join(v[:60] for v in vague[:3])}. "
+                            "Each act says which unit line (or decision) it closes")
     if n > 1:
         k = checks.classify_anchors(root, lib.section(body, "Verified"))
         if not (k["sha"] or k["fileline"] or k["run"]):
@@ -365,13 +375,18 @@ def check_handoff(root: Path, chain: dict, n: int, text: str) -> list[str]:
     return problems
 
 
+def wait_acts(body: str) -> list[str]:
+    """The owner's acts under `## Wait`: its non-blank lines, the template's `<...>` placeholder and comments left out."""
+    text = re.sub(r"<!--.*?-->", "", lib.section(body, "Wait"), flags=re.S)
+    return [l.strip("-* ").strip() for l in text.splitlines() if l.strip() and not l.strip("-* ").startswith("<")]
+
+
 def handoff_status(text: str) -> tuple[str, str, str]:
     """(status, next_unit, why) of a handoff that passed check_handoff: why is the first line of `## Halt`, or the
     lines of `## Wait` joined, for the chain's reason and the owner's notification."""
     fields, _, body = lib.split_frontmatter(text)
     st = str(fields.get("status", "")).strip()
-    lines = [l.strip("-* ").strip() for l in lib.section(body, "Wait" if st == "wait" else "Halt").splitlines() if l.strip()]
-    lines = [l for l in lines if not l.startswith("<")]
+    lines = wait_acts(body) if st == "wait" else [l.strip("-* ").strip() for l in lib.section(body, "Halt").splitlines() if l.strip()]
     why = "; ".join(lines[:4]) + (f" (+{len(lines) - 4} more)" if len(lines) > 4 else "") if st == "wait" else (lines[0] if lines else "")
     return st, str(fields.get("next_unit", "")).strip(), why
 
@@ -623,18 +638,24 @@ def notify(root: Path, chain: dict, text: str) -> None:
     cc = lib.load_config(root).get("chain") or {}
     title, text = f"charter chain {chain['id']} ({root.name})", " ".join(text.split())[:400]
     cmds = []
-    if str(cc.get("notify", "auto")).strip().lower() == "auto" and sys.platform == "darwin" and shutil.which("osascript"):
+    # anything but `off` notifies: a mistyped value must not silence the one signal the owner waits for
+    if str(cc.get("notify", "auto")).strip().lower() != "off" and sys.platform == "darwin" and shutil.which("osascript"):
         cmds.append(["osascript", "-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
                      "-e", "end run", title, text])
     tpl = str(cc.get("notify_command") or "").strip()
     if tpl:
         fill = {"{chain}": chain["id"], "{project}": str(root), "{title}": title, "{text}": text}
         words = []
-        for w in shlex.split(tpl):
+        try:
+            split = shlex.split(tpl)
+        except ValueError:   # unbalanced quotes: the notification is dropped, the state change it reports is not
+            split = []
+        for w in split:
             for k, v in fill.items():
                 w = w.replace(k, v)
             words.append(w)
-        cmds.append(words)
+        if words:
+            cmds.append(words)
     for c in cmds:
         try:
             subprocess.Popen(c, cwd=str(root), env=child_env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -711,7 +732,8 @@ def owner_items(root: Path) -> list[dict]:
     if ch.get("state") in ("waiting", "halted"):
         text = hp.read_text(encoding="utf-8") if hp.exists() else ""
         body = lib.split_frontmatter(text)[2]
-        asks = [l.strip() for l in lib.section(body, "Wait" if ch["state"] == "waiting" else "Halt").splitlines() if l.strip()]
+        asks = ([f"- {a}" for a in wait_acts(body)] if ch["state"] == "waiting" else
+                [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()])
         title = (f"chain {cid} waits on you: {len(asks)} act(s) from session {n}" if ch["state"] == "waiting" else
                  f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200])
         return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
@@ -748,19 +770,22 @@ def on_prompt(root: Path, data: dict) -> dict | None:
 
 def join(root: Path, chain: dict, n: int, sid: str, transcript: str) -> str:
     """Attach Claude Code session sid to link n and return what it must read: the rules, verbatim."""
-    rec = link(root, chain["id"], n)
-    if not rec:
+    if chain.get("state") != "running":   # `chain join` comes here without the hook's check (cross-review, 2026-10-04)
+        return f"charter chain {chain['id']} is {chain.get('state')} ({chain.get('reason', '')}). Do no work for it; end your turn."
+    if not link(root, chain["id"], n):
         return f"charter chain {chain['id']} has no session {n}. Do no work for it; end your turn."
-    if rec.get("closed_at") or rec.get("stopped_unclosed"):
-        # a tab that started late, say after the owner answered its folder-trust menu, once `chain resume` had closed
-        # its session and launched the next: it would work beside that one, past every gate (cross-review, 2026-10-04)
-        return (f"Session {n} of charter chain {chain['id']} is already closed; session {chain.get('sessions')} has the chain now. "
-                "Do no work for it; end your turn.")
     if rules_sha(root) != chain.get("rules_sha"):
         halt(root, chain, f"{RULES} changed since the chain started; a chain runs under one version of its rules. "
              "The owner resumes it with `charter chain resume`, which adopts the new rules")
         return f"charter chain {chain['id']} is halted: its rules changed. Do no work for it; end your turn."
+    closed = (f"Session {n} of charter chain {chain['id']} is already closed; session {chain.get('sessions')} has the chain now. "
+              "Do no work for it; end your turn.")
     with editing_link(root, chain["id"], n) as rec:
+        if rec.get("closed_at") or rec.get("stopped_unclosed"):
+            # a tab that started late, say after the owner answered its folder-trust menu, once `chain resume` had closed
+            # its session and launched the next: it would work beside that one, past every gate. Checked under the lock,
+            # where `chain next` closes it (cross-review, 2026-10-04)
+            return closed
         if rec.get("session_id") and rec["session_id"] != sid:
             return (f"Session {n} of charter chain {chain['id']} is already joined by another Claude Code session "
                     f"({rec['session_id'][:8]}). Do no work for it; end your turn.")
@@ -785,6 +810,12 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
     if chain.get("state") != "running" or rec.get("closed_at"):
         return None
     tool, ti = data.get("tool_name") or "", data.get("tool_input") or {}
+    if tool == "Bash" and OWNER_ACT_RE.search(str(ti.get("command") or "")):
+        # the verbs refuse inside a chain session by its environment (`_owner_verb`), which a command can unset; the
+        # hook knows the session from its own input (cross-review, 2026-10-04). A script that calls the package's functions
+        # itself is not caught here: chain rules, Never
+        return {"deny": "charter chain: a chain session never performs the owner's act (`charter rule`, `approve`, `rail`, "
+                        "`CHARTER_OWNER`). Hand over with `status: wait` and name the act under `## Wait`; the owner performs it."}
     if tool == "AskUserQuestion":
         return {"deny": "charter chain: a chain session does not ask the owner mid-session. Hand over with `status: wait` and "
                         "the act or the decision under `## Wait` (or `status: halt` if something went wrong; chain rules, section 5); "
@@ -907,13 +938,19 @@ def _resolve_self(root: Path, chain: dict, want: int | None) -> tuple[int | None
     return (want or int(chain.get("sessions") or 0)), ""
 
 
-def new_id(root: Path) -> str:
-    """The time of the start, to the second; two starts in one second would share a record (cross-review, 2026-10-04)."""
-    cid = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    while chain_dir(root, cid).exists():
-        time.sleep(1)
+def new_id(root: Path, reserve: bool = True) -> str:
+    """The time of the start, to the second; two starts in one second would share a record (cross-review, 2026-10-04).
+    Reserved by creating its directory, unless `reserve` is false (a dry run writes nothing)."""
+    base_dir(root).mkdir(parents=True, exist_ok=True) if reserve else None
+    while True:
         cid = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return cid
+        if not reserve:
+            return cid
+        try:
+            chain_dir(root, cid).mkdir()   # atomic: of two starts in one second, one gets the directory
+            return cid
+        except FileExistsError:
+            time.sleep(1)
 
 
 def cmd_start(root: Path, a) -> int:
@@ -960,7 +997,7 @@ def cmd_start(root: Path, a) -> int:
         return 1
     mission = (Path(a.mission_file).read_text(encoding="utf-8") if a.mission_file else (a.mission or "")).strip() or (
         f"Work the road from unit {a.unit}, one unit after another, until the road is finished or something needs the owner.")
-    cid = new_id(root)
+    cid = new_id(root, reserve=not a.dry_run)
     branch = lib.git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     on_default = branch in ("main", "master") or branch == lib.git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").stdout.strip().split("/")[-1]
     new_branch = f"chain/{cid}" if on_default and not a.here else ""
@@ -985,6 +1022,7 @@ def cmd_start(root: Path, a) -> int:
         r = lib.git(root, "checkout", "-q", "-b", new_branch)
         if r.returncode != 0:
             print(f"charter chain start: `git checkout -b {new_branch}` failed: {r.stderr.strip()}")
+            chain_dir(root, cid).rmdir()
             return 1
         branch = new_branch
     chain = {"id": cid, "created": now(), "root": str(root), "branch": branch, "base": head(root), "unit": a.unit,
@@ -1091,6 +1129,8 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
         groups.advance(root, chain, n, status, next_unit)   # the last group's review first, when there is one
     elif status == "halt":
         halt(root, chain, f"session {n}: {halt_why}")
+    elif status == "wait" and (chain_dir(root, chain["id"]) / "stop").exists():
+        halt(root, chain, f"stopped by the owner; session {n} was waiting on: {halt_why}", state="stopped")
     elif status == "wait":
         halt(root, chain, f"session {n} waits on the owner: {halt_why}", state="waiting")
     elif (chain_dir(root, chain["id"]) / "stop").exists():
@@ -1209,10 +1249,16 @@ def _stop(root: Path, cid: str, a) -> int:
 
 
 def cmd_resume(root: Path, a) -> int:
-    chain = load(root, a.id)
-    if not chain:
+    cid = load(root, a.id).get("id")
+    if not cid:
         print("no chain here")
         return 1
+    with chain_lock(root, cid):   # two resumes, or a resume and a stop, would each act on a stale state (cross-review, 2026-10-04)
+        return _resume(root, cid, a)
+
+
+def _resume(root: Path, cid: str, a) -> int:
+    chain = load(root, cid)
     n = int(chain.get("sessions") or 0)
     rec = link(root, chain["id"], n)
     if groups.review_running(root, chain):
@@ -1228,6 +1274,19 @@ def cmd_resume(root: Path, a) -> int:
         # before `chain next` noticed (cross-review, 2026-10-04)
         print(f"charter chain resume: not resumed: HEAD is on {branch(root)}, and the chain works on {chain.get('branch')}. "
               f"Resume from the checkout of {chain.get('branch')} ({chain.get('root')})")
+        return 1
+    end = rec.get("end_head") or ""
+    if end and lib.git(root, "merge-base", "--is-ancestor", end, "HEAD").returncode != 0:
+        print(f"charter chain resume: not resumed: {chain.get('branch')} no longer holds {end[:7]}, session {n}'s last commit; "
+              "the next session would build on a history without the chain's work. Put the branch back, or stop the chain")
+        return 1
+    dirty = [d[3:] for d in lib.git(root, "status", "--porcelain", "--untracked-files=no").stdout.splitlines()]
+    if dirty and chain.get("state") == "waiting":
+        # the chain waited at a commit, so this is what the owner changed meanwhile (a ticked line, a setting): committed
+        # as theirs, not taken up by a session. After a halt or a stall, a session's named leftovers go on as before
+        print(f"charter chain resume: not resumed: {len(dirty)} uncommitted change(s): {', '.join(dirty[:6])}. The next session "
+              "starts from a commit, so commit them first, for instance:\n  git commit -m \"owner: done during the chain's wait\" -- "
+              + " ".join(shlex.quote(d) for d in dirty) + "\nthen run `charter chain resume` again")
         return 1
     budget = {k: v for k, v in (("window", a.window), ("wrap_pct", a.wrap), ("cap_pct", a.cap)) if v is not None}
     new = dict(chain, **budget)

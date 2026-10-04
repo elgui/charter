@@ -133,12 +133,12 @@ session n+1: briefing says the chain waited; checks each act first; waits again 
 |---|---|
 | Work that does not need the owner is done before the chain pauses | Chain rules § 5, steps 1 to 3 (`package/.charter/chain-rules.md`) |
 | The pause names each act, how to do it, and what it closes | `check_handoff` refuses `status: wait` without `## Wait`; the acts are the unit's `— owner:` lines, which `owner_lines` in `package/.charter/owner.py` lists |
-| The chain waits at a commit, so the owner can work in the tree | `cmd_next` in `package/.charter/chain.py` refuses `wait` (and `complete`) with uncommitted changes (`tests/test_chain_wait.py`) |
+| The chain waits at a commit, and goes on from one | `cmd_next` in `package/.charter/chain.py` refuses `wait` (and `complete`) with uncommitted changes; `_resume` refuses a waiting chain's resume while the owner's changes are uncommitted, and prints the commit (`tests/test_chain_wait.py`) |
 | The owner is told | `notify` in `package/.charter/chain.py`, on waiting, halted, complete, a tab at a menu and a stall; `chain.notify` (`auto`: macOS, or `off`) and `chain.notify_command` (`{chain}`, `{project}`, `{title}`, `{text}`); `CHARTER_NOTIFY=off` silences it |
 | The owner sees what to do where they already look | `owner_items` in `package/.charter/chain.py`, read by `queue` in `package/.charter/owner.py`: `charter owner [--json]` and `charter next` list the chain with its acts and `chain resume` |
 | Nothing goes on until the owner says so | State `waiting`; `cmd_start` in `package/.charter/chain.py` refuses while a chain waits; only `cmd_resume` launches |
 | The next session does not take the acts on trust | The briefing after a wait says so (`briefing` in `package/.charter/chain.py`); chain rules § 5 (`package/.charter/chain-rules.md`) |
-| A chain session never performs an owner act | `charter rule`, `approve` and `rail` refuse inside an open chain session (`live_session`, `_owner_verb` in `package/.charter/bin/charter`); `AskUserQuestion` is denied with a pointer to `wait` |
+| A chain session never performs an owner act | `charter rule`, `approve` and `rail` refuse inside an open chain session (`live_session`, `_owner_verb` in `package/.charter/bin/charter`), and the hook denies such a command whatever its environment (`OWNER_ACT_RE`, `on_pre_tool` in `package/.charter/chain.py`); `AskUserQuestion` is denied with a pointer to `wait` |
 
 ### What it does not do
 

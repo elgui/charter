@@ -167,6 +167,95 @@ class Wait(WaitCase):
         self.assertNotIn("a chain session never performs", r.stderr)
 
 
+class WaitSecondReview(WaitCase):
+    """The cross-review of the wait itself (2026-10-04, 409ad60..6b104af)."""
+
+    def waiting(self):
+        self.join(1, "s1")
+        self.wait_handoff(1)
+        self.assertEqual(self.next("s1").returncode, 0)
+        self.assertEqual(chainlib.load(self.root)["state"], "waiting")
+
+    def test_an_owner_act_is_denied_to_a_chain_session_whatever_its_environment(self):
+        tp, _ = self.join(1, "s1")
+        for cmd in ("env -u CLAUDE_CODE_SESSION_ID python3 .charter/bin/charter rule retry-limit rejected",
+                    "CHARTER_OWNER=1 git commit -m x"):
+            out = self.hook("PreToolUse", "s1", tp, tool_name="Bash", tool_input={"command": cmd})
+            self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny", cmd)
+        self.assertNotIn("hookSpecificOutput", self.hook("PreToolUse", "s1", tp, tool_name="Bash", tool_input={"command": "python3 .charter/bin/charter next"}))
+
+    def test_a_wait_line_names_what_it_closes(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait="- later")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("`## Wait` lines that name no unit, decision or change request: later", r.stdout)
+
+    def test_the_template_placeholder_is_not_an_act(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait="<Only with `status: wait`: one line per act>\n" + WAIT)
+        self.assertEqual(self.next("s1").returncode, 0)
+        it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
+        self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1", WAIT))
+
+    def test_a_stop_requested_before_the_wait_wins(self):
+        self.join(1, "s1")
+        self.assertEqual(cli(self.root, "stop").returncode, 0)   # the live session is told to hand over
+        self.wait_handoff(1)
+        self.assertEqual(self.next("s1").returncode, 0)
+        c = chainlib.load(self.root)
+        self.assertEqual(c["state"], "stopped")
+        self.assertIn("stopped by the owner; session 1 was waiting on: turn on FileVault", c["reason"])
+
+    def test_resume_of_a_waiting_chain_wants_the_owners_changes_committed(self):
+        self.waiting()
+        u1 = self.root / ".taskets" / "u1.md"
+        u1.write_text(u1.read_text().replace("- [ ] AC-2", "- [x] AC-2"))
+        r = cli(self.root, "resume")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("1 uncommitted change(s): .taskets/u1.md", r.stdout)
+        self.assertIn("git commit -m \"owner: done during the chain's wait\" -- .taskets/u1.md", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "waiting")
+        commit_all(self.root, "owner: AC-2 done")
+        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.launched(2)
+
+    def test_resume_refuses_a_branch_that_lost_the_chains_last_commit(self):
+        (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a\n\n\n# s1 work\n")
+        commit_all(self.root, "s1 work")
+        self.waiting()
+        git(self.root, "reset", "-q", "--hard", "HEAD~1")
+        r = cli(self.root, "resume")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no longer holds", r.stdout)
+
+    def test_a_manual_join_of_a_chain_that_is_not_running_is_refused(self):
+        self.waiting()
+        r = cli(self.root, "join", self.cid, "1", sid="late")
+        self.assertIn(f"charter chain {self.cid} is waiting", r.stdout)
+        self.assertIsNone(chainlib.joined(self.root, "late"))
+
+    def test_a_deleted_untracked_file_counts_as_uncommitted(self):
+        rec = {"untracked_at_launch": ["notes.md"], "untracked_stat_at_launch": {"notes.md": [6, 1]}}
+        self.assertEqual(chainlib.uncommitted(self.root, rec), ["notes.md"])
+
+    def test_notifications_survive_a_bad_template_and_a_typo(self):
+        cfg = json.loads((self.root / "charter" / "config.json").read_text())
+        cfg["chain"] = {"notify": "atuo", "notify_command": "echo 'unbalanced"}
+        (self.root / "charter" / "config.json").write_text(json.dumps(cfg))
+        with mock.patch.dict(os.environ, {"CHARTER_NOTIFY": ""}), mock.patch.object(chainlib.sys, "platform", "darwin"), \
+                mock.patch.object(chainlib.shutil, "which", return_value="/usr/bin/osascript"), \
+                mock.patch.object(chainlib.subprocess, "Popen") as popen:
+            chainlib.notify(self.root, self.chain, "waits on you")
+        self.assertEqual([c.args[0][0] for c in popen.call_args_list], ["osascript"])
+
+    def test_a_dry_run_reserves_no_id(self):
+        cli(self.root, "stop")
+        before = sorted(x.name for x in chainlib.base_dir(self.root).iterdir())
+        self.assertEqual(cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--dry-run").returncode, 0)
+        self.assertEqual(sorted(x.name for x in chainlib.base_dir(self.root).iterdir()), before)
+
+
 class WaitAtABoundary(GroupCase):
     def test_a_wait_at_the_end_of_a_group_runs_the_review_on_resume(self):
         self.start()
