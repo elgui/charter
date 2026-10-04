@@ -607,8 +607,8 @@ def halt(root: Path, chain: dict, reason: str, state: str = "halted") -> None:
     chain["state"], chain["reason"], chain["ended"] = state, reason, now()
     save(root, chain)
     event(root, chain["id"], "chain", "wait" if state == "waiting" else state, reason)   # `waiting` is a tab at a menu
-    if state != "stopped":
-        notify(root, chain, {"waiting": "waits on you", "halted": "halted", "complete": "is complete"}.get(state, state) + f": {reason}")
+    if state != "stopped":   # a waiting chain's reason already says it waits on the owner
+        notify(root, chain, reason if state == "waiting" else {"halted": "halted", "complete": "is complete"}.get(state, state) + f": {reason}")
 
 
 NOTIFY_ENV = "CHARTER_NOTIFY"   # `off` silences every notification (the tests set it)
@@ -712,9 +712,9 @@ def owner_items(root: Path) -> list[dict]:
         text = hp.read_text(encoding="utf-8") if hp.exists() else ""
         body = lib.split_frontmatter(text)[2]
         asks = [l.strip() for l in lib.section(body, "Wait" if ch["state"] == "waiting" else "Halt").splitlines() if l.strip()]
-        verb = "waits on you" if ch["state"] == "waiting" else "halted"
-        return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide",
-                 "title": f"chain {cid} {verb} after session {n}: {ch.get('reason', '')}"[:200], "file": where, "line": 1,
+        title = (f"chain {cid} waits on you: {len(asks)} act(s) from session {n}" if ch["state"] == "waiting" else
+                 f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200])
+        return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
                  "ask": "\n".join(asks[:12]) or None, "resume": True}]
     if ch.get("state") != "running" or not n:
         return []

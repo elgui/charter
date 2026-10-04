@@ -95,7 +95,7 @@ class Wait(WaitCase):
         self.assertEqual(c["state"], "waiting")
         self.assertIn("session 1 waits on the owner: turn on FileVault", c["reason"])
         self.assertIn("chain wait: session 1 waits on the owner", self.events())
-        self.assertIn(f"{self.cid} | waits on you: session 1 waits on the owner: turn on FileVault", self.notes())
+        self.assertIn(f"{self.cid} | session 1 waits on the owner: turn on FileVault", self.notes())
         self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
 
         q = json.loads(charter(self.root, "owner", "--json").stdout)
@@ -105,7 +105,8 @@ class Wait(WaitCase):
         self.assertEqual(it[f"chain:{self.cid}"]["perform"][-3:], ["chain", "resume", self.cid])
         self.assertIn("owner-line:u1:AC-2", it)
         nxt = charter(self.root, "next").stdout
-        self.assertIn(f"chain {self.cid} waits on you after session 1", nxt)
+        self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1; then `python3 .charter/bin/charter chain resume`", nxt)
+        self.assertEqual(it[f"chain:{self.cid}"]["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
         self.assertIn("then `python3 .charter/bin/charter chain resume`", nxt)
 
         r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")
