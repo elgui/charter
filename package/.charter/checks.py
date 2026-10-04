@@ -220,14 +220,19 @@ class SizeBudget:
         return f"the {n}-{unit} limit{tail}"
 
 
-# where the installer writes outside .charter/ (OWNED in bin/charter-pkg). Fixed paths, not the manifest: a manifest is
-# a file a session can rewrite, and read from the tree it would not be the one a staged check judges (cross-review, 2026-10-04)
-PACKAGE_GLOBS = (".claude/rules/charter.md", ".claude/skills/charter-*/**", ".claude/agents/charter-*", "charter/README.md",
-                 "charter/templates/**", ".github/workflows/charter.yml")
+# the installer's files outside .charter/ (OWNED in bin/charter-pkg; tests/test_chain_reliability.py keeps the two in
+# step). Fixed paths, not the manifest: a manifest is a file a session can rewrite, and read from the tree it would not
+# be the one a staged check judges; and not globs, which would exempt a project's own file named like one of these
+# (cross-review, 2026-10-04)
+PACKAGE_FILES = frozenset((
+    ".claude/rules/charter.md", ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md",
+    ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/agents/charter-reviewer.md",
+    ".github/workflows/charter.yml", "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
+    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md"))
 
 
 def size_budget_for(root: Path, cfg: dict, rp: str, today: str | None = None) -> SizeBudget | None:
-    if lib.matches_any(rp, lib.as_list(cfg.get("exempt_from_size"))) or rp.startswith(lib.TOOL_DIR + "/") or lib.matches_any(rp, PACKAGE_GLOBS):
+    if lib.matches_any(rp, lib.as_list(cfg.get("exempt_from_size"))) or rp.startswith(lib.TOOL_DIR + "/") or rp in PACKAGE_FILES:
         # .charter/ and the installer's other files are the package's; the project cannot split them, an upgrade
         # replaces them (trial 2026-10-04: a 30-line limit refused the upgrade's own skill and handoff template)
         return None

@@ -2,7 +2,8 @@
 
 `queue` lists what waits on the owner, from the project's own files: proposed decisions and change
 requests, rails whose every unit is finished, problems in charter/rails.md, staged owner-only files,
-HUMAN-ONLY units, and unchecked acceptance lines only the owner can close. `charter next` prints it
+HUMAN-ONLY units, unchecked acceptance lines only the owner can close, and a chain that waits on the
+owner or halted (0.4.9). `charter next` prints it
 under "Waiting on the owner" and `charter owner [--json]` prints it alone, from this one function, so
 the two cannot drift. It reports commands (a decision's `check:`, a line's probe); it never runs one.
 
@@ -124,6 +125,10 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
     """What waits on the owner, in the order `charter next` prints it. `states` maps a unit id to its state
     (`_unit_state` in the CLI); a finished unit is accepted, closed or done before charter."""
     items: list[dict] = []
+    import chain   # here, not at the top: every charter command loads this module, few need the chain engine
+    for it in chain.owner_items(root):
+        resume = it.pop("resume")
+        items.append(_item(**it, perform=perform_argv(root, "chain", "resume", it["key"].split(":")[1]) if resume else None))
     finished = ("accepted", "closed", "done-before-charter")
     loaded = rails.load(root, cfg)
     if loaded is not None:
@@ -193,6 +198,9 @@ def next_line(it: dict) -> str:
         return f"- change request {key.split(':', 1)[1]} — {it['title']} is proposed ({it['file']})"
     if key == "staged":
         return f"- {it['title']}; `python3 .charter/bin/charter handover` prints the command"
+    if key.startswith("chain:"):
+        ask = ("\n" + "\n".join(f"    {l}" for l in it["ask"].splitlines())) if it["ask"] else ""
+        return f"- {it['title']}" + ("; then `python3 .charter/bin/charter chain resume`" if it["perform"] else "") + ask
     if key.startswith("human:"):
         return f"- HUMAN-ONLY unit {key.split(':', 1)[1]} — {it['title']} ({it['file']}:{it['line']})"
     return f"- {'owner line' if it['marked'] else 'unmarked owner line'} {it['title']} ({it['file']}:{it['line']})"
@@ -227,7 +235,7 @@ def human(rep: dict) -> str:
         for i in its:
             L.append(f"- [{i['key']}] {i['title']} ({i['file']}:{i['line']})" + ("" if i["marked"] else " (unmarked)"))
             if i["ask"]:
-                L.append(f"    ask: {i['ask']}")
+                L += [f"    ask: {l}" for l in i["ask"].splitlines()]
             if i["recommend"]:
                 L.append(f"    recommended: {i['recommend']}")
             if i["check"]:

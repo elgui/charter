@@ -901,6 +901,14 @@ def cmd_owner(a) -> int:
 
 def _owner_verb(a, fn, *args, **kw) -> int:
     root = lib.repo_root(a.root)
+    import chain
+    live = chain.live_session(root)
+    if live:
+        # the verbs commit as the owner; a chain session that ran one would act for the owner instead of waiting on
+        # them (cross-review, 2026-10-04)
+        print(f"charter {a.cmd}: refused: this is session {live[1]} of chain {live[0]['id']}, and a chain session never performs "
+              "the owner's act. Hand over with `status: wait` and name it under `## Wait`.", file=sys.stderr)
+        return 1
     ownerq.warn_in_session()
     try:
         return fn(root, lib.load_config(root), *args, trailer=a.trailer, dry_run=a.dry_run, **kw)

@@ -25,35 +25,42 @@ Session 1 has no predecessor; it writes `first session` under `## Verified`.
 
 ## 4. Hand over
 
-At the hand-over line, when you halt, or when the road is finished:
+At the hand-over line, when the chain waits on the owner or halts, or when the road is finished:
 
 1. Commit what landed. Append a dated `## Log` line to the active unit saying exactly where it stands.
 2. Write the handoff at the path in your briefing, from `charter/templates/handoff.md`. It carries state, never rules: the next session gets these rules from the hook. Link to commits and unit logs instead of copying them. 80 lines at most.
 3. Run `python3 .charter/bin/charter chain next`. It validates the handoff, records what you landed, verifies it mechanically and launches the next session. If it refuses, fix what it names and run it again.
 4. End your turn. After a successful `chain next`, start nothing new.
 
-## 5. Halt instead of guessing
+## 5. Wait on the owner, or halt, instead of guessing
 
-Set `status: halt` and write under `## Halt` what the owner must decide or do, when:
+Some steps are the owner's alone: a decision, scope, a change request, an owner-only file, an act on the machine you cannot or may not do (sudo, a password, Touch ID, a system setting, an account, a purchase), a check only a person can make, or a commitment (push, merge, deploy, release, production data, money, anything outward-facing or irreversible). When the road reaches one, the chain waits on the owner:
 
-- the work needs an owner act: scope, a change request, a decision, an owner-only file, or a commitment (push, merge, deploy, release, production data, money, anything outward-facing or irreversible);
+1. Do first every part of the unit that does not need the owner, and commit it.
+2. Mark each acceptance line that only the owner can close with `— owner: do` or `— owner: check` (or `— owner: decide`), so that `charter owner` lists it with the unit. A decision or change request you need goes in as `proposed`.
+3. Hand over with `status: wait`, `next_unit:` the unit the chain goes on with, and under `## Wait` one line per act: what it is, how the owner does it (the command, the setting, the place), and the unit line it closes. Commit everything first: the chain waits at a commit, and the owner may work in this tree meanwhile.
+
+The owner is told, does the acts, and resumes the chain. The next session checks each act before anything else, and waits again on any that is not done.
+
+Set `status: halt` and write under `## Halt` what went wrong and what the owner must judge, when:
+
 - you found a defect in the predecessor's work that you could not fix;
 - a gate refused the same thing twice, or a probe cannot run in this environment;
-- the mission and the road disagree.
+- the mission and the road disagree, or the road goes nowhere without an owner's choice you cannot frame as an act under `## Wait`.
 
-Set `status: complete` when `charter next` names no open unit left for the mission, or the mission's goal is met. You never ask the owner a question mid-session: the halt is the question, and the owner answers it by resuming the chain.
+Set `status: complete` when `charter next` names no open unit left for the mission, or the mission's goal is met. You never ask the owner a question mid-session: the wait or the halt is the question, and the owner answers it by resuming the chain.
 
 ## 6. A group ends with its review
 
 The road's units come in groups: the items of `charter/rails.md`, or the tasket `group:` where the project keeps no rails file. The chain works one group at a time. At the end of each group, a reviewer of another model family reviews all of the group's commits before the next group starts.
 
 - When the next unit is in a group that has not started, `charter unit start` refuses it. Commit everything (a group ends at a commit, so nothing uncommitted may cross it), write your handoff with that unit as `next_unit:`, and run `charter chain next`. This hand-over is allowed under the hand-over line. The next session starts once the review is done.
-- If your briefing carries a group's review, your session is the verification of section 1 and that review, nothing else. Judge each finding against the code. Fix a real defect inside its unit's perimeter (reopen a done unit with a dated `## Log` line) and commit. Dismiss a finding that is not a defect with the `path:line` or `$ command` that shows why. Halt on a finding that needs the owner. Under `## Review` in your handoff, write one line per finding, starting with its id (`R1 fixed <commit>`, `R2 dismissed <path:line> <why>`), commit everything, then hand over as your briefing says.
+- If your briefing carries a group's review, your session is the verification of section 1 and that review, nothing else. Judge each finding against the code. Fix a real defect inside its unit's perimeter (reopen a done unit with a dated `## Log` line) and commit. Dismiss a finding that is not a defect with the `path:line` or `$ command` that shows why. Wait or halt on a finding that needs the owner (section 5). Under `## Review` in your handoff, write one line per finding, starting with its id (`R1 fixed <commit>`, `R2 dismissed <path:line> <why>`), commit everything, then hand over as your briefing says.
 - If you find a defect in an earlier group, fix it forward: reopen its unit, fix it and commit on the chain's branch. The next review covers the fix.
 
 ## Never
 
 - Edit `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, or a handoff other than your own.
-- Pass `--no-verify`, set `CHARTER_OWNER`, push, merge, rebase or rewrite history.
+- Pass `--no-verify`, set `CHARTER_OWNER`, run the owner's verbs (`charter rule`, `approve`, `rail`), push, merge, rebase or rewrite history.
 - Close a unit whose probes you did not run in this session.
 - Launch a session any other way than `charter chain next`.

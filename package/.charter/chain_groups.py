@@ -164,13 +164,13 @@ ANSWER_RE = re.compile(r"^\s*[-*]?\s*(R\d+)\b[\s:.,—–-]*(fixed|dismissed|hal
 def check_review(root: Path, ch: dict, n: int, text: str) -> list[str]:
     """What keeps the answering session's handoff from being accepted: under `## Review`, one line per finding that
     starts with its id and then the answer, `fixed` with a commit made after the reviewed range, `dismissed` with a
-    path:line or a `$ command`. A handoff with `status: halt` is not held to it: the session after the owner's answer
+    path:line or a `$ command`. A handoff with `status: halt` or `wait` is not held to it: the session after the owner's answer
     is given the whole review again. That a fix fixes, or a dismissal holds, is the next session's to verify."""
     g = current(ch)
     if not g or g.get("fix_session") != n or not g.get("findings"):
         return []
     fields, _, body = lib.split_frontmatter(text)
-    if str(fields.get("status", "")).strip() == "halt":
+    if str(fields.get("status", "")).strip() in ("halt", "wait"):
         return []
     answers: dict[str, list[tuple[str, str]]] = {}
     for line in lib.section(body, "Review").splitlines():
@@ -193,7 +193,7 @@ def check_review(root: Path, ch: dict, n: int, text: str) -> list[str]:
         elif word == "dismissed" and (k["fileline"] or k["run"]):
             continue
         elif word == "halt":
-            problems.append(f"`## Review`, {f['id']}: `halt` needs the handoff's `status: halt`, with the question under `## Halt`")
+            problems.append(f"`## Review`, {f['id']}: `halt` needs the handoff's `status: wait` (an owner act, under `## Wait`) or `status: halt`")
         else:
             problems.append(f"`## Review`, {f['id']}: answer with `{f['id']} fixed <commit after {g['end'][:7]}>`, "
                             f"`{f['id']} dismissed <path:line or $ command> <why>`, or `{f['id']} halt <why>` with `status: halt`")
@@ -561,8 +561,9 @@ def on_resume(root: Path, ch: dict, n: int, note: str, skip: bool) -> bool | Non
         nums = chain.link(root, ch["id"], n).get("nums") or {}
         if status == "complete" and (nums.get("probe_failures") or nums.get("gates_blocked")):
             return None   # halted as broken (`chain next`): a session repairs it first, as in a chain without groups (cross-review, 2026-10-04)
-        if status == "complete" or (status == "continue" and (unit_group(root, nu) or "") not in keys(ch)):
-            start_review(root, ch, n, status, nu, note)   # stopped at a boundary: the review comes first
+        if status == "complete" or (status in ("continue", "wait") and (unit_group(root, nu) or "") not in keys(ch)):
+            # stopped, or waited on the owner, at a boundary: the review comes first, and the session after it goes on
+            start_review(root, ch, n, "continue" if status == "wait" else status, nu, note)
             return chain.load(root, ch["id"]).get("state") in ("running", "complete")
     return None
 

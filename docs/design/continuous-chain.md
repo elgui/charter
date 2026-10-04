@@ -51,7 +51,7 @@ Every session's first prompt is a briefing written by code (`briefing` in `packa
 - The budget lags by one response; a tool result counts as its characters divided by 4 until the next response reports it (`on_post_tool` in `package/.charter/chain.py`).
 - Past the cap, `git` is allowed whole, because committing is part of handing over (`allowed_at_cap` in `package/.charter/chain.py`).
 - Two sessions in one clone share one active unit (`docs/bugs/2026-10-02-concurrent-sessions-in-one-clone-share-one-active-unit.md`). The chain's own sessions run one at a time, but the owner working in the same clone during a chain is the reported bug.
-- The chain halts; it never decides for the owner. A halted, stopped or stalled chain waits for `charter chain resume` (`cmd_resume` in `package/.charter/chain.py`), which can also set a new budget (`--window`, `--wrap`, `--cap`) for the sessions that follow.
+- The chain never decides or acts for the owner. A waiting, halted, stopped or stalled chain waits for `charter chain resume` (`cmd_resume` in `package/.charter/chain.py`), which can also set a new budget (`--window`, `--wrap`, `--cap`) for the sessions that follow. It does not resume on its own when the owner ticks a line: the owner chose one command they run, with a note for the next session, over a process that polls for hours (2026-10-04).
 - It does not fit the budget to the start-up. A session pays its start-up (system prompt, tools, skills, MCP instructions, rules, briefing) before any work, and in a cmux tab that was 49,500 tokens on 2026-10-04, against about 32,000 headless. A chain whose hand-over line is under it would only relaunch sessions that hand over at once, so the first session that starts past the line halts the chain with the figure (`started_past_line`), and `chain start` warns beforehand (`measured_startup`; `docs/trials/2026-10-04-chain-tab.md`).
 
 ## Groups and their review
@@ -108,6 +108,43 @@ A group is the units of one item of `charter/rails.md`: a unit's group is its fi
 - A review that ends after the owner stopped the chain is recorded and ends nothing: `chain resume` launches the answering session, or completes the chain (`cmd_review_run`, `_record`, `clear`, `on_resume` in `package/.charter/chain_groups.py`). The runner records under the chain's lock, which `charter chain stop` takes too, so a stop is never overwritten by a stale copy of the state, nor the review's outcome by the stop (`chain_lock` in `package/.charter/chain.py`).
 - It does not open a pull request or post a comment: pushing is the owner's (`package/.claude/rules/charter.md` § Decisions and memory). `charter chain report` prints every group's review and answers as one comment for the owner to post.
 - A review costs minutes at each group's end, and Codex usage on the owner's subscription. On a 4-line diff at low effort it took 26 s (`$ codex exec review --base <sha> -c model_reasoning_effort=low -o <file>` in a scratch repository, 2026-10-04); in the two trial runs, groups of one or two small functions took 39 to 75 s at high effort (`docs/trials/2026-10-04-groups.md`). A larger group is not measured (unverified).
+
+## Waiting on the owner
+
+### What was asked
+
+"The chain should handle elegantly and with decent UX the case where a human is mandatory. I don't mind if the chain has to pause to wait for me (when relevant)" (operator report, 2026-10-04). The road that prompted it, a confidential zone on a Mac, has a step only the owner can take in every unit: sudo with Touch ID, a disk-encryption setting, a paid bucket, a decision, an irreversible purge. Before this, a session halted at the first one, and the owner learned of it by watching.
+
+### The shape
+
+```
+session n: does what does not need the owner, commits, marks the unit's lines `— owner: do|check`
+         └─ handoff status: wait, ## Wait (one line per act), next_unit
+chain next ── clean tree? ──> chain state `waiting`, event `wait`
+                              ├─ macOS notification, chain.notify_command
+                              └─ `charter owner` / `charter next`: the chain, its acts, `chain resume`
+owner: does the acts, ticks the lines, `charter chain resume [--note]`
+session n+1: briefing says the chain waited; checks each act first; waits again on any not done
+```
+
+### Each requirement and what holds it
+
+| Requirement | What holds it |
+|---|---|
+| Work that does not need the owner is done before the chain pauses | Chain rules § 5, steps 1 to 3 (`package/.charter/chain-rules.md`) |
+| The pause names each act, how to do it, and what it closes | `check_handoff` refuses `status: wait` without `## Wait`; the acts are the unit's `— owner:` lines, which `owner_lines` in `package/.charter/owner.py` lists |
+| The chain waits at a commit, so the owner can work in the tree | `cmd_next` in `package/.charter/chain.py` refuses `wait` (and `complete`) with uncommitted changes (`tests/test_chain_wait.py`) |
+| The owner is told | `notify` in `package/.charter/chain.py`, on waiting, halted, complete, a tab at a menu and a stall; `chain.notify` (`auto`: macOS, or `off`) and `chain.notify_command` (`{chain}`, `{project}`, `{title}`, `{text}`); `CHARTER_NOTIFY=off` silences it |
+| The owner sees what to do where they already look | `owner_items` in `package/.charter/chain.py`, read by `queue` in `package/.charter/owner.py`: `charter owner [--json]` and `charter next` list the chain with its acts and `chain resume` |
+| Nothing goes on until the owner says so | State `waiting`; `cmd_start` in `package/.charter/chain.py` refuses while a chain waits; only `cmd_resume` launches |
+| The next session does not take the acts on trust | The briefing after a wait says so (`briefing` in `package/.charter/chain.py`); chain rules § 5 (`package/.charter/chain-rules.md`) |
+| A chain session never performs an owner act | `charter rule`, `approve` and `rail` refuse inside an open chain session (`live_session`, `_owner_verb` in `package/.charter/bin/charter`); `AskUserQuestion` is denied with a pointer to `wait` |
+
+### What it does not do
+
+- It does not check that the owner did an act. The next session checks what it can (a probe, a ticked line, the owner's note); a human gate stays the owner's word (chain rules § 5, `package/.charter/chain-rules.md`).
+- It does not work on other units while it waits. A wait pauses the whole chain; units that do not depend on the owner's act wait too (`_hand_over` in `package/.charter/chain.py`).
+- At a group's end, the review runs on resume, not during the wait (`on_resume` in `package/.charter/chain_groups.py`).
 
 ## Trial
 

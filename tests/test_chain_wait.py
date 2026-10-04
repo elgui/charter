@@ -1,0 +1,271 @@
+"""Charter 0.4.9: a chain that waits on the owner, and the fixes from the cross-review of the merged 0.4.9
+(2026-10-04, `codex exec review --base origin/main`).
+
+A road whose units need the owner (sudo, a password, a purchase, a decision) halted the chain at the first such step,
+and the owner learned of it only by watching. A session now does what it can, marks the owner's lines, and hands over
+with `status: wait`: the chain waits at a commit, tells the owner (a notification, the owner's queue), and the session
+after `chain resume` checks the owner's acts first. The review's findings: a second `chain next` could launch a second
+successor, a late tab could join a closed session, an edit to a file untracked at launch went unseen, a chain session
+could run an owner verb, a complete chain could leave work uncommitted, a resume from another branch launched there,
+the size gate skipped any file named like the installer's, and an upgrade dropped a project hook that shared a group
+with one of charter's."""
+import argparse
+import contextlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from helpers import PKG, REPO, git
+from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, handoff
+from test_groups_0_4_8 import GroupCase
+from test_review_regressions import commit_all
+
+sys.path.insert(0, str(PKG / ".charter"))
+import chain as chainlib  # noqa: E402
+import checks  # noqa: E402
+import lib  # noqa: E402
+
+WAIT = "- turn on FileVault (System Settings > Privacy & Security) — closes u1 AC-2"
+
+
+def charter(root, *args, sid=None, env=None):
+    e = env_for(sid)
+    e.update(env or {})
+    return subprocess.run([sys.executable, "-B", str(root / ".charter" / "bin" / "charter"), "--root", str(root), *args],
+                          capture_output=True, text=True, cwd=str(root), env=e)
+
+
+def charter_pkg():
+    loader = importlib.machinery.SourceFileLoader("charter_pkg", str(REPO / "bin" / "charter-pkg"))
+    spec = importlib.util.spec_from_loader("charter_pkg", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+class WaitCase(ChainCase):
+    def setUp(self):
+        super().setUp()
+        self.notified = self.out.parent / (self.out.name + "-notified.txt")
+        self.addCleanup(lambda: self.notified.unlink(missing_ok=True))
+        cfg = json.loads((self.root / "charter" / "config.json").read_text())
+        cfg["chain"] = {"notify": "off", "notify_command":
+                        f"{sys.executable} -c \"import sys; open(sys.argv[1], 'a').write(sys.argv[2] + ' | ' + sys.argv[3] + chr(10))\" "
+                        f"{self.notified} {{chain}} {{text}}"}
+        (self.root / "charter" / "config.json").write_text(json.dumps(cfg, indent=2) + "\n")
+        u1 = self.root / ".taskets" / "u1.md"
+        u1.write_text(u1.read_text().replace("\n## Evidence", "- [ ] AC-2: FileVault is on — owner: do\n\n## Evidence"))
+        commit_all(self.root, "u1: an owner line; notifications to a file")
+        self.start()
+        self.cid = self.chain["id"]
+
+    def next(self, sid):
+        """`chain next` with notifications on, as on the owner's machine (the tests turn them off elsewhere)."""
+        return charter(self.root, "chain", "next", sid=sid, env={"CHARTER_NOTIFY": ""})
+
+    def wait_handoff(self, n, wait=WAIT, **kw):
+        p = self.write_handoff(n, status="wait", **kw)
+        if wait:
+            p.write_text(p.read_text() + f"\n## Wait\n\n{wait}\n")
+        return p
+
+    def notes(self):
+        for _ in range(100):
+            if self.notified.exists() and self.notified.read_text():
+                return self.notified.read_text()
+            import time
+            time.sleep(0.05)
+        return ""
+
+
+class Wait(WaitCase):
+    def test_a_session_that_waits_pauses_the_chain_tells_the_owner_and_the_next_session_checks_the_acts(self):
+        self.join(1, "s1")
+        self.wait_handoff(1)
+        r = self.next("s1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("waits on the owner, who is told", r.stdout)
+        c = chainlib.load(self.root)
+        self.assertEqual(c["state"], "waiting")
+        self.assertIn("session 1 waits on the owner: turn on FileVault", c["reason"])
+        self.assertIn("chain wait: session 1 waits on the owner", self.events())
+        self.assertIn(f"{self.cid} | waits on you: session 1 waits on the owner: turn on FileVault", self.notes())
+        self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
+
+        q = json.loads(charter(self.root, "owner", "--json").stdout)
+        it = {i["key"]: i for i in q["items"]}
+        self.assertEqual(it[f"chain:{self.cid}"]["kind"], "do")
+        self.assertIn("turn on FileVault", it[f"chain:{self.cid}"]["ask"])
+        self.assertEqual(it[f"chain:{self.cid}"]["perform"][-3:], ["chain", "resume", self.cid])
+        self.assertIn("owner-line:u1:AC-2", it)
+        nxt = charter(self.root, "next").stdout
+        self.assertIn(f"chain {self.cid} waits on you after session 1", nxt)
+        self.assertIn("then `python3 .charter/bin/charter chain resume`", nxt)
+
+        r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(f"chain {self.cid} waits on the owner", r.stdout)
+
+        r = cli(self.root, "resume", "--note", "FileVault is on")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        b = self.launched(2)
+        self.assertIn("## The chain waited on the owner", b)
+        self.assertIn("FileVault is on", b)
+        self.assertIn(WAIT, b)
+        self.assertEqual(chainlib.load(self.root)["state"], "running")
+        self.assertNotIn(f"chain:{self.cid}", charter(self.root, "owner", "--json").stdout)
+
+    def test_a_wait_needs_its_acts_and_a_clean_tree(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait="")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("`status: wait` needs `## Wait`", r.stdout)
+        self.wait_handoff(1, state="app/billing.py: a draft, not committed")
+        (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a * 2\n")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("uncommitted change(s) with `status: wait`: app/billing.py", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "running")
+
+    def test_a_complete_chain_leaves_nothing_uncommitted_even_without_groups(self):
+        self.join(1, "s1")
+        self.write_handoff(1, status="complete", next_unit="none", state="app/billing.py: a draft, not committed")
+        (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a * 2\n")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("uncommitted change(s) with `status: complete`: app/billing.py", r.stdout)
+
+    def test_a_waiting_chain_can_be_stopped(self):
+        self.join(1, "s1")
+        self.wait_handoff(1)
+        self.assertEqual(self.next("s1").returncode, 0)
+        r = cli(self.root, "stop", "--reason", "not this week")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        c = chainlib.load(self.root)
+        self.assertEqual((c["state"], c["reason"]), ("stopped", "not this week"))
+
+    def test_a_question_to_the_owner_points_to_wait(self):
+        tp, _ = self.join(1, "s1")
+        out = self.hook("PreToolUse", "s1", tp, tool_name="AskUserQuestion", tool_input={})
+        self.assertIn("`status: wait`", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_chain_session_cannot_perform_an_owner_verb(self):
+        self.join(1, "s1")
+        r = charter(self.root, "rule", "retry-limit", "rejected", sid="s1")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("a chain session never performs the owner's act", r.stderr)
+        self.assertNotIn("charter rule", git(self.root, "log", "-1", "--format=%s").stdout)
+        r = charter(self.root, "rule", "retry-limit", "rejected", "--dry-run", sid="other")
+        self.assertNotIn("a chain session never performs", r.stderr)
+
+
+class WaitAtABoundary(GroupCase):
+    def test_a_wait_at_the_end_of_a_group_runs_the_review_on_resume(self):
+        self.start()
+        self.join(1, "s1")
+        self.work()
+        p = self.write_handoff(1, status="wait", next_unit="u3")
+        p.write_text(p.read_text() + f"\n## Wait\n\n{WAIT}\n")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual((self.state()["state"], self.calls()), ("waiting", []))
+        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        b = self.launched(2)
+        self.assertEqual((len(self.calls()), self.group(0)["state"], self.group()["key"]), (1, "cleared", "r2"))
+        self.assertIn("## The chain waited on the owner", b)
+
+
+class ReviewFixes(ChainCase):
+    def setUp(self):
+        super().setUp()
+        self.start()
+        self.cid = self.chain["id"]
+
+    def test_a_second_next_that_waited_on_the_lock_launches_nothing(self):
+        self.join(1, "s1")
+        self.write_handoff(1)
+        (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a\n\n\n# groundwork\n")
+        commit_all(self.root, "groundwork")
+        real = chainlib.chain_lock
+
+        @contextlib.contextmanager
+        def first_one_won(root, cid):
+            with real(root, cid):
+                with chainlib.editing_link(root, cid, 1) as rec:
+                    rec["closed_at"] = chainlib.now()   # what the first `chain next` did while this one waited
+                yield
+        a = argparse.Namespace(id=None, session=1, early="test", check=False)
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(chainlib, "chain_lock", first_one_won):
+            self.assertEqual(chainlib.cmd_next(self.root, a), 0)
+        self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
+        self.assertNotIn("s01 closed", self.events())
+
+    def test_a_late_tab_cannot_join_a_session_resume_closed(self):
+        self.assertEqual(cli(self.root, "stop").returncode, 0)   # session 1 never joined: stopped at once
+        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.launched(2)
+        _, out = self.join(1, "late")   # the tab of session 1 starts now, say after its folder-trust menu
+        self.assertIn("is already closed", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIsNone(chainlib.joined(self.root, "late"))
+
+    def test_an_edit_to_a_file_untracked_at_launch_counts_as_uncommitted(self):
+        cli(self.root, "stop")
+        (self.root / "notes.md").write_text("draft\n")
+        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        rec = chainlib.link(self.root, self.cid, 2)
+        self.assertEqual(chainlib.uncommitted(self.root, rec), [])
+        (self.root / "notes.md").write_text("draft, and the session's work\n")
+        self.assertEqual(chainlib.uncommitted(self.root, rec), ["notes.md"])
+        self.assertEqual(chainlib.uncommitted(self.root, {"untracked_at_launch": ["notes.md"]}), [])   # a record from before
+
+    def test_resume_from_another_branch_is_refused(self):
+        cli(self.root, "stop")
+        git(self.root, "checkout", "-q", "main")
+        r = cli(self.root, "resume")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(f"HEAD is on main, and the chain works on chain/{self.cid}", r.stdout)
+        self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
+
+    def test_two_starts_in_one_second_get_two_ids(self):
+        with mock.patch.object(chainlib.dt, "datetime") as fake, mock.patch.object(chainlib.time, "sleep") as slept:
+            fake.now.return_value.strftime.side_effect = [self.cid, "20991231-235959"]
+            self.assertEqual(chainlib.new_id(self.root), "20991231-235959")
+        self.assertEqual(slept.call_count, 1)
+
+
+class Package(unittest.TestCase):
+    def test_the_size_gate_skips_exactly_the_installer_files(self):
+        pkg = charter_pkg()
+        self.assertEqual(checks.PACKAGE_FILES, {o for o in pkg.OWNED if not o.startswith(".charter/")})
+        cfg = lib.config_from({})
+        self.assertIsNone(checks.size_budget_for(REPO, cfg, "charter/templates/unit.md"))
+        self.assertIsNotNone(checks.size_budget_for(REPO, cfg, "charter/templates/project.md"))
+        self.assertIsNotNone(checks.size_budget_for(REPO, cfg, ".claude/skills/charter-local/SKILL.md"))
+
+    def test_an_upgrade_keeps_a_project_hook_that_shares_a_group_with_charter(self):
+        pkg = charter_pkg()
+        mine = {"type": "command", "command": "echo mine"}
+        old = {"type": "command", "command": "python3 -B ${CLAUDE_PROJECT_DIR}/.charter/hooks/stop_gate.py"}
+        existing = {"hooks": {"Stop": [{"hooks": [old, mine]}, {"matcher": "x", "hooks": [{"command": "echo other"}]}]}}
+        fragment = {"hooks": {"Stop": [{"hooks": [old]}]}}
+        merged = pkg.merge_settings(existing, fragment, REPO)["hooks"]["Stop"]
+        self.assertEqual(merged, [{"hooks": [mine]}, {"matcher": "x", "hooks": [{"command": "echo other"}]}, {"hooks": [old]}])
+        self.assertEqual(pkg.strip_settings({"hooks": {"Stop": merged}})["hooks"]["Stop"],
+                         [{"hooks": [mine]}, {"matcher": "x", "hooks": [{"command": "echo other"}]}])
+
+    def test_notify_settings_are_known_config(self):
+        cfg = lib.config_from({"chain": {"notify": "off", "notify_command": "echo {text}"}})
+        self.assertEqual((cfg["chain"]["notify"], cfg[lib.PROBLEMS]), ("off", []))
+        self.assertEqual(lib.config_from({})["chain"]["notify"], "auto")
+
+
+if __name__ == "__main__":
+    unittest.main()

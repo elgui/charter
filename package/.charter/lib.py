@@ -56,9 +56,12 @@ DEFAULT_CONFIG = {
     # the continuous chain (chain.py): the sessions' model and effort, the window the budget is a share of
     # (0: 1M for a [1m] model, else 200k), the hand-over line and the hard cap in percent, the launcher;
     # the review at the end of each group (chain_groups.py): auto (codex if on PATH) | codex | off | a command
-    # template with {base} and {out}, Codex's reasoning effort, and how long a review may run
+    # template with {base} and {out}, Codex's reasoning effort, and how long a review may run; how the owner is told
+    # that the chain waits on them, halted or ended: auto (a macOS notification) | off, and a command template with
+    # {chain}, {project}, {title} and {text}
     "chain": {"model": "opus[1m]", "effort": "high", "window_tokens": 0, "wrap_pct": 25, "cap_pct": 30,
-              "max_sessions": 12, "launcher": "auto", "review": "auto", "review_effort": "high", "review_timeout_s": 1800},
+              "max_sessions": 12, "launcher": "auto", "review": "auto", "review_effort": "high", "review_timeout_s": 1800,
+              "notify": "auto", "notify_command": ""},
     # estimates for the ledger, USD per million tokens; keys are model-id prefixes (the longest match
     # wins), "default" for the rest; cache_write is the 5-minute TTL, cache_write_1h the 1-hour one
     "prices_usd_per_mtok": {
@@ -120,7 +123,7 @@ CONFIG_SCHEMA = {
     "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
     "review": {"required": bool},
     "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str,
-              "review": str, "review_effort": str, "review_timeout_s": int},
+              "review": str, "review_effort": str, "review_timeout_s": int, "notify": str, "notify_command": str},
     "prices_usd_per_mtok": dict,
 }
 

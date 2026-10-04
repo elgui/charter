@@ -10,6 +10,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PKG = REPO / "package"
 INSTALLER = REPO / "bin" / "charter-pkg"
+# a chain under test must not raise macOS notifications; tests of notify() set their own value
+os.environ["CHARTER_NOTIFY"] = "off"
 
 SCOPE = """# Scope
 

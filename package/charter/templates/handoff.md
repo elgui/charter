@@ -1,9 +1,9 @@
 ---
 chain: <chain id>
 session: <n>
-# status: continue | halt | complete
+# status: continue | wait | halt | complete
 status: continue
-# next_unit: the tasket the next session works on; `none` when the chain halts or is complete
+# next_unit: the tasket the next session works on (after the owner's acts, with wait); `none` when the chain halts or is complete
 next_unit: <tasket id>
 ---
 
@@ -31,6 +31,10 @@ next_unit: <tasket id>
 
 <Only when your briefing carries a group's review: one line per finding, starting with its id, `R1 fixed <commit>` or `R2 dismissed <path:line> <why>`. With `status: halt`, answer what you could; the session after the owner's answer gets the whole review again.>
 
+## Wait
+
+<Only with `status: wait`: one line per act of the owner's, what it is, how it is done, and the unit line it closes, e.g. `- turn on FileVault (System Settings > Privacy & Security) — closes 20261004-0010 AC-8`.>
+
 ## Halt
 
-<Only with `status: halt`: what the owner must decide or do before the chain can go on.>
+<Only with `status: halt`: what went wrong, and what the owner must judge before the chain can go on.>
