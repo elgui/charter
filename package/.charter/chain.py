@@ -27,6 +27,7 @@ import argparse
 import contextlib
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 import re
@@ -59,6 +60,10 @@ SESSION_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSIO
                "CLAUDE_PID", "CLAUDE_EFFORT", "CHARTER_OWNER", "CHARTER_UNIT")
 # a Bash command that performs an owner act: one of the owner's verbs, or the owner switch set by hand
 OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|rail)\b|\bCHARTER_OWNER\b")
+# the owner resumes a paused chain by typing this command; the prompt hook performs it (`owner_prompt`), and nothing else does
+RESUME_CMD = "resume-chain"
+RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
+RESUME_HOW = "type `/resume-chain [AC-n ...] [note]` in a Claude Code session of this project"
 CHARTER_CLI_RE = re.compile(r"^(?:python3?\s+(?:-B\s+)?)?(?:\./)?\.charter/bin/charter(?:\s|$)")
 
 
@@ -468,6 +473,16 @@ def briefing(root: Path, chain: dict, n: int, prev: tuple[str, str] | None = Non
          f"hard cap {chain['cap_pct']}% ({w * chain['cap_pct'] // 100:,} tokens). The hooks report your usage as you go.", ""]
     if note.strip():
         L += ["## Owner's note on resuming (verbatim)", "", note.strip(), ""]
+    last = chain.get("last_resume") or {}
+    if last.get("next") == n and last.get("closed"):
+        L += ["## Lines the owner closed on resuming", "",
+              f"The owner typed `/{RESUME_CMD}`, which closed {', '.join(last['closed'])} in commit {str(last.get('commit'))[:7]}, as the owner. "
+              "Only the owner closes an `— owner:` line; one still open stays open, and you wait on it again if the road needs it.", ""]
+    if last.get("next") == n and last.get("outside"):
+        L += ["## Owner's lines closed outside the owner's resume", "",
+              "These `— owner:` lines were closed since the wait by a commit other than the owner's `/resume-chain`: "
+              + "; ".join(last["outside"]) + ". Only the owner may close one. Reopen each line the owner's note above does not say is "
+              "theirs (`- [ ]`, with a dated `## Log` line saying why), and wait on it again.", ""]
     if prev is None:
         L += ["## Start", "", f"You are the first session. Start with unit `{chain['unit']}`: "
               f"`python3 .charter/bin/charter unit start {chain['unit']}`. Under `## Verified` in your handoff, write `first session`.", ""]
@@ -623,7 +638,8 @@ def halt(root: Path, chain: dict, reason: str, state: str = "halted") -> None:
     save(root, chain)
     event(root, chain["id"], "chain", "wait" if state == "waiting" else state, reason)   # `waiting` is a tab at a menu
     if state != "stopped":   # a waiting chain's reason already says it waits on the owner
-        notify(root, chain, reason if state == "waiting" else {"halted": "halted", "complete": "is complete"}.get(state, state) + f": {reason}")
+        notify(root, chain, f"{reason}. Then type /{RESUME_CMD} in Claude Code" if state == "waiting" else
+               {"halted": "halted", "complete": "is complete"}.get(state, state) + f": {reason}")
 
 
 NOTIFY_ENV = "CHARTER_NOTIFY"   # `off` silences every notification (the tests set it)
@@ -697,7 +713,7 @@ def started_past_line(chain: dict, rec: dict) -> str:
         return ""
     return (f"session {rec.get('n')} was at {s:.0f}% of the window ({int(rec.get('start_tokens') or 0):,} tokens) at its first tool, "
             f"past the {chain['wrap_pct']}% hand-over line before any work, and every session starts the same way. "
-            f"The owner resumes with a larger budget (`charter chain resume --window <tokens>`, or `--wrap <pct> --cap <pct>`), "
+            f"The owner resumes with a larger budget (`/resume-chain --window <tokens>`, or `--wrap <pct> --cap <pct>`), "
             "or trims what every session loads at start-up")
 
 
@@ -721,8 +737,8 @@ def live_session(root: Path) -> tuple[dict, int] | None:
 
 def owner_items(root: Path) -> list[dict]:
     """What the last chain of this repository waits on the owner for, as fields of an owner-queue item
-    (`queue` in owner.py): a chain that waits or halted, and a session whose tab needs a look. The caller adds
-    the command that performs it."""
+    (`queue` in owner.py): a chain that waits or halted, and a session whose tab needs a look. No item carries a
+    command that resumes: the owner types `/resume-chain`, and `ask` says so with the lines to close."""
     ch = load(root)
     if not ch:
         return []
@@ -736,14 +752,16 @@ def owner_items(root: Path) -> list[dict]:
                 [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()])
         title = (f"chain {cid} waits on you: {len(asks)} act(s) from session {n}" if ch["state"] == "waiting" else
                  f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200])
+        lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)] if ch["state"] == "waiting" else []
+        how = f"then type in a Claude Code session here: /{RESUME_CMD} " + "".join(f"{x} " for x in lines) + "<your note>"
         return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
-                 "ask": "\n".join(asks[:12]) or None, "resume": True}]
+                 "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
         return []
     rec = link(root, cid, n)
     if rec.get("stopped_unclosed"):
         return [{"key": f"chain:{cid}:s{n:02d}", "kind": "do", "file": where, "line": 1, "resume": True,
-                 "title": f"chain {cid}: session {n} ended its turn without handing over; look at its tab, then resume or stop the chain"}]
+                 "title": f"chain {cid}: session {n} ended its turn without handing over; look at its tab, then type /{RESUME_CMD} or stop the chain"}]
     if not rec.get("session_id") and (rec.get("launch") or {}).get("ready") is False:
         return [{"key": f"chain:{cid}:s{n:02d}", "kind": "do", "file": where, "line": 1, "resume": False,
                  "title": f"chain {cid}: session {n}'s tab waits at a menu ({(rec.get('launch') or {}).get('note', '')[:100]}); answer it in that tab"}]
@@ -776,7 +794,7 @@ def join(root: Path, chain: dict, n: int, sid: str, transcript: str) -> str:
         return f"charter chain {chain['id']} has no session {n}. Do no work for it; end your turn."
     if rules_sha(root) != chain.get("rules_sha"):
         halt(root, chain, f"{RULES} changed since the chain started; a chain runs under one version of its rules. "
-             "The owner resumes it with `charter chain resume`, which adopts the new rules")
+             "The owner resumes it with `/resume-chain`, which adopts the new rules")
         return f"charter chain {chain['id']} is halted: its rules changed. Do no work for it; end your turn."
     closed = (f"Session {n} of charter chain {chain['id']} is already closed; session {chain.get('sessions')} has the chain now. "
               "Do no work for it; end your turn.")
@@ -894,8 +912,8 @@ def on_stop(root: Path, data: dict) -> dict | None:
             rec["stop_blocks"] = blocks + 1
     if blocks >= 2:
         event(root, chain["id"], f"s{n:02d}", "stalled", f"session {n} ended its turn three times without `chain next`; "
-              "the chain waits: the owner looks at the tab, then `charter chain resume` or `charter chain stop`")
-        notify(root, chain, f"session {n} stalled without handing over: look at its tab, then `charter chain resume` or `charter chain stop`")
+              "the chain waits: the owner looks at the tab, then types `/resume-chain`, or runs `charter chain stop`")
+        notify(root, chain, f"session {n} stalled without handing over: look at its tab, then /resume-chain or `charter chain stop`")
         return None
     p = pct(chain, context_tokens(data.get("transcript_path") or rec.get("transcript")))
     hp = link_dir(root, chain["id"], n) / "handoff.md"
@@ -963,7 +981,7 @@ def cmd_start(root: Path, a) -> int:
     if cur.get("state") == "running":
         problems.append(f"chain {cur['id']} is running; `charter chain stop` first, or follow it with `charter chain watch`")
     elif cur.get("state") == "waiting":
-        problems.append(f"chain {cur['id']} waits on the owner ({cur.get('reason', '')}); `charter chain resume` once that is done, "
+        problems.append(f"chain {cur['id']} waits on the owner ({cur.get('reason', '')}); `/resume-chain` once that is done, "
                         "or `charter chain stop` to end it")
     dirty = lib.git(root, "status", "--porcelain", "--untracked-files=no").stdout.splitlines()
     if dirty:
@@ -1136,13 +1154,13 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
     elif (chain_dir(root, chain["id"]) / "stop").exists():
         halt(root, chain, "stopped by the owner", state="stopped")
     elif n >= int(chain["max_sessions"]):
-        halt(root, chain, f"reached max_sessions ({chain['max_sessions']}); the owner resumes with `charter chain resume`")
+        halt(root, chain, f"reached max_sessions ({chain['max_sessions']}); the owner resumes with `/resume-chain`")
     elif started_past_line(chain, link(root, chain["id"], n)):
         halt(root, chain, started_past_line(chain, link(root, chain["id"], n)))
     elif stalled(root, chain, n):
         halt(root, chain, f"sessions {n - 1} and {n} changed nothing outside {lib.TASKETS_DIR}/ and checked no criterion")
     elif rules_sha(root) != chain.get("rules_sha"):
-        halt(root, chain, f"{RULES} changed while the chain ran; the owner resumes with `charter chain resume`")
+        halt(root, chain, f"{RULES} changed while the chain ran; the owner resumes with `/resume-chain`")
     else:
         groups.advance(root, chain, n, status, next_unit)
     chain = load(root, chain["id"])
@@ -1150,8 +1168,8 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
     then = (f", the review of group {groups.label(g['key'])} is running and the next session starts when it ends"
             if g and g["state"] == "reviewing" else f", session {n + 1} launched")
     if chain["state"] == "waiting":
-        print(f"session {n} closed (wait); chain {chain['id']} waits on the owner, who is told, and resumes it with "
-              "`charter chain resume`. End your turn now.")
+        print(f"session {n} closed (wait); chain {chain['id']} waits on the owner, who is told, closes the owner's lines and "
+              "resumes it by typing `/resume-chain`. End your turn now.")
         return 0
     print(f"session {n} closed ({status}); chain {chain['id']} is {chain['state']}" +
           (f": {chain['reason']}" if chain.get("reason") else then) + ". End your turn now.")
@@ -1249,15 +1267,19 @@ def _stop(root: Path, cid: str, a) -> int:
 
 
 def cmd_resume(root: Path, a) -> int:
-    cid = load(root, a.id).get("id")
-    if not cid:
-        print("no chain here")
-        return 1
-    with chain_lock(root, cid):   # two resumes, or a resume and a stop, would each act on a stale state (cross-review, 2026-10-04)
-        return _resume(root, cid, a)
+    """Refused, whoever runs it (0.4.9). In the wait trial an agent session ticked the owner's line, committed it and
+    ran this command with a note in the owner's name, and the chain went on; nothing told its act from the owner's
+    (docs/trials/2026-10-04-owner-gate.md). The owner types `/resume-chain`, which the prompt hook performs."""
+    print(f"charter chain resume: refused. Resuming a chain is the owner's act: {RESUME_HOW}. The charter hook performs it "
+          "from the owner's own prompt, which no command of an agent's produces. `/resume-chain AC-2 <note>` closes the "
+          "`— owner:` line AC-2 as the owner and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
+          "`--more` and `--skip-review` work there as they did here. An agent never resumes a chain: it tells the owner what to type.")
+    return 1
 
 
-def _resume(root: Path, cid: str, a) -> int:
+def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None = None, by: str = "", event_name: str = "") -> int:
+    """Resume a paused chain under its lock; only `owner_resume` calls it. `refs` are the owner's lines to close first,
+    in one commit made as the owner; `by` is the Claude Code session the owner typed `/resume-chain` in."""
     chain = load(root, cid)
     n = int(chain.get("sessions") or 0)
     rec = link(root, chain["id"], n)
@@ -1272,31 +1294,44 @@ def _resume(root: Path, cid: str, a) -> int:
     if branch(root) != chain.get("branch"):
         # the next session works where it is launched: from another branch or worktree it would commit there
         # before `chain next` noticed (cross-review, 2026-10-04)
-        print(f"charter chain resume: not resumed: HEAD is on {branch(root)}, and the chain works on {chain.get('branch')}. "
+        print(f"not resumed: HEAD is on {branch(root)}, and the chain works on {chain.get('branch')}. "
               f"Resume from the checkout of {chain.get('branch')} ({chain.get('root')})")
         return 1
     end = rec.get("end_head") or ""
     if end and lib.git(root, "merge-base", "--is-ancestor", end, "HEAD").returncode != 0:
-        print(f"charter chain resume: not resumed: {chain.get('branch')} no longer holds {end[:7]}, session {n}'s last commit; "
+        print(f"not resumed: {chain.get('branch')} no longer holds {end[:7]}, session {n}'s last commit; "
               "the next session would build on a history without the chain's work. Put the branch back, or stop the chain")
         return 1
-    dirty = [d[3:] for d in lib.git(root, "status", "--porcelain", "--untracked-files=no").stdout.splitlines()]
+    writes, closed, problem = owner_ticks(root, refs or [])
+    if problem:
+        print(f"not resumed, and no line closed: {problem}")
+        return 1
+    dirty = [d[3:] for d in lib.git(root, "status", "--porcelain", "--untracked-files=no").stdout.splitlines() if d[3:] not in writes]
     if dirty and chain.get("state") == "waiting":
-        # the chain waited at a commit, so this is what the owner changed meanwhile (a ticked line, a setting): committed
+        # the chain waited at a commit, so this is what the owner changed meanwhile (a setting, a file): committed
         # as theirs, not taken up by a session. After a halt or a stall, a session's named leftovers go on as before
-        print(f"charter chain resume: not resumed: {len(dirty)} uncommitted change(s): {', '.join(dirty[:6])}. The next session "
-              "starts from a commit, so commit them first, for instance:\n  git commit -m \"owner: done during the chain's wait\" -- "
-              + " ".join(shlex.quote(d) for d in dirty) + "\nthen run `charter chain resume` again")
+        print(f"not resumed: {len(dirty)} uncommitted change(s): {', '.join(dirty[:6])}. The next session starts from a commit, "
+              "so commit them first from your own terminal, for instance:\n  git commit -m \"owner: done during the chain's wait\" -- "
+              + " ".join(shlex.quote(d) for d in dirty) + "\nthen type `/resume-chain` again. An `— owner:` line is closed by naming it: `/resume-chain AC-2 <note>`")
         return 1
     budget = {k: v for k, v in (("window", a.window), ("wrap_pct", a.wrap), ("cap_pct", a.cap)) if v is not None}
     new = dict(chain, **budget)
     if budget and not (int(new["window"]) > 0 and 0 < int(new["wrap_pct"]) < int(new["cap_pct"]) <= 100):
-        print(f"charter chain resume: not resumed: the budget needs a window above 0 and 0 < wrap ({new['wrap_pct']}) "
-              f"< cap ({new['cap_pct']}) <= 100")
+        print(f"not resumed: the budget needs a window above 0 and 0 < wrap ({new['wrap_pct']}) < cap ({new['cap_pct']}) <= 100")
         return 1
-    note = (Path(a.note_file).read_text(encoding="utf-8") if a.note_file else a.note or "").strip()
+    note = (a.note or "").strip()
+    outside = closed_outside(root, end)
     if not rec.get("closed_at"):
-        close_link(root, chain, n, "abnormal", abnormal=True)
+        close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
+    commit = ""
+    if writes:
+        import owner as ownerq
+        try:
+            ownerq._commit(root, writes, f"owner: closes {', '.join(closed)} (/resume-chain, chain {chain['id']})", None, False)
+        except ownerq.Refused as e:
+            print(f"not resumed, and no line closed: {e}")
+            return 1
+        commit = head(root)
     sha = rules_sha(root)
     if sha != chain.get("rules_sha"):
         event(root, chain["id"], "chain", "rules", f"resumed under new rules sha256 {sha[:12]} (was {chain.get('rules_sha', '')[:12]})")
@@ -1307,9 +1342,20 @@ def _resume(root: Path, cid: str, a) -> int:
         chain.update(budget)
     (chain_dir(root, chain["id"]) / "stop").unlink(missing_ok=True)
     # at least one more session, and --more beyond that
-    chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0))
+    chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0),
+                 last_resume={"at": now(), "via": f"/{RESUME_CMD}", "event": event_name, "session": by, "closed": closed,
+                              "commit": commit, "outside": outside, "next": n + 1})
     save(root, chain)
-    event(root, chain["id"], "chain", "resumed", note[:200] or "by the owner")
+    event(root, chain["id"], "chain", "resumed", f"by the owner's /{RESUME_CMD}" + (f" in session {by[:8]}" if by else "")
+          + (f"; closed {', '.join(closed)} in {commit[:7]}" if closed else "") + (f"; note: {note[:200]}" if note else ""))
+    if closed:
+        print(f"closed {', '.join(closed)} as the owner in {commit[:7]}")
+    if outside:
+        print(f"closed since the wait by a commit that was not your /{RESUME_CMD}: {'; '.join(outside)}. "
+              "The next session reopens each one your note does not say is yours")
+    still = open_waited_lines(root, chain, n)
+    if still:
+        print(f"still open, and no chain session may close them: {', '.join(still)} (`/resume-chain <AC-n>` once done)")
     by_groups = groups.on_resume(root, chain, n, note, a.skip_review)
     if by_groups is not None:
         chain = load(root, chain["id"])
@@ -1321,6 +1367,179 @@ def _resume(root: Path, cid: str, a) -> int:
     ok = start_link(root, chain, n + 1, prev_material(root, chain, n), note)
     print(f"chain {chain['id']} resumed: session {n + 1} " + ("launched" if ok else "NOT launched: " + load(root, chain["id"]).get("reason", "")))
     return 0 if ok else 1
+
+
+# ---------------------------------------------------------------- the owner's resume
+
+REF_RE = re.compile(r"(?:([\w.-]+):)?(AC-\d+)[,;.]?", re.I)
+INT_FLAGS = ("--window", "--wrap", "--cap", "--more")
+
+
+def parse_resume(text: str) -> tuple[dict, list[tuple[str | None, str]], str, str]:
+    """(options, line refs, note, problem) from what follows `/resume-chain`: a chain id first if any, the flags, the
+    owner's lines to close (`AC-2`, `w1:AC-2`), then the note, kept verbatim. A note that starts with any other word
+    closes nothing: `/resume-chain all good` is a note."""
+    opts = {"id": None, "window": None, "wrap": None, "cap": None, "more": None, "skip_review": False}
+    refs: list[tuple[str | None, str]] = []
+    rest = text
+    while True:
+        s = rest.lstrip()
+        m = re.match(r"(\S+)(?:\s+|\Z)", s)
+        if not m:
+            return opts, refs, "", ""
+        tok, after = m.group(1), s[m.end():]
+        if tok == "--":
+            return opts, refs, after.strip(), ""
+        if tok == "--skip-review":
+            opts["skip_review"] = True
+        elif tok.split("=", 1)[0] in INT_FLAGS:
+            name, _, val = tok.partition("=")
+            if not val:
+                m2 = re.match(r"(\S+)(?:\s+|\Z)", after)
+                val, after = (m2.group(1), after[m2.end():]) if m2 else ("", "")
+            if not val.isdigit():
+                return opts, refs, "", f"{name} takes a whole number, not {val or 'nothing'!r}"
+            opts[name[2:]] = int(val)
+        elif opts["id"] is None and not refs and re.fullmatch(r"\d{8}-\d{6}", tok):
+            opts["id"] = tok
+        elif REF_RE.fullmatch(tok):
+            r = REF_RE.fullmatch(tok)
+            refs.append((r.group(1), r.group(2).upper()))
+        else:
+            return opts, refs, s.strip(), ""
+        rest = after
+
+
+def _open_owner_units(root: Path) -> list[tuple[str, str, str]]:
+    """(unit id, path, text at HEAD) of the open units: the owner's lines are closed against the committed text, so
+    a box the owner ticked by hand, uncommitted, is still found."""
+    cfg = lib.load_config(root)
+    finished = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
+    out = []
+    for uid, u in lib.taskets(root).items():
+        if str(u.get("status", "")) in finished:
+            continue
+        r = lib.git(root, "show", f"HEAD:{u['_path']}")
+        out.append((uid, u["_path"], r.stdout if r.returncode == 0 else ""))
+    return out
+
+
+def owner_ticks(root: Path, refs: list[tuple[str | None, str]]) -> tuple[dict[str, str], list[str], str]:
+    """({path: text with the lines ticked}, ["w1 AC-2", ...], problem) for the owner's lines named by refs. A line is
+    found among the open `— owner:` lines of open units, by its AC id, prefixed by its unit when two units have it."""
+    if not refs:
+        return {}, [], ""
+    units = _open_owner_units(root)
+    opened = [(uid, rp, k) for uid, rp, text in units for k, (checked, marked) in checks._acceptance_boxes(text).items()
+              if marked and not checked]
+    writes: dict[str, str] = {}
+    closed: list[str] = []
+    for unit, ac in refs:
+        found = [x for x in opened if x[2] == ac and (unit is None or x[0] == unit)]
+        if not found:
+            return {}, [], (f"{unit + ':' if unit else ''}{ac} is not an open `— owner:` line of an open unit "
+                            f"(open ones: {', '.join(f'{u}:{k}' for u, _, k in opened[:8]) or 'none'})")
+        if len(found) > 1:
+            return {}, [], f"{ac} is an owner line of {len(found)} units; name one: " + ", ".join(f"{u}:{ac}" for u, _, _ in found)
+        uid, rp, _ = found[0]
+        base = writes.get(rp) or next(t for u, p, t in units if p == rp)
+        writes[rp] = re.sub(rf"(?m)^(\s*-\s*)\[ \](\s*{re.escape(ac)}\b)", r"\1[x]\2", base, count=1)
+        closed.append(f"{uid} {ac}")
+    for rp, new in writes.items():
+        at_head = next(t for u, p, t in units if p == rp)
+        try:
+            cur = (root / rp).read_text(encoding="utf-8")
+        except OSError:
+            cur = ""
+        if cur not in (at_head, new):
+            return {}, [], f"{rp} has uncommitted changes besides the owner's ticks; commit or undo them first"
+    return writes, closed, ""
+
+
+def closed_outside(root: Path, since: str) -> list[str]:
+    """The owner's lines closed by a commit after `since` (the commit the chain paused at), as "w1 AC-2 in <sha>
+    (<subject>, <author>)": the owner from their own terminal, or an agent past the gates (docs/gates.md § What a
+    gate cannot see). The resume names them and the next session reopens those the owner's note does not claim."""
+    if not since:
+        return []
+    out = []
+    for line in lib.git(root, "log", "--format=%H%x00%s%x00%an", f"{since}..HEAD", "--", lib.TASKETS_DIR).stdout.splitlines():
+        sha, subject, author = (line.split("\0") + ["", ""])[:3]
+        for rp in lib.git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", sha, "--", lib.TASKETS_DIR).stdout.split():
+            if not rp.endswith(".md"):
+                continue
+            old, new = lib.git(root, "show", f"{sha}^:{rp}"), lib.git(root, "show", f"{sha}:{rp}")
+            for k in checks.owner_line_changes(old.stdout if old.returncode == 0 else "", new.stdout if new.returncode == 0 else ""):
+                out.append(f"{Path(rp).stem} {k} in {sha[:7]} ({subject[:60]!r}, {author})")
+    return out
+
+
+def open_waited_lines(root: Path, chain: dict, n: int) -> list[str]:
+    """The owner's lines still open in the units the last session's `## Wait` names."""
+    hp = link_dir(root, chain["id"], n) / "handoff.md"
+    if not hp.exists():
+        return []
+    acts = " ".join(wait_acts(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2]))
+    out = []
+    for uid, u in lib.taskets(root).items():
+        if not re.search(rf"(?<![\w-]){re.escape(uid)}(?![\w-])", acts):
+            continue
+        text = (root / u["_path"]).read_text(encoding="utf-8", errors="replace")
+        out += [f"{uid} {k}" for k, (checked, marked) in checks._acceptance_boxes(text).items() if marked and not checked]
+    return out
+
+
+def typed_by_owner(root: Path, sid: str) -> str:
+    """Why a `/resume-chain` prompt in this session cannot be the owner's own typing; '' when it can. A headless
+    session (`claude -p`, the SDK) takes its prompt from a program: Claude Code sets CLAUDE_CODE_ENTRYPOINT to
+    `sdk-cli` and CLAUDE_CODE_SESSION_ATTENDED to 0 there, over what the caller passed (observed on 2.1.289; both
+    are undocumented, docs/gates.md § What a gate cannot see). A chain session's prompts come from the chain."""
+    ep, att = os.environ.get("CLAUDE_CODE_ENTRYPOINT", ""), os.environ.get("CLAUDE_CODE_SESSION_ATTENDED", "")
+    if ep.startswith("sdk") or att == "0":
+        return (f"this session is headless (CLAUDE_CODE_ENTRYPOINT={ep or '-'}, CLAUDE_CODE_SESSION_ATTENDED={att or '-'}): "
+                "a program wrote this prompt, not the owner. Type it in an interactive Claude Code session")
+    j = joined(root, sid) if sid else None
+    if j:
+        return (f"this is session {j[1]} of chain {j[0]['id']}, whose prompts come from the chain. "
+                "Type it in a Claude Code session of your own")
+    return ""
+
+
+def owner_resume(root: Path, sid: str, args: str, event_name: str = "") -> tuple[bool, str]:
+    """The owner's `/resume-chain <args>`, from the prompt hook. (resumed, what to show the owner)."""
+    why = typed_by_owner(root, sid)
+    if why:
+        return False, why
+    opts, refs, note, problem = parse_resume(args)
+    if problem:
+        return False, problem
+    cid = load(root, opts["id"]).get("id")
+    if not cid:
+        return False, "no chain here" + (f" with id {opts['id']}" if opts["id"] else "")
+    a = argparse.Namespace(window=opts["window"], wrap=opts["wrap"], cap=opts["cap"], more=opts["more"],
+                           skip_review=opts["skip_review"], note=note)
+    out = io.StringIO()
+    # two resumes, or a resume and a stop, would each act on a stale state (cross-review, 2026-10-04)
+    with chain_lock(root, cid), contextlib.redirect_stdout(out):
+        code = _resume(root, cid, a, refs, sid, event_name)
+    return code == 0, out.getvalue().strip()
+
+
+def owner_prompt(root: Path, data: dict) -> dict | None:
+    """UserPromptSubmit and UserPromptExpansion: the owner typed `/resume-chain`. The hook resumes the chain itself and
+    blocks the prompt, so the model never reads it and never acts on it; the owner reads the outcome. Claude Code runs
+    no prompt hook for a skill the model invokes, and the command sets `disable-model-invocation`."""
+    if data.get("hook_event_name") == "UserPromptExpansion":
+        if (data.get("command_name") or "").lstrip("/") != RESUME_CMD:
+            return None
+        args = str(data.get("command_args") or "")
+    else:
+        m = RESUME_RE.match(data.get("prompt") or "")
+        if not m:
+            return None
+        args = m.group(1)
+    ok, text = owner_resume(root, data.get("session_id") or "", args, data.get("hook_event_name") or "")
+    return {"block": f"charter /{RESUME_CMD}: {'done' if ok else 'refused'}\n{text}"}
 
 
 def main(argv: list[str], root: Path) -> int:

@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 from helpers import PKG, cleanup, git, make_project
-from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, transcript
+from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, resume, transcript
 from test_groups_0_4_8 import CODEX_SAMPLE, GroupCase
 from test_review_regressions import commit_all
 
@@ -53,13 +53,13 @@ class StartUp(ChainCase):
         c = chainlib.load(self.root)
         self.assertEqual(c["state"], "halted")
         self.assertIn("session 1 was at 33% of the window (33,000 tokens) at its first tool, past the 25% hand-over line", c["reason"])
-        self.assertIn("charter chain resume --window", c["reason"])
+        self.assertIn("/resume-chain --window", c["reason"])
         self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
-        r = cli(self.root, "resume", "--wrap", "50", "--cap", "45")
+        r = resume(self.root, "--wrap 50 --cap 45")
         self.assertEqual(r.returncode, 1)
         self.assertIn("0 < wrap (50) < cap (45) <= 100", r.stdout)
         self.assertEqual(chainlib.load(self.root)["state"], "halted")   # nothing recorded
-        r = cli(self.root, "resume", "--window", "200000", "--wrap", "40", "--cap", "45")
+        r = resume(self.root, "--window 200000 --wrap 40 --cap 45")
         self.assertEqual(r.returncode, 0, r.stdout)
         c = chainlib.load(self.root)
         self.assertEqual((c["state"], c["window"], c["wrap_pct"], c["cap_pct"]), ("running", 200_000, 40, 45))
@@ -186,7 +186,7 @@ class GroupFindings(GroupCase):
         commit_all(self.root, "a later change breaks u1")
         self.assertEqual(self.hand_over(1, "s1", status="complete", next_unit="none", done="- u1 closed").returncode, 0)
         self.assertIn("probes of a unit it closed fail now", self.state()["reason"])
-        r = cli(self.root, "resume", "--note", "repair u1")
+        r = resume(self.root, "repair u1")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("repair u1", self.launched(2))
         self.assertEqual((self.calls(), self.state()["state"]), ([], "running"))

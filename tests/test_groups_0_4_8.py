@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 
 from helpers import PKG, cleanup, git, make_project
-from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, handoff
+from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, handoff, resume
 from test_review_regressions import commit_all
 
 sys.path.insert(0, str(PKG / ".charter"))
@@ -351,7 +351,7 @@ class AfterTheCrossReview(GroupCase):
         hp.write_text(handoff(self.cid, 2, verified=VERIFIED, status="halt", next_unit="none", halt="- R2: is the constant the client's?"))
         self.assertEqual(cli(self.root, "next", sid="s2").returncode, 0)
         self.assertEqual(self.state()["state"], "halted")
-        self.assertEqual(cli(self.root, "resume", "--note", "the constant is ours").returncode, 0)
+        self.assertEqual(resume(self.root, "the constant is ours").returncode, 0)
         b = self.launched(3)
         self.assertIn("## Review of group `r1`", b)
         self.assertEqual(self.group()["fix_session"], 3)
@@ -423,7 +423,7 @@ class AfterTheCrossReview(GroupCase):
         cli(self.root, "stop")
         self.wait(lambda: self.group()["state"] == "cleared", "the review is recorded")
         self.assertEqual(self.state()["state"], "stopped")
-        r = cli(self.root, "resume")
+        r = resume(self.root)
         self.assertEqual((r.returncode, self.state()["state"]), (0, "complete"), r.stdout)
 
     def test_skipping_the_last_groups_review_completes_the_chain_and_says_so(self):
@@ -433,7 +433,7 @@ class AfterTheCrossReview(GroupCase):
         self.work()
         self.hand_over(1, "s1", status="complete", next_unit="none")
         self.wait(lambda: self.state()["state"] == "halted", "the chain halts")
-        r = cli(self.root, "resume", "--skip-review")
+        r = resume(self.root, "--skip-review")
         self.assertEqual((r.returncode, self.state()["state"]), (0, "complete"), r.stdout)
 
     def test_status_names_a_review_whose_runner_is_gone(self):
@@ -441,7 +441,7 @@ class AfterTheCrossReview(GroupCase):
         ch = self.state()
         ch["groups"][0].update(state="reviewing", end=ch["groups"][0]["start"], last_session=1, review_started="2026-01-01T00:00:00")
         chainlib.save(self.root, ch)
-        self.assertIn("review interrupted: `charter chain resume` runs it again", cli(self.root, "status").stdout)
+        self.assertIn("review interrupted: `/resume-chain` runs it again", cli(self.root, "status").stdout)
 
 
 class EndAndFailure(GroupCase):
@@ -482,7 +482,7 @@ class EndAndFailure(GroupCase):
         self.assertIn("the review of group `r1` could not run: the reviewer exited 3", c["reason"])
         self.assertIn("not logged in", c["reason"])
         self.answer("No issues found.")
-        r = cli(self.root, "resume", "--note", "codex is logged in again")
+        r = resume(self.root, "codex is logged in again")
         self.assertEqual(r.returncode, 0, r.stdout)
         b = self.launched(2)
         self.assertIn("codex is logged in again", b)
@@ -492,7 +492,7 @@ class EndAndFailure(GroupCase):
         self.answer("", code=3)
         self.end_group_one()
         self.wait(lambda: self.state()["state"] != "running", "the chain halts")
-        r = cli(self.root, "resume", "--skip-review", "--note", "review it by hand later")
+        r = resume(self.root, "--skip-review review it by hand later")
         self.assertEqual(r.returncode, 0, r.stdout)
         b = self.launched(2)
         self.assertIn("the owner skipped its review", b)
@@ -503,7 +503,7 @@ class EndAndFailure(GroupCase):
     def test_a_stop_during_the_review_keeps_the_findings_and_resume_launches_the_answering_session(self):
         (self.ctl / "sleep").write_text("2")
         self.end_group_one(CODEX_SAMPLE)
-        r = cli(self.root, "resume")
+        r = resume(self.root)
         self.assertEqual(r.returncode, 1)
         self.assertIn("the review of group `r1` is still running", r.stdout)
         cli(self.root, "stop")
@@ -511,7 +511,7 @@ class EndAndFailure(GroupCase):
         self.wait(lambda: self.group()["state"] == "fixing", "the review is recorded")
         time.sleep(0.5)
         self.assertFalse((self.out / f"chain {self.cid} s02.md").exists())
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         self.assertIn("## Review of group `r1`", self.launched(2))
 
     def test_a_chain_stopped_at_a_boundary_resumes_with_the_review(self):
@@ -521,7 +521,7 @@ class EndAndFailure(GroupCase):
         cli(self.root, "stop")
         self.assertEqual(self.hand_over(1, "s1", next_unit="u3").returncode, 0)
         self.assertEqual((self.state()["state"], self.calls()), ("stopped", []))
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         self.launched(2)
         self.assertEqual((len(self.calls()), self.group(0)["state"], self.group()["key"]), (1, "cleared", "r2"))
 

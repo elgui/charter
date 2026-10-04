@@ -11,7 +11,7 @@ What holds it is code: `charter unit start` refuses, in a chain session, a unit 
 `chain next` starts the review instead of the next session; the review's runner launches the next session; and
 `chain next` refuses the answering session's handoff until `## Review` answers every finding.
 
-State, in chain.json (written by `chain start`, `chain next`, `chain resume` and the review's runner, one at a time):
+State, in chain.json (written by `chain start`, `chain next`, the owner's `/resume-chain` and the review's runner, one at a time):
   review, review_effort, review_timeout_s   codex | off | a command template with {base} and {out}
   groups   [{k, key, start, first_session, state, end, base, reviewed_to, after, next_unit, last_session,
              findings, fix_session, cleared}]; state: working -> reviewing -> fixing -> cleared, or review-failed
@@ -448,8 +448,8 @@ def _record(root: Path, cid: str, d: Path, ok: bool, text: str, why: str) -> int
     n, live = int(g["last_session"]), ch.get("state") == "running"
     if not ok:
         g["state"] = "review-failed"
-        why = (f"the review of group {label(g['key'])} could not run: {why}. Fix it and `charter chain resume`, which runs it "
-               "again, or `charter chain resume --skip-review` to go on without it")
+        why = (f"the review of group {label(g['key'])} could not run: {why}. Fix it and type `/resume-chain`, which runs it "
+               "again, or `/resume-chain --skip-review` to go on without it")
         if live:
             chain.halt(root, ch, why)
         else:
@@ -501,7 +501,7 @@ def launch_next(root: Path, ch: dict, n: int, note: str = "") -> None:
     if (chain.chain_dir(root, ch["id"]) / "stop").exists():
         chain.halt(root, ch, "stopped by the owner", state="stopped")
     elif n >= int(ch["max_sessions"]):
-        chain.halt(root, ch, f"reached max_sessions ({ch['max_sessions']}); the owner resumes with `charter chain resume`")
+        chain.halt(root, ch, f"reached max_sessions ({ch['max_sessions']}); the owner resumes with `/resume-chain`")
     else:
         chain.start_link(root, ch, n + 1, chain.prev_material(root, ch, n), note)
 
@@ -587,8 +587,8 @@ def status_lines(root: Path, ch: dict) -> list[str]:
                              if r.get("findings") else "no findings" for r in rounds(g))
         what = {"working": "working" + (f" again after its review ({answered})" if g.get("rounds") else ""),
                 "reviewing": "under review" if review_running(root, ch) or g is not current(ch) else
-                             "review interrupted: `charter chain resume` runs it again",
-                "review-failed": "review failed: `charter chain resume` runs it again",
+                             "review interrupted: `/resume-chain` runs it again",
+                "review-failed": "review failed: `/resume-chain` runs it again",
                 "fixing": answered,
                 "cleared": f"cleared at {(g.get('cleared') or '')[:7]}, " + (
                     "review skipped by the owner" if g.get("skipped") else answered or "nothing to review")}.get(g["state"], g["state"])

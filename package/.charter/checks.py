@@ -226,7 +226,8 @@ class SizeBudget:
 # (cross-review, 2026-10-04)
 PACKAGE_FILES = frozenset((
     ".claude/rules/charter.md", ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md",
-    ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/agents/charter-reviewer.md",
+    ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/commands/resume-chain.md",
+    ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml", "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
     "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md"))
 
@@ -696,6 +697,40 @@ def _fm(text: str | None) -> dict:
     return lib.split_frontmatter(text or "")[0]
 
 
+# `— owner: do|check|decide` on an acceptance line: a line only the owner closes (owner.OWNER_SEG_RE names the kind)
+OWNER_MARK_RE = re.compile(r"\s[—–]\s*owner:", re.I)
+BOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s*(.*)$")
+
+
+def _acceptance_boxes(text: str) -> dict[str, tuple[bool, bool]]:
+    """{key: (checked, marked for the owner)} for the acceptance lines of a unit; the key is the line's AC id, else
+    its text before the first ` — ` segment."""
+    out = {}
+    for l in lib.acceptance(lib.split_frontmatter(text or "")[2]).splitlines():
+        m = BOX_LINE_RE.match(l)
+        if not m:
+            continue
+        ac = re.match(r"(AC-\d+)\b", m.group(2))
+        key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
+        out[key] = (m.group(1) != " ", bool(OWNER_MARK_RE.search(l)))
+    return out
+
+
+def owner_line_changes(old: str | None, new: str | None) -> list[str]:
+    """The owner's lines of a unit that this change closes: an open `— owner:` line that is ticked, unmarked or
+    removed, and a line that arrives ticked with the mark. Marking a line, and reopening one, stay free: a session
+    marks what it waits on, and the owner closes it (0.4.9, after an agent ticked one in the wait trial)."""
+    o, n = _acceptance_boxes(old or ""), _acceptance_boxes(new or "")
+    closed = []
+    for k, (checked, marked) in o.items():
+        if marked and not checked and (k not in n or n[k][0] or not n[k][1]):
+            closed.append(k)
+    for k, (checked, marked) in n.items():
+        if checked and marked and k not in closed and not (k in o and o[k][0]):
+            closed.append(k)
+    return closed
+
+
 # The files Claude Code reads settings from, by name, and reloads mid-session
 # (https://code.claude.com/docs/en/settings, https://code.claude.com/docs/en/managed-settings):
 # user and project `settings.json`, `settings.local.json` (in a worktree, the main checkout's, which
@@ -755,6 +790,10 @@ def owner_only_changes(rp: str, old: str | None, new: str | None, context: str =
                 if lib.as_list(o.get(k)) != lib.as_list(n.get(k)):
                     why.append(f"`{k}:` of an active decision is what the gate enforces; supersede the decision instead")
     elif rp.startswith(lib.TASKETS_DIR + "/") and rp.endswith(".md"):
+        lines = owner_line_changes(old, new)
+        if lines:
+            why.append(f"it closes {', '.join(lines[:4])}, marked `— owner:`: only the owner closes such a line "
+                       "(`/resume-chain <AC-n> <note>` when a chain waits on it)")
         o, n = _fm(old), _fm(new)
         if str(n.get("kind", "")) == "split":
             was_split = str(o.get("kind", "")) == "split"

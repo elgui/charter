@@ -127,8 +127,8 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
     items: list[dict] = []
     import chain   # here, not at the top: every charter command loads this module, few need the chain engine
     for it in chain.owner_items(root):
-        resume = it.pop("resume")
-        items.append(_item(**it, perform=perform_argv(root, "chain", "resume", it["key"].split(":")[1]) if resume else None))
+        it.pop("resume")   # the owner types `/resume-chain` (in `ask`): no command of the queue's resumes a chain (0.4.9)
+        items.append(_item(**it))
     finished = ("accepted", "closed", "done-before-charter")
     loaded = rails.load(root, cfg)
     if loaded is not None:
@@ -200,7 +200,7 @@ def next_line(it: dict) -> str:
         return f"- {it['title']}; `python3 .charter/bin/charter handover` prints the command"
     if key.startswith("chain:"):
         ask = ("\n" + "\n".join(f"    {l}" for l in it["ask"].splitlines())) if it["ask"] else ""
-        return f"- {it['title']}" + ("; then `python3 .charter/bin/charter chain resume`" if it["perform"] else "") + ask
+        return f"- {it['title']}" + ask
     if key.startswith("human:"):
         return f"- HUMAN-ONLY unit {key.split(':', 1)[1]} — {it['title']} ({it['file']}:{it['line']})"
     return f"- {'owner line' if it['marked'] else 'unmarked owner line'} {it['title']} ({it['file']}:{it['line']})"

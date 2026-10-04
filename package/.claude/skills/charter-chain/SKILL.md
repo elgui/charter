@@ -1,7 +1,7 @@
 ---
 name: charter-chain
-description: Run the road as a continuous chain of fresh sessions. Each one verifies its predecessor, works unit after unit under a context budget (hand over at 25%, hard cap 30% of the window), and hands over through a validated handoff; at the end of each group of units (a rail item) Codex reviews the group and the next session answers every finding before the next group starts. This session starts the chain and monitors it. USE WHEN the user types /charter-chain, says "start the chain", "chain the units", "continuous chain", "keep going unit after unit in fresh sessions", "chain status", "stop the chain", "resume the chain".
-argument-hint: "[unit-id] [mission…] | status | stop | resume [note]"
+description: Run the road as a continuous chain of fresh sessions. Each one verifies its predecessor, works unit after unit under a context budget (hand over at 25%, hard cap 30% of the window), and hands over through a validated handoff; at the end of each group of units (a rail item) Codex reviews the group and the next session answers every finding before the next group starts. This session starts the chain and monitors it. USE WHEN the user types /charter-chain, says "start the chain", "chain the units", "continuous chain", "keep going unit after unit in fresh sessions", "chain status", "stop the chain". The owner resumes a paused chain with `/resume-chain`, never this skill.
+argument-hint: "[unit-id] [mission…] | status | stop"
 ---
 
 # charter-chain
@@ -19,8 +19,8 @@ You are the monitoring session. The chain's sessions do the work; you start the 
 ## Monitor
 
 - Use the Monitor tool on `python3 .charter/bin/charter chain watch <id> --from <line>`, starting at line 1. Each event arrives as one line, `#<line> <time> <who> <kind>: <text>`. If the watch ends on the Monitor deadline, start it again from the next line number. When it prints `watch ends`, the chain is over. Without the Monitor tool, run the same command with Bash `run_in_background` and read it when it notifies.
-- Tell the owner in one line each: `launched` (session n is up), `closed` (what it landed: commits, units closed, peak context), `waiting` (a tab stopped at a menu: which tab and what it asks), `stalled` (a session ended its turn without handing over: its tab needs a look), `cap`, `review` (a group ended and its review started; the chain waits for it, minutes), `reviewed` (how many findings, and which session answers them), `cleared` (the group and the commit the owner can merge up to), `wait` (the chain waits on the owner: relay each line of the handoff's `## Wait` verbatim, and that `charter chain resume` goes on once they are done), and the end. Stay quiet on `joined`, `wrap` and `tab-closed`.
-- Act only on the owner's word. A halted or stalled chain waits for them: you never resume it, edit a handoff, or do a session's work.
+- Tell the owner in one line each: `launched` (session n is up), `closed` (what it landed: commits, units closed, peak context), `waiting` (a tab stopped at a menu: which tab and what it asks), `stalled` (a session ended its turn without handing over: its tab needs a look), `cap`, `review` (a group ended and its review started; the chain waits for it, minutes), `reviewed` (how many findings, and which session answers them), `cleared` (the group and the commit the owner can merge up to), `wait` (the chain waits on the owner: relay each line of the handoff's `## Wait` verbatim, and the line the owner types once they are done, `/resume-chain <AC-n of each line it closes> <note>`, from `python3 .charter/bin/charter owner`), and the end. Stay quiet on `joined`, `wrap` and `tab-closed`.
+- A paused chain (waiting, halted, stopped, stalled) waits for the owner, who resumes it by typing `/resume-chain` in a Claude Code session; the charter hook performs it, and `charter chain resume` refuses everyone. You never resume a chain, close an `— owner:` line, edit a handoff, or do a session's work. When the owner says "resume" or "continue" in this chat, it means go on with what you were doing here (monitoring): it never resumes the chain. If they want the chain to go on, give them the `/resume-chain` line to type.
 
 ## When it ends
 
@@ -36,7 +36,7 @@ Run `python3 .charter/bin/charter chain status <id>` and report:
 
 - `status`: `python3 .charter/bin/charter chain status`, relayed as printed.
 - `stop`: `python3 .charter/bin/charter chain stop`. The live session is told to hand over, and no session follows it.
-- `resume [note]`: only on the owner's word, after a wait, a halt, a stop or a stall. Write the note verbatim to a file, run `python3 .charter/bin/charter chain resume --note-file <file>` (`--more N` raises the session limit; `--window <tokens>`, `--wrap <pct>`, `--cap <pct>` set the budget, when the halt says a session's start-up reached the hand-over line), then monitor again. After a review that could not run, resume runs it again; `--skip-review` clears the group without it, and only the owner asks for that.
+- Resuming is the owner's own command, typed in any Claude Code session of the project: `/resume-chain [AC-n ...] [note]`. Leading `AC-n` (or `<unit>:AC-n`) close those `— owner:` lines as the owner; the rest is the note, verbatim. `--more N` raises the session limit; `--window <tokens>`, `--wrap <pct>`, `--cap <pct>` set the budget (when the halt says a session's start-up reached the hand-over line); `--skip-review` clears a group whose review could not run. Tell the owner the line to type; once they have, monitor again from the next event.
 - `report`: `python3 .charter/bin/charter chain report`, relayed as printed.
 
 ## What holds the chain

@@ -36,6 +36,21 @@ def cli(root, *args, sid=None):
                           capture_output=True, text=True, cwd=str(root), env=env_for(sid))
 
 
+def resume(root, args="", sid="owner-tab", event="UserPromptSubmit", env=None):
+    """The owner types `/resume-chain <args>` in an interactive Claude Code session: the prompt hook resumes the chain and
+    blocks the prompt (0.4.9). Returns what `cli` returns: returncode 0 when the chain resumed, the hook's text as stdout."""
+    payload = {"hook_event_name": event, "session_id": sid}
+    if event == "UserPromptExpansion":
+        payload.update(prompt=f"/resume-chain {args}".strip(), command_name="resume-chain", command_args=args, expansion_type="slash_command")
+    else:
+        payload["prompt"] = f"/resume-chain {args}".strip()
+    code, out, raw, err = run_hook(root, "chain_gate", payload,
+                                   env=dict({"CLAUDE_CODE_ENTRYPOINT": "cli", "CLAUDE_CODE_SESSION_ATTENDED": "1"}, **(env or {})))
+    reason = out.get("reason", "")
+    done = out.get("decision") == "block" and reason.startswith("charter /resume-chain: done")
+    return subprocess.CompletedProcess(["/resume-chain", args], 0 if done else 1, reason or raw, err)
+
+
 def transcript(path, tokens, sidechain_tokens=None):
     """A transcript whose last main-chain response puts `tokens` in the context."""
     rows = [{"type": "user", "message": {"content": "hi"}},
@@ -488,7 +503,7 @@ class Next(ChainCase):
         self.join(1, "s1")
         self.write_handoff(1, status="halt", next_unit="none", halt="- which cache: redis or memory?")
         cli(self.root, "next", sid="s1")
-        r = cli(self.root, "resume", "--note", "memory cache; record it as a decision")
+        r = resume(self.root, "memory cache; record it as a decision")
         self.assertEqual(r.returncode, 0, r.stdout)
         b = self.launched(2)
         self.assertIn("## Owner's note on resuming (verbatim)\n\nmemory cache; record it as a decision", b)

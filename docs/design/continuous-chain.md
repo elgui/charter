@@ -51,7 +51,7 @@ Every session's first prompt is a briefing written by code (`briefing` in `packa
 - The budget lags by one response; a tool result counts as its characters divided by 4 until the next response reports it (`on_post_tool` in `package/.charter/chain.py`).
 - Past the cap, `git` is allowed whole, because committing is part of handing over (`allowed_at_cap` in `package/.charter/chain.py`).
 - Two sessions in one clone share one active unit (`docs/bugs/2026-10-02-concurrent-sessions-in-one-clone-share-one-active-unit.md`). The chain's own sessions run one at a time, but the owner working in the same clone during a chain is the reported bug.
-- The chain never decides or acts for the owner. A waiting, halted, stopped or stalled chain waits for `charter chain resume` (`cmd_resume` in `package/.charter/chain.py`), which can also set a new budget (`--window`, `--wrap`, `--cap`) for the sessions that follow. It does not resume on its own when the owner ticks a line: the owner chose one command they run, with a note for the next session, over a process that polls for hours (2026-10-04).
+- The chain never decides or acts for the owner. A waiting, halted, stopped or stalled chain waits for the owner to type `/resume-chain` in a Claude Code session (`owner_prompt` in `package/.charter/chain.py`, § Waiting on the owner), which can also set a new budget (`--window`, `--wrap`, `--cap`) for the sessions that follow. It does not resume on its own when the owner ticks a line: the owner chose one command they type, with a note for the next session, over a process that polls for hours (2026-10-04).
 - It does not fit the budget to the start-up. A session pays its start-up (system prompt, tools, skills, MCP instructions, rules, briefing) before any work, and in a cmux tab that was 49,500 tokens on 2026-10-04, against about 32,000 headless. A chain whose hand-over line is under it would only relaunch sessions that hand over at once, so the first session that starts past the line halts the chain with the figure (`started_past_line`), and `chain start` warns beforehand (`measured_startup`; `docs/trials/2026-10-04-chain-tab.md`).
 
 ## Groups and their review
@@ -122,9 +122,10 @@ session n: does what does not need the owner, commits, marks the unit's lines `�
          └─ handoff status: wait, ## Wait (one line per act), next_unit
 chain next ── clean tree? ──> chain state `waiting`, event `wait`
                               ├─ macOS notification, chain.notify_command
-                              └─ `charter owner` / `charter next`: the chain, its acts, `chain resume`
-owner: does the acts, ticks the lines, `charter chain resume [--note]`
-session n+1: briefing says the chain waited; checks each act first; waits again on any not done
+                              └─ `charter owner` / `charter next`: the chain, its acts, the line to type
+owner: does the acts, types `/resume-chain AC-2 <note>` in a Claude Code session
+         └─ prompt hook: closes AC-2 in a commit made as the owner, resumes; the prompt never reaches the model
+session n+1: briefing says the chain waited and which lines the owner closed; checks each act first; waits again on any not done
 ```
 
 ### Each requirement and what holds it
@@ -135,14 +136,29 @@ session n+1: briefing says the chain waited; checks each act first; waits again 
 | The pause names each act, how to do it, and what it closes | `check_handoff` refuses `status: wait` without `## Wait`; the acts are the unit's `— owner:` lines, which `owner_lines` in `package/.charter/owner.py` lists |
 | The chain waits at a commit, and goes on from one | `cmd_next` in `package/.charter/chain.py` refuses `wait` (and `complete`) with uncommitted changes; `_resume` refuses a waiting chain's resume while the owner's changes are uncommitted, and prints the commit (`tests/test_chain_wait.py`) |
 | The owner is told | `notify` in `package/.charter/chain.py`, on waiting, halted, complete, a tab at a menu and a stall; `chain.notify` (`auto`: macOS, or `off`) and `chain.notify_command` (`{chain}`, `{project}`, `{title}`, `{text}`); `CHARTER_NOTIFY=off` silences it |
-| The owner sees what to do where they already look | `owner_items` in `package/.charter/chain.py`, read by `queue` in `package/.charter/owner.py`: `charter owner [--json]` and `charter next` list the chain with its acts and `chain resume` |
-| Nothing goes on until the owner says so | State `waiting`; `cmd_start` in `package/.charter/chain.py` refuses while a chain waits; only `cmd_resume` launches |
+| The owner sees what to do where they already look | `owner_items` in `package/.charter/chain.py`, read by `queue` in `package/.charter/owner.py`: `charter owner [--json]` and `charter next` list the chain with its acts and the `/resume-chain` line to type, with the owner's lines it closes |
+| Nothing goes on until the owner says so | State `waiting`; `cmd_start` in `package/.charter/chain.py` refuses while a chain waits; only the owner's `/resume-chain` launches (`owner_prompt`, `_resume`); `charter chain resume` refuses everyone (`cmd_resume`; `tests/test_owner_gate.py`) |
+| The owner's acts are the owner's, not an agent's | An `— owner:` line is closed only by the owner: the Edit gate and the commit gate inside Claude Code refuse an agent's tick, unmarking or removal, and CI checks the author (`owner_line_changes` in `package/.charter/checks.py`). The resume is the owner's own prompt, performed by the prompt hook and blocked from the model, refused in a headless or chain session (`typed_by_owner`). A line closed since the wait by any other commit is named to the owner and to the next session, which reopens it unless the owner's note claims it (`closed_outside`). The hook denies any session's Bash command that names `CHARTER_OWNER` (`package/.charter/hooks/chain_gate.py`). See § The owner's acts below |
 | The next session does not take the acts on trust | The briefing after a wait says so (`briefing` in `package/.charter/chain.py`); chain rules § 5 (`package/.charter/chain-rules.md`) |
 | A chain session never performs an owner act | `charter rule`, `approve` and `rail` refuse inside an open chain session (`live_session`, `_owner_verb` in `package/.charter/bin/charter`), and the hook denies such a command whatever its environment (`OWNER_ACT_RE`, `on_pre_tool` in `package/.charter/chain.py`); `AskUserQuestion` is denied with a pointer to `wait` |
 
+### The owner's acts
+
+In the wait trial an agent stood in for the owner, and the chain accepted it. Session 1 of chain `20261004-204830` waited on "approve the tone of `farewell('Ada')`, then tick AC-2". 24 s later, the session that ran the trial (not the owner, and not a chain session) ran one Bash command: `sed -i` ticked AC-2, `git commit -am "w1 AC-2: tone approved (owner stand-in, trial)"` (on the test bed), and `charter chain resume --note "Tone approved: ... I ticked AC-2."`. Session 2 closed the unit and the chain completed (`docs/trials/2026-10-04-chain-wait.md`; `docs/trials/2026-10-04-owner-gate.md`). Nothing told that act from the owner's: the CLI accepted any caller, an owner line was ordinary text, and the commit's author was the repository's git user.
+
+What was weighed, with the owner (operator report, 2026-10-04):
+
+| Mechanism | What an agent can still do | Taken |
+|---|---|---|
+| Refuse `chain resume` in any Claude Code process (`CLAUDECODE`) | `env -u CLAUDECODE`; type the command into a plain terminal tab (`cmux send`, `osascript`); run from a session of another project, whose hooks are not the project's | no: no proof, and a determined agent passes (operator report, 2026-10-04) |
+| Touch ID: a Secure Enclave key signs the resume and the ticks; the chain and CI verify the signature | trigger the prompt with a misleading reason, and hope the owner touches | no: the owner does not want Touch ID (operator report, 2026-10-04) |
+| The owner's own prompt: `/resume-chain`, performed by the prompt hook | type the command into an interactive tab by a program (`cmux send`, `tmux send-keys`, `osascript`); write the chain's state files or the engine by hand | yes, with owner lines made owner-only content (`owner_prompt` in `package/.charter/chain.py`) |
+
+The owner also said that "resume" in a chat often means "continue" after an interruption, so the monitoring session never takes it as a resume, and a slash command is what they type. The hook, not the model, performs the command: Claude Code passes the raw prompt to `UserPromptSubmit` and, for a defined command, to `UserPromptExpansion` with its arguments, and a hook that answers `{"decision": "block"}` keeps the prompt from the model (https://code.claude.com/docs/en/hooks). `disable-model-invocation: true` keeps the model from invoking the command (https://code.claude.com/docs/en/skills). In `claude -p`, Claude Code set `CLAUDE_CODE_ENTRYPOINT=sdk-cli` and `CLAUDE_CODE_SESSION_ATTENDED=0` in the hook's environment over what the caller passed (2.1.289, in the scratchpad), so `typed_by_owner` refuses a headless session. A `do` line and a `check` line are gated alike: closing either says the owner did it. What stays open is in `docs/gates.md` § What a gate cannot see.
+
 ### What it does not do
 
-- It does not check that the owner did an act. The next session checks what it can (a probe, a ticked line, the owner's note); a human gate stays the owner's word (chain rules § 5, `package/.charter/chain-rules.md`).
+- It does not check that the owner did an act. The owner's `/resume-chain AC-2` says they did; the next session checks what it can (a probe, the owner's note) and waits again on what is not done (chain rules § 5, `package/.charter/chain-rules.md`).
 - It does not work on other units while it waits. A wait pauses the whole chain; units that do not depend on the owner's act wait too (`_hand_over` in `package/.charter/chain.py`).
 - At a group's end, the review runs on resume, not during the wait (`on_resume` in `package/.charter/chain_groups.py`).
 

@@ -33,7 +33,9 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
 - In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
 - Opening or widening a `kind: split` unit.
-- Setting `CHARTER_OWNER` anywhere.
+- Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain AC-n <note>` when a chain waits on it.
+- Setting `CHARTER_OWNER` anywhere (the hook denies a Bash command that names it).
+- Resuming a chain: `charter chain resume` refuses; the owner types `/resume-chain`.
 
 The owner edits these by hand or in a Claude Code session started with `CHARTER_OWNER=1`. A ruling is one owner command: `charter rule <decision> active|rejected|superseded`, `charter approve <change> [--reject]` or `charter rail <id> <status>` writes it and commits it as the owner. An agent never runs these; it proposes, and `charter owner` shows the owner what waits.
 
