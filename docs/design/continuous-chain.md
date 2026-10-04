@@ -1,4 +1,4 @@
-# The continuous chain (0.4.7; groups and their review, 0.4.8)
+# The continuous chain (0.4.9)
 
 A chain runs the road as a series of fresh Claude Code sessions. Each one verifies the one before, works unit after unit under a context budget, and hands over to the next through a validated handoff. The owner starts it with `/charter-chain` and a session of their own monitors it (`package/.claude/skills/charter-chain/SKILL.md`). The engine is `package/.charter/chain.py`; the hook is `package/.charter/hooks/chain_gate.py`.
 
@@ -54,7 +54,7 @@ Every session's first prompt is a briefing written by code (`briefing` in `packa
 - The chain halts; it never decides for the owner. A halted, stopped or stalled chain waits for `charter chain resume` (`cmd_resume` in `package/.charter/chain.py`), which can also set a new budget (`--window`, `--wrap`, `--cap`) for the sessions that follow.
 - It does not fit the budget to the start-up. A session pays its start-up (system prompt, tools, skills, MCP instructions, rules, briefing) before any work, and in a cmux tab that was 49,500 tokens on 2026-10-04, against about 32,000 headless. A chain whose hand-over line is under it would only relaunch sessions that hand over at once, so the first session that starts past the line halts the chain with the figure (`started_past_line`), and `chain start` warns beforehand (`measured_startup`; `docs/trials/2026-10-04-chain-tab.md`).
 
-## Groups and their review (0.4.8)
+## Groups and their review
 
 The engine is `package/.charter/chain_groups.py`; `chain.py` calls it at the start, at each hand-over, on resume and in the briefing.
 
@@ -99,7 +99,7 @@ A group is the units of one item of `charter/rails.md`: a unit's group is its fi
 - **A runner, not a wait inside `chain next`.** `chain next` runs in the session's Bash tool, whose foreground commands time out after 2 minutes by default and 10 at most (`BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS`, https://code.claude.com/docs/en/env-vars), and a review at high effort can take longer than that. The runner is a detached process (`charter chain review-run`) that records the review and launches the next session the way `chain next` would; it writes its pid so `chain resume` refuses while it runs (`start_review`, `cmd_review_run`, `review_running` in `package/.charter/chain_groups.py`).
 - **A session that answers the review, and nothing else.** The group's merge point must hold the group and its fixes and nothing of the next group, so the answering session cannot start a unit of the next group, and the next group starts from its last commit. When the review finds nothing, no such session is spent (`unit_start_refusal`, `clear` and `cmd_review_run` in `package/.charter/chain_groups.py`).
 - **A review that cannot run halts the chain.** Codex missing, logged out, failing or past `chain.review_timeout_s` (30 minutes by default) halts it with the reviewer's last lines; `chain resume` runs the review again, and `chain resume --skip-review` clears the group without it, which only the owner asks for (`on_resume` in `package/.charter/chain_groups.py`).
-- **`chain.review` is `auto` by default**: Codex where `codex` is on PATH, else off, and `chain start` says which. `off` keeps the chain of 0.4.7, without groups. A command template with `{base}` and `{out}` runs another reviewer; the tests use one (`resolve_review` in `package/.charter/chain_groups.py`; `tests/test_groups_0_4_8.py`).
+- **`chain.review` is `auto` by default**: Codex where `codex` is on PATH, else off, and `chain start` says which. `off` runs the chain without groups. A command template with `{base}` and `{out}` runs another reviewer; the tests use one (`resolve_review` in `package/.charter/chain_groups.py`; `tests/test_groups_0_4_8.py`).
 
 ### What it does not do
 
@@ -115,6 +115,6 @@ A group is the units of one item of `charter/rails.md`: a unit's group is its fi
 
 `docs/trials/2026-10-04-chain-tab.md`: a chain in cmux tabs whose sessions all started past the hand-over line, and the four defects it showed.
 
-`docs/trials/2026-10-04-chain-tab-rerun.md`: the same bed on 0.4.8 in tabs, where the review runner opened the next session's tab and the chain completed in 3 minutes.
+`docs/trials/2026-10-04-chain-tab-rerun.md`: the same bed on this release (labelled 0.4.8 in the record) in tabs, where the review runner opened the next session's tab and the chain completed in 3 minutes.
 
-`docs/trials/2026-10-04-groups.md`: a chain over two rails with the Codex review at each group's end (0.4.8). The first review found a real defect, the next session fixed it, and the chain completed on its own.
+`docs/trials/2026-10-04-groups.md`: a chain over two rails with the Codex review at each group's end (labelled 0.4.8 in the record). The first review found a real defect, the next session fixed it, and the chain completed on its own.

@@ -916,7 +916,7 @@ def cmd_next(root: Path, a) -> int:
     landed = bool(start) and lib.git(root, "rev-list", "--count", f"{start}..HEAD").stdout.strip() not in ("", "0")
     # a session pays its start-up whatever it does, so it hands over only once it has used its budget (trial 2026-10-04:
     # a session handed over at 24% with nothing landed, and the next one paid the start-up again)
-    # ending a group is not early: its review comes before the next group, whatever the context (0.4.8)
+    # ending a group is not early: its review comes before the next group, whatever the context (0.4.9)
     if (not problems and status == "continue" and p is not None and not a.early and not groups.ends_group(root, chain, status, next_unit)
             and (p < chain["wrap_pct"] / 2 or (p < chain["wrap_pct"] and not landed))):
         problems.append(f"context is at {p:.0f}%, under the {chain['wrap_pct']}% hand-over line, " + ("" if landed else "nothing is committed yet, ")

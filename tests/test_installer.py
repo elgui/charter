@@ -45,7 +45,7 @@ class Installer(unittest.TestCase):
         pkg("install", str(self.root), "--track", "client")
         s = json.loads((self.root / ".claude" / "settings.json").read_text())
         self.assertEqual(s["permissions"]["allow"], ["Bash(pytest *)"])
-        # the project's own hook, then charter's two (the done gate, and the chain gate from 0.4.7)
+        # the project's own hook, then charter's two (the done gate, and the chain gate from 0.4.9)
         self.assertEqual(len(s["hooks"]["Stop"]), 3)
         self.assertEqual(s["hooks"]["Stop"][0]["hooks"][0]["command"], "echo mine")
         self.assertTrue(any("stop_gate.py" in " ".join(h.get("args", [])) for g in s["hooks"]["Stop"] for h in g["hooks"]))

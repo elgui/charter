@@ -111,7 +111,7 @@ Three things live in this one repository. Each goes to a different place and is 
 | `docs/migration.md` | Adopting the method from five starting points (new client project, prototype, taskets, BMAD, ad-hoc documents) |
 | `docs/design/migration-workflow.md` | How the survey and the `Migrate` workflow work, and the leCRM rehearsal |
 | `docs/design/charter-next.md` | Why `charter next` exists, what a read-only tool such as NowWhat may call, and what was deferred (0.4.4) |
-| `docs/design/continuous-chain.md` | The continuous chain (`/charter-chain`, 0.4.7): fresh sessions that verify each other and hand over under a context budget; from 0.4.8, a Codex review at the end of each group of units |
+| `docs/design/continuous-chain.md` | The continuous chain (`/charter-chain`, 0.4.9): fresh sessions that verify each other and hand over under a context budget; from 0.4.8, a Codex review at the end of each group of units |
 | `docs/method-visual.html` | The method in diagrams, offline |
 | `AGENTS.md` | Working on charter itself: tests and releasing a new package version |
 

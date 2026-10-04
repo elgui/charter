@@ -45,7 +45,7 @@ WHERE_RE = re.compile(r"^(.*\S)\s+[—–]\s+(\S+?:\d+(?:-\d+)?)\s*$")
 
 
 def current(ch: dict) -> dict | None:
-    """The group the chain works now; None for a chain without groups (review off, or started before 0.4.8)."""
+    """The group the chain works now; None for a chain without groups (review off, or started before 0.4.9)."""
     gs = ch.get("groups") or []
     return gs[-1] if gs else None
 
@@ -560,7 +560,7 @@ def on_resume(root: Path, ch: dict, n: int, note: str, skip: bool) -> bool | Non
         status, nu, _ = chain.handoff_status(hp.read_text(encoding="utf-8"))
         nums = chain.link(root, ch["id"], n).get("nums") or {}
         if status == "complete" and (nums.get("probe_failures") or nums.get("gates_blocked")):
-            return None   # halted as broken (`chain next`): a session repairs it first, as in 0.4.7 (cross-review, 2026-10-04)
+            return None   # halted as broken (`chain next`): a session repairs it first, as in a chain without groups (cross-review, 2026-10-04)
         if status == "complete" or (status == "continue" and (unit_group(root, nu) or "") not in keys(ch)):
             start_review(root, ch, n, status, nu, note)   # stopped at a boundary: the review comes first
             return chain.load(root, ch["id"]).get("state") in ("running", "complete")
