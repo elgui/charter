@@ -128,6 +128,23 @@ def editing_link(root: Path, cid: str, n: int):
         save_link(root, cid, n, rec)
 
 
+@contextlib.contextmanager
+def chain_lock(root: Path, cid: str):
+    """Held by the two writers of chain.json that run beside the chain rather than in its sequence: the review runner,
+    from loading the state to launching the next session, and the owner's `chain stop`. Without it a stop loaded
+    before the runner saved wrote back a group still under review, and the review ran again on resume
+    (cross-review, 2026-10-04). Taken at those entry points only, never inside save or halt, so nothing nests."""
+    d = chain_dir(root, cid)
+    d.mkdir(parents=True, exist_ok=True)
+    with (d / "chain.lock").open("a") as f:
+        try:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            pass
+        yield
+
+
 def event(root: Path, cid: str, who: str, kind: str, text: str) -> None:
     """One line in events.log: what `chain watch` prints and the monitoring session relays."""
     p = chain_dir(root, cid) / "events.log"
@@ -220,6 +237,54 @@ def pct(chain: dict, tokens: int | None) -> float | None:
     return None if tokens is None else 100.0 * tokens / max(1, int(chain.get("window") or 200_000))
 
 
+# `"$(cat <<'EOF' ... EOF)"`, the usual way to pass a commit message of several lines; its quoted delimiter keeps the body literal
+# and the delimiter alone on its line ends it, as in bash, where an indented one is part of the body
+HEREDOC_MSG_RE = re.compile(r"\"?\$\(cat <<\s*'(\w+)'\n.*?\n\1\n\s*\)\"?", re.S)
+SEPARATORS = {"&&", "||", ";", ""}
+
+
+def plain_commands(cmd: str) -> list[list[str]] | None:
+    """The commands of a shell line as lists of words, when the line is only plain commands joined by `&&`, `||`, `;`
+    or newlines; None when it redirects, pipes, runs in the background, opens a subshell or substitutes a command.
+    Quoted text is one word, so a commit message may hold `<`, `>` and several lines, as a trailer
+    `Co-Authored-By: Name <address>` does (trial 2026-10-04: a regex over the raw line refused that commit at the cap)."""
+    cmd = HEREDOC_MSG_RE.sub("MESSAGE", cmd)
+    if "`" in cmd or "$(" in cmd:
+        return None
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
+    lex.whitespace, lex.whitespace_split, lex.commenters = " \t\r", True, ""
+    try:
+        tokens = list(lex)
+    except ValueError:
+        return None
+    cmds, cur = [], []
+    for t in tokens:
+        if t and set(t) <= set(lex.punctuation_chars):
+            # an operator; a quoted word made only of these characters reads as one too, which only refuses more
+            if t.replace("\n", "") not in SEPARATORS:
+                return None
+            cmds, cur = cmds + ([cur] if cur else []), []
+        else:
+            cur.append(t)
+    return cmds + ([cur] if cur else [])
+
+
+def _git_runs_more(words: list[str]) -> bool:
+    """A git command that can run a program of its choosing: a config set on the line (`-c alias.x='!cmd'`,
+    `-c core.pager=...`), `--config-env`, `--exec-path=`, or `git config`, which would set such an alias for later
+    (cross-review, 2026-10-04). Aliases and settings already in the repository's config still run; see
+    docs/gates.md § What a gate cannot see."""
+    rest = iter(words[1:])
+    for w in rest:
+        if w in ("-c", "config") or w.startswith(("-c", "--config-env", "--exec-path")):
+            return True
+        if w in ("-C", "--git-dir", "--work-tree", "--namespace"):
+            next(rest, None)   # its argument, not the subcommand
+        elif not w.startswith("-"):
+            return False   # the subcommand: what follows is its own arguments
+    return False
+
+
 def allowed_at_cap(root: Path, chain: dict, n: int, tool: str, ti: dict) -> bool:
     """Past the cap a session may only hand over: write its handoff, touch unit files, run git and the charter CLI."""
     if tool in ("Write", "Edit", "MultiEdit"):
@@ -228,12 +293,9 @@ def allowed_at_cap(root: Path, chain: dict, n: int, tool: str, ti: dict) -> bool
         handoff = (link_dir(root, chain["id"], n) / "handoff.md").resolve()
         return p.resolve() == handoff or lib.rel(root, p.resolve()).startswith(lib.TASKETS_DIR + "/")
     if tool == "Bash":
-        cmd = ti.get("command") or ""
-        # `git show HEAD > app/x.py` or `git log | tee x` would write anything: only plain commands chained by && || ;
-        if re.search(r"[|<>`]|\$\(|&", re.sub(r"&&|\|\|", " ; ", cmd)):
-            return False
-        parts = [x.strip() for x in re.split(r"&&|\|\||;|\n", cmd) if x.strip()]
-        return bool(parts) and all(x.startswith("git ") or CHARTER_CLI_RE.match(x) for x in parts)
+        # `git show HEAD > app/x.py` or `git log | tee x` would write anything: only plain git and charter commands
+        cmds = plain_commands(ti.get("command") or "")
+        return bool(cmds) and all((c[0] == "git" and not _git_runs_more(c)) or CHARTER_CLI_RE.match(" ".join(c)) for c in cmds)
     return False
 
 
@@ -344,7 +406,8 @@ def facts(root: Path, chain: dict, n: int, rec: dict) -> tuple[str, dict]:
     dirty = uncommitted(root, rec)
     out.append("Tree: clean" if not dirty else f"Tree: {len(dirty)} uncommitted change(s): " + ", ".join(dirty[:8]))
     nums = {"commits": len(commits), "closed": [c[0] for c in closed], "box_delta": box_delta, "probe_failures": failed,
-            "gates_blocked": blocked, "dirty": len(dirty), "end_head": end}
+            "gates_blocked": blocked, "dirty": len(dirty), "end_head": end,
+            "work": sum(1 for c in changed if not c.startswith(lib.TASKETS_DIR + "/"))}
     return "\n".join(out), nums
 
 
@@ -527,11 +590,24 @@ def close_link(root: Path, chain: dict, n: int, status: str, abnormal: bool = Fa
 
 
 def stalled(root: Path, chain: dict, n: int) -> bool:
-    """Two sessions in a row with no commit and no criterion checked."""
+    """Two sessions in a row that changed nothing outside the unit files and checked no criterion. A commit of a
+    `## Log` line alone is no work (trial 2026-10-04: three sessions each committed one, and none was stalled)."""
     if n < 2:
         return False
     recs = [link(root, chain["id"], k).get("nums") or {} for k in (n - 1, n)]
-    return all(r and not r.get("commits") and not r.get("box_delta") for r in recs)
+    return all(r and not r.get("work", r.get("commits")) and not r.get("box_delta") for r in recs)
+
+
+def started_past_line(chain: dict, rec: dict) -> str:
+    """Why no session of this chain can work, when session rec's start-up alone reached the hand-over line; else ""."""
+    tokens = int(rec.get("start_tokens") or 0)
+    s = 100.0 * tokens / max(1, int(chain["window"])) if tokens else float(rec.get("start_pct") or 0)
+    if s < chain["wrap_pct"]:   # the tokens, not the rounded share: 49,999 of 200,000 is under 25%
+        return ""
+    return (f"session {rec.get('n')} was at {s:.0f}% of the window ({int(rec.get('start_tokens') or 0):,} tokens) at its first tool, "
+            f"past the {chain['wrap_pct']}% hand-over line before any work, and every session starts the same way. "
+            f"The owner resumes with a larger budget (`charter chain resume --window <tokens>`, or `--wrap <pct> --cap <pct>`), "
+            "or trims what every session loads at start-up")
 
 
 def prev_material(root: Path, chain: dict, n: int) -> tuple[str, str]:
@@ -598,7 +674,13 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
     if tool == "AskUserQuestion":
         return {"deny": "charter chain: a chain session does not ask the owner mid-session. Hand over with `status: halt` "
                         "and put the question under `## Halt`; the owner answers it and resumes the chain."}
-    p = pct(chain, context_tokens(data.get("transcript_path") or rec.get("transcript")))
+    tokens = context_tokens(data.get("transcript_path") or rec.get("transcript"))
+    p = pct(chain, tokens)
+    if p is not None and "start_pct" not in rec:
+        # the first tool comes after the system prompt, the rules, the briefing and one response: the start-up
+        with editing_link(root, chain["id"], n) as rec:
+            rec.setdefault("start_pct", round(p, 1))
+            rec.setdefault("start_tokens", tokens)
     if p is None or p < chain["cap_pct"] or allowed_at_cap(root, chain, n, tool, ti):
         return None
     with editing_link(root, chain["id"], n) as rec:
@@ -608,7 +690,9 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
         event(root, chain["id"], f"s{n:02d}", "cap", f"context {p:.0f}% >= cap {chain['cap_pct']}%; only the handoff goes through")
     return {"deny": f"charter chain: context is at {p:.0f}% of the window, past the {chain['cap_pct']}% cap. Only the handoff goes "
                     f"through now: commit with git, append the unit's `## Log` line, write {link_dir(root, chain['id'], n) / 'handoff.md'}, "
-                    "run `python3 .charter/bin/charter chain next`, end your turn."}
+                    "run `python3 .charter/bin/charter chain next`, end your turn. What passes: Edit or Write on the handoff and on "
+                    f"{lib.TASKETS_DIR}/ files; in Bash, plain `git` and `.charter/bin/charter` commands joined by `&&` or `;`, "
+                    "without redirection, pipe, `cd` or command substitution (a quoted commit message of several lines is fine)."}
 
 
 def on_post_tool(root: Path, data: dict) -> dict | None:
@@ -678,6 +762,23 @@ def on_stop(root: Path, data: dict) -> dict | None:
 
 # ---------------------------------------------------------------- commands
 
+# a session's start-up (system prompt, tools, skills, CLAUDE.md, rules, briefing), by launcher: about 32,000 tokens
+# headless and 49,500 in a cmux tab, whose interactive session loads more (docs/trials/2026-10-04-chain-tab.md)
+STARTUP_TOKENS = {"spawn": 50_000, "headless": 33_000}
+
+
+def measured_startup(root: Path, kind: str) -> tuple[int, str]:
+    """(tokens, where from): the largest start-up measured in the latest chain of this repository that measured one,
+    else the estimate for the launcher."""
+    d = base_dir(root)
+    for cdir in sorted((x for x in d.iterdir() if x.is_dir() and x.name != "sessions"), reverse=True) if d.is_dir() else []:
+        seen = [int(_read_json(p).get("start_tokens") or 0) for p in cdir.glob("s*/link.json")]
+        if max(seen, default=0):
+            return max(seen), f"measured in chain {cdir.name}"
+    est = STARTUP_TOKENS.get(kind, STARTUP_TOKENS["headless"])
+    return est, f"estimated for the {kind} launcher from the trials of 2026-10-04"
+
+
 def _resolve_self(root: Path, chain: dict, want: int | None) -> tuple[int | None, str]:
     """The session `chain next` acts for: the calling Claude Code session, else --session, else the current one."""
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
@@ -741,10 +842,14 @@ def cmd_start(root: Path, a) -> int:
             f"launcher: {kind} ({detail}); at most {a.max_sessions or int(cc.get('max_sessions', 12))} sessions",
             groups.plan_line(review, review_why, str(cc.get("review_effort", "high")), groups.unit_group(root, a.unit) or ""),
             f"mission: {mission.splitlines()[0][:160]}"]
-    if window < 500_000:
-        # a session's start-up (system prompt, tools, skills, CLAUDE.md, rules, briefing) was 33k tokens on 2026-10-04
-        plan.append(f"warning: a {window:,}-token window leaves little room: start-up alone takes about 33,000 tokens "
-                    f"({3_300_000 // window}% of it). A [1m] model gives each session ten times the work for the same start-up")
+    startup, seen = measured_startup(root, kind)
+    line = window * wrap // 100
+    if line <= startup:
+        plan.append(f"warning: the hand-over line ({line:,} tokens) is at or under a session's start-up ({startup:,} tokens, {seen}): "
+                    "every session would start past it, so the chain halts after session 1. Raise --window or --wrap")
+    elif window < 500_000:
+        plan.append(f"warning: a {window:,}-token window leaves little room: start-up alone takes about {startup:,} tokens "
+                    f"({100 * startup // window}% of it, {seen}). A [1m] model gives each session ten times the work for the same start-up")
     if a.dry_run:
         print("\n".join(["charter chain start --dry-run: nothing written."] + plan))
         return 0
@@ -822,8 +927,15 @@ def cmd_next(root: Path, a) -> int:
     if a.check:
         print(f"handoff of session {n} is valid (status {status}); nothing recorded (--check)")
         return 0
-    if a.early:
-        event(root, chain["id"], f"s{n:02d}", "early", a.early)
+    with chain_lock(root, chain["id"]):   # a `chain stop` meanwhile waits, then finds the outcome (cross-review, 2026-10-04)
+        return _hand_over(root, chain["id"], n, status, next_unit, halt_why, a.early)
+
+
+def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_why: str, early: str | None) -> int:
+    """Record session n as closed and decide what follows: a halt, the end, a review, or the next session."""
+    chain = load(root, cid)
+    if early:
+        event(root, chain["id"], f"s{n:02d}", "early", early)
     close_link(root, chain, n, status)
     chain = load(root, chain["id"])
     if n > 1:
@@ -845,8 +957,10 @@ def cmd_next(root: Path, a) -> int:
         halt(root, chain, "stopped by the owner", state="stopped")
     elif n >= int(chain["max_sessions"]):
         halt(root, chain, f"reached max_sessions ({chain['max_sessions']}); the owner resumes with `charter chain resume`")
+    elif started_past_line(chain, link(root, chain["id"], n)):
+        halt(root, chain, started_past_line(chain, link(root, chain["id"], n)))
     elif stalled(root, chain, n):
-        halt(root, chain, f"sessions {n - 1} and {n} landed no commit and checked no criterion")
+        halt(root, chain, f"sessions {n - 1} and {n} changed nothing outside {lib.TASKETS_DIR}/ and checked no criterion")
     elif rules_sha(root) != chain.get("rules_sha"):
         halt(root, chain, f"{RULES} changed while the chain ran; the owner resumes with `charter chain resume`")
     else:
@@ -858,7 +972,6 @@ def cmd_next(root: Path, a) -> int:
     print(f"session {n} closed ({status}); chain {chain['id']} is {chain['state']}" +
           (f": {chain['reason']}" if chain.get("reason") else then) + ". End your turn now.")
     return 0
-
 
 def cmd_join(root: Path, a) -> int:
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
@@ -923,7 +1036,16 @@ def cmd_watch(root: Path, a) -> int:
 
 
 def cmd_stop(root: Path, a) -> int:
-    chain = load(root, a.id)
+    cid = load(root, a.id).get("id")
+    if not cid:
+        print("no running chain")
+        return 0
+    with chain_lock(root, cid):
+        return _stop(root, cid, a)
+
+
+def _stop(root: Path, cid: str, a) -> int:
+    chain = load(root, cid)
     if not chain or chain.get("state") != "running":
         print("no running chain" + (f" ({chain['id']} is {chain.get('state')})" if chain else ""))
         return 0
@@ -953,6 +1075,12 @@ def cmd_resume(root: Path, a) -> int:
     if live or chain.get("state") == "complete":
         print(f"chain {chain['id']} is {chain['state']}" + (f" and session {n} is live" if live else "") + "; nothing to resume")
         return 1
+    budget = {k: v for k, v in (("window", a.window), ("wrap_pct", a.wrap), ("cap_pct", a.cap)) if v is not None}
+    new = dict(chain, **budget)
+    if budget and not (int(new["window"]) > 0 and 0 < int(new["wrap_pct"]) < int(new["cap_pct"]) <= 100):
+        print(f"charter chain resume: not resumed: the budget needs a window above 0 and 0 < wrap ({new['wrap_pct']}) "
+              f"< cap ({new['cap_pct']}) <= 100")
+        return 1
     note = (Path(a.note_file).read_text(encoding="utf-8") if a.note_file else a.note or "").strip()
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)
@@ -960,6 +1088,10 @@ def cmd_resume(root: Path, a) -> int:
     if sha != chain.get("rules_sha"):
         event(root, chain["id"], "chain", "rules", f"resumed under new rules sha256 {sha[:12]} (was {chain.get('rules_sha', '')[:12]})")
         chain["rules_sha"] = sha
+    if budget:
+        event(root, chain["id"], "chain", "budget", f"hand over at {new['wrap_pct']}%, cap {new['cap_pct']}% of {int(new['window']):,} tokens "
+              f"(was {chain['wrap_pct']}%, {chain['cap_pct']}% of {int(chain['window']):,})")
+        chain.update(budget)
     (chain_dir(root, chain["id"]) / "stop").unlink(missing_ok=True)
     # at least one more session, and --more beyond that
     chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0))
@@ -1012,6 +1144,9 @@ def main(argv: list[str], root: Path) -> int:
     r.add_argument("id", nargs="?"); r.add_argument("--note", default=None); r.add_argument("--note-file", default=None)
     r.add_argument("--more", type=int, default=None, help="raise max_sessions by this many")
     r.add_argument("--skip-review", action="store_true", help="after a review that could not run: clear the group without it")
+    r.add_argument("--window", type=int, default=None, help="a new context window in tokens, for the sessions from now on")
+    r.add_argument("--wrap", type=int, default=None, help="a new hand-over line, percent of the window")
+    r.add_argument("--cap", type=int, default=None, help="a new hard cap, percent of the window")
     r.set_defaults(fn=cmd_resume)
     rr = sub.add_parser("review-run", help="(started by `chain next`) review a group, then launch the session that answers it")
     rr.add_argument("id"); rr.add_argument("--group", type=int, required=True); rr.set_defaults(fn=groups.cmd_review_run)

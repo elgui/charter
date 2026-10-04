@@ -36,7 +36,7 @@ Run `python3 .charter/bin/charter chain status <id>` and report:
 
 - `status`: `python3 .charter/bin/charter chain status`, relayed as printed.
 - `stop`: `python3 .charter/bin/charter chain stop`. The live session is told to hand over, and no session follows it.
-- `resume [note]`: only on the owner's word, after a halt, a stop or a stall. Write the note verbatim to a file, run `python3 .charter/bin/charter chain resume --note-file <file>` (`--more N` raises the session limit), then monitor again. After a review that could not run, resume runs it again; `--skip-review` clears the group without it, and only the owner asks for that.
+- `resume [note]`: only on the owner's word, after a halt, a stop or a stall. Write the note verbatim to a file, run `python3 .charter/bin/charter chain resume --note-file <file>` (`--more N` raises the session limit; `--window <tokens>`, `--wrap <pct>`, `--cap <pct>` set the budget, when the halt says a session's start-up reached the hand-over line), then monitor again. After a review that could not run, resume runs it again; `--skip-review` clears the group without it, and only the owner asks for that.
 - `report`: `python3 .charter/bin/charter chain report`, relayed as printed.
 
 ## What holds the chain

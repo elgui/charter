@@ -482,7 +482,7 @@ class Next(ChainCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         c = chainlib.load(self.root)
         self.assertEqual(c["state"], "halted")
-        self.assertIn("landed no commit and checked no criterion", c["reason"])
+        self.assertIn("changed nothing outside .taskets/ and checked no criterion", c["reason"])
 
     def test_resume_after_a_halt_carries_the_owners_note_and_watch_prints_every_event(self):
         self.join(1, "s1")

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import hashlib
 import os
 import re
 import shlex
@@ -200,9 +201,11 @@ def check_review(root: Path, ch: dict, n: int, text: str) -> list[str]:
 
 
 def _after(root: Path, end: str, sha: str) -> bool:
-    """A commit that descends from the reviewed range's last commit, and is not that commit."""
+    """A commit that descends from the reviewed range's last commit, is not that commit, and is on the chain's branch
+    (an ancestor of HEAD): a fix on a side branch, or one reset away, fixes nothing the group is cleared at."""
     full = lib.git(root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}").stdout.strip()
-    return bool(full) and full != end and lib.git(root, "merge-base", "--is-ancestor", end, full).returncode == 0
+    return (bool(full) and full != end and lib.git(root, "merge-base", "--is-ancestor", end, full).returncode == 0
+            and lib.git(root, "merge-base", "--is-ancestor", full, "HEAD").returncode == 0)
 
 
 def crossing(root: Path, ch: dict, moved: list[tuple[str, str]], changed: list[str]) -> list[str]:
@@ -321,10 +324,21 @@ def review_command(ch: dict, base: str, end: str, tree: Path, out: Path) -> list
     return [a.format(base=base, head=end, out=str(out), root=str(tree)) for a in shlex.split(ch["review"])]
 
 
+def review_tmp(root: Path, ch: dict) -> Path:
+    """The review worktree's directory: one per chain, which only one runner uses at a time. The repository's hash is
+    in the name because a chain id is a timestamp, and two repositories can start a chain in the same second
+    (cross-review, 2026-10-04)."""
+    repo = hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:8]
+    return Path(tempfile.gettempdir()) / f"charter-review-{repo}-{ch['id']}"
+
+
 def run_review(root: Path, ch: dict, g: dict, d: Path) -> tuple[bool, str, str]:
     """(ok, review text with repository-relative paths, why not). The reviewer runs in a detached worktree at the
     group's last commit, so it sees the committed group and nothing of the live tree, where the chain goes on."""
-    tmp = Path(tempfile.mkdtemp(prefix="charter-review-"))
+    # what a runner killed before its cleanup left (the directory and its .git/worktrees entry) goes first
+    tmp = review_tmp(root, ch)
+    _drop_tree(root, tmp)
+    tmp.mkdir(parents=True)
     tree, out = tmp / "tree", d / "review.out"
     out.unlink(missing_ok=True)
     try:
@@ -351,11 +365,17 @@ def run_review(root: Path, ch: dict, g: dict, d: Path) -> tuple[bool, str, str]:
             return False, "", f"the reviewer exited {p.returncode}" + ("" if text else " and returned nothing") + (f": {' / '.join(tail)[:300]}" if tail else "")
         for prefix in sorted({str(tree), os.path.realpath(tree)}, key=len, reverse=True):
             text = text.replace(prefix + os.sep, "").replace(prefix, ".")
+        out.unlink(missing_ok=True)   # the caller keeps the text as review.md; a failed run leaves its output to read
         return True, text, ""
     finally:
-        lib.git(root, "worktree", "remove", "--force", str(tree))
+        _drop_tree(root, tmp)
+
+
+def _drop_tree(root: Path, tmp: Path) -> None:
+    if tmp.exists():
+        lib.git(root, "worktree", "remove", "--force", str(tmp / "tree"))
         shutil.rmtree(tmp, ignore_errors=True)
-        lib.git(root, "worktree", "prune")
+    lib.git(root, "worktree", "prune")
 
 
 def start_review(root: Path, ch: dict, n: int, after: str, next_unit: str, note: str = "") -> None:
@@ -412,16 +432,17 @@ def cmd_review_run(root: Path, a) -> int:
     pid = d / "review.pid"
     pid.write_text(f"{os.getpid()}\n")
     try:   # the pid stays until the state is saved, so `chain resume` never starts a second runner meanwhile
-        return _review_and_record(root, a.id, ch, g, d)
+        try:
+            ok, text, why = run_review(root, ch, g, d)
+        except Exception as e:   # a runner that dies leaves the chain waiting on nothing: halt it, with the reason
+            ok, text, why = False, "", f"the runner failed: {e!r}"
+        with chain.chain_lock(root, a.id):
+            return _record(root, a.id, d, ok, text, why)
     finally:
         pid.unlink(missing_ok=True)
 
 
-def _review_and_record(root: Path, cid: str, ch: dict, g: dict, d: Path) -> int:
-    try:
-        ok, text, why = run_review(root, ch, g, d)
-    except Exception as e:   # a runner that dies leaves the chain waiting on nothing: halt it, with the reason
-        ok, text, why = False, "", f"the runner failed: {e!r}"
+def _record(root: Path, cid: str, d: Path, ok: bool, text: str, why: str) -> int:
     ch = chain.load(root, cid)   # the owner may have stopped the chain meanwhile: then record, and end nothing
     g = current(ch)
     n, live = int(g["last_session"]), ch.get("state") == "running"
@@ -537,6 +558,9 @@ def on_resume(root: Path, ch: dict, n: int, note: str, skip: bool) -> bool | Non
     hp = chain.link_dir(root, ch["id"], n) / "handoff.md"
     if hp.exists() and not chain.check_handoff(root, ch, n, hp.read_text(encoding="utf-8")):
         status, nu, _ = chain.handoff_status(hp.read_text(encoding="utf-8"))
+        nums = chain.link(root, ch["id"], n).get("nums") or {}
+        if status == "complete" and (nums.get("probe_failures") or nums.get("gates_blocked")):
+            return None   # halted as broken (`chain next`): a session repairs it first, as in 0.4.7 (cross-review, 2026-10-04)
         if status == "complete" or (status == "continue" and (unit_group(root, nu) or "") not in keys(ch)):
             start_review(root, ch, n, status, nu, note)   # stopped at a boundary: the review comes first
             return chain.load(root, ch["id"]).get("state") in ("running", "complete")
@@ -583,7 +607,7 @@ def cmd_report(root: Path, a) -> int:
          "commit it was cleared at (a merge commit or a fast-forward, not a squash, so the later groups still apply).", ""]
     for g in ch["groups"]:
         done = f", cleared at {g['cleared'][:7]}" if g.get("cleared") else f", {g['state']}"
-        if g.get("skipped"):
+        if not rounds(g) and g.get("skipped"):
             L += [f"### Group {label(g['key'])}: {g['start'][:7]}..{(g.get('end') or '')[:7]}{done}", "", "Review skipped by the owner.", ""]
             continue
         if not rounds(g):
@@ -597,5 +621,8 @@ def cmd_report(root: Path, a) -> int:
                 hp = chain.link_dir(root, ch["id"], int(r["fix_session"])) / "handoff.md"
                 ans = lib.section(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2], "Review").strip() if hp.exists() else ""
                 L += [f"Answers, session {int(r['fix_session'])} (verbatim):", "", ans or "(no answer recorded yet)", ""]
+        if rounds(g) and g.get("skipped"):   # reviewed rounds before it are kept above (cross-review, 2026-10-04)
+            L += [f"### Group {label(g['key'])}: {(g.get('base') or '')[:7]}..{(g.get('end') or '')[:7]}{done}", "",
+                  "Review of this range skipped by the owner.", ""]
     print("\n".join(L).rstrip())
     return 0
