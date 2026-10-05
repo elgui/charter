@@ -64,6 +64,16 @@ OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|r
 RESUME_CMD = "resume-chain"
 RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
 RESUME_HOW = "type `/resume-chain ok|skip [note]` in a Claude Code session of your own in this project"
+# what a closed session may no longer do: write a file, or change the branch's history (the owner-gate re-check, 2026-10-05)
+CLOSED_WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+CLOSED_GIT_RE = re.compile(r"\bgit\b(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+(?:commit|merge|rebase|reset|revert|cherry-pick|am|apply|"
+                           r"push|tag|stash|checkout|switch|restore|rm|mv|add|update-ref|branch|pull)\b")
+
+
+def own_session(root: Path) -> str:
+    """The command that opens a Claude Code session of the owner's own in the project: the owner landed in the chain's
+    tab four times in two trials, and "a session of your own" did not say how to open one (the owner-gate re-check)."""
+    return f"cd {shlex.quote(str(root))} && claude"
 CHARTER_CLI_RE = re.compile(r"^(?:python3?\s+(?:-B\s+)?)?(?:\./)?\.charter/bin/charter(?:\s|$)")
 
 
@@ -483,6 +493,11 @@ def briefing(root: Path, chain: dict, n: int, prev: tuple[str, str] | None = Non
               "These `— owner:` lines were closed since the wait by a commit other than the owner's `/resume-chain`: "
               + "; ".join(last["outside"]) + ". Only the owner may close one. Reopen each line the owner's note above does not say is "
               "theirs (`- [ ]`, with a dated `## Log` line saying why), and wait on it again.", ""]
+    if last.get("next") == n and last.get("after"):
+        L += [f"## Commits since session {n - 1} handed over", "",
+              f"These commits landed after session {n - 1}'s last commit, which its facts below stop at, and are not the owner's "
+              f"`/{RESUME_CMD}`: " + "; ".join(last["after"]) + ". Read each one (`git show --stat <sha>`) before building on it, "
+              "and record under `## Verified` what it changed and whether it holds.", ""]
     if prev is None:
         L += ["## Start", "", f"You are the first session. Start with unit `{chain['unit']}`: "
               f"`python3 .charter/bin/charter unit start {chain['unit']}`. Under `## Verified` in your handoff, write `first session`.", ""]
@@ -755,6 +770,7 @@ def owner_items(root: Path) -> list[dict]:
         lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)] if ch["state"] == "waiting" else []
         how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
                if lines else f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>")
+        how += f"\n(not in the chain's tab; open your own with `{own_session(root)}`)"
         return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
                  "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
@@ -826,9 +842,17 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
     if not j:
         return None
     chain, n, rec = j
-    if chain.get("state") != "running" or rec.get("closed_at"):
-        return None
     tool, ti = data.get("tool_name") or "", data.get("tool_input") or {}
+    if rec.get("closed_at"):
+        # a session that handed over is done: after `chain next` it committed again, past the commit the chain waited
+        # at, and neither its facts nor the next session saw it (docs/trials/2026-10-05-owner-gate-recheck.md)
+        if tool in CLOSED_WRITE_TOOLS or (tool == "Bash" and CLOSED_GIT_RE.search(str(ti.get("command") or ""))):
+            return {"deny": f"charter chain: session {n} of chain {chain['id']} is closed ({rec.get('status')}); its work is "
+                            "handed over and recorded. It changes no file and no commit now: end your turn. A change goes "
+                            f"through the next session, or the owner's own session (`{own_session(root)}`)."}
+        return None
+    if chain.get("state") != "running":
+        return None
     if tool == "Bash" and OWNER_ACT_RE.search(str(ti.get("command") or "")):
         # the verbs refuse inside a chain session by its environment (`_owner_verb`), which a command can unset; the
         # hook knows the session from its own input (cross-review, 2026-10-04). A script that calls the package's functions
@@ -1335,6 +1359,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         return 1
     note = (a.note or "").strip()
     outside = closed_outside(root, end, chain["id"])
+    after = commits_since(root, end, chain["id"])
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
     commit = ""
@@ -1361,7 +1386,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
     # at least one more session, and --more beyond that
     chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0),
                  last_resume={"at": now(), "via": f"/{RESUME_CMD}", "event": event_name, "session": by, "closed": closed,
-                              "commit": commit, "outside": outside, "next": n + 1})
+                              "commit": commit, "outside": outside, "after": after, "next": n + 1})
     save(root, chain)
     event(root, chain["id"], "chain", "resumed", f"by the owner's /{RESUME_CMD}" + (f" in session {by[:8]}" if by else "")
           + (f"; closed {', '.join(closed)} in {commit[:7]}" if closed else "") + (f"; note: {note[:200]}" if note else ""))
@@ -1370,6 +1395,9 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
     if outside:
         print(f"closed since the wait by a commit that was not your /{RESUME_CMD}: {'; '.join(outside)}. "
               "The next session reopens each one your note does not say is yours")
+    if after:
+        print(f"committed since session {n} handed over, and not by your /{RESUME_CMD}: {'; '.join(after[:6])}"
+              + (f" and {len(after) - 6} more" if len(after) > 6 else "") + ". The next session checks each one first")
     still = open_waited_lines(root, chain, n)
     if still:
         print(f"still open, and no chain session may close them: {', '.join(still)} (`/resume-chain <AC-n>` once done)")
@@ -1499,6 +1527,21 @@ def closed_outside(root: Path, since: str, cid: str = "") -> list[str]:
     return out
 
 
+def commits_since(root: Path, since: str, cid: str) -> list[str]:
+    """The commits on the branch after `since` (the commit the chain paused at) other than the owner's resume commits,
+    as "<sha> <subject> (<author>)": the owner's from their terminal, or a closed session's that went on. The next
+    session checks each one before building on it."""
+    if not since:
+        return []
+    out = []
+    for line in lib.git(root, "log", "--reverse", "--format=%H%x00%s%x00%an", f"{since}..HEAD").stdout.splitlines():
+        sha, subject, author = (line.split("\0") + ["", ""])[:3]
+        if subject.startswith("owner: closes ") and subject.endswith(f"(/{RESUME_CMD}, chain {cid})"):
+            continue
+        out.append(f"{sha[:7]} {subject[:80]} ({author})")
+    return out
+
+
 def open_waited_lines(root: Path, chain: dict, n: int) -> list[str]:
     """The owner's lines still open in the units the last session's `## Wait` names."""
     hp = link_dir(root, chain["id"], n) / "handoff.md"
@@ -1528,7 +1571,7 @@ def typed_by_owner(root: Path, sid: str) -> str:
     j = joined(root, sid)
     if j:
         return (f"this is session {j[1]} of chain {j[0]['id']}, whose prompts come from the chain. "
-                "Type it in a Claude Code session of your own")
+                f"Type it in a Claude Code session of your own: open one in a terminal with `{own_session(root)}`")
     return ""
 
 

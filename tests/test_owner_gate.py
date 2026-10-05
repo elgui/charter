@@ -9,6 +9,7 @@ chain resumes only when the owner types `/resume-chain` in an interactive Claude
 performs it and blocks the prompt from the model, and `charter chain resume` refuses everyone
 (docs/trials/2026-10-04-owner-gate.md). Every test here fails on 243d84b."""
 import json
+import shlex
 import sys
 import unittest
 from pathlib import Path
@@ -134,6 +135,45 @@ class OwnerGate(WaitCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"this is session 1 of chain {self.cid}", r.stdout)
         self.assert_still_waiting(at)
+
+    def test_the_chain_tab_refusal_and_the_queue_say_how_to_open_your_own_session(self):
+        # the owner typed the command in the chain's tab four times in two trials (docs/trials/2026-10-05-owner-gate-recheck.md)
+        self.waiting()
+        own = f"cd {shlex.quote(str(self.root.resolve()))} && claude"
+        self.assertIn(own, resume(self.root, "ok fine", sid="s1").stdout)
+        self.assertIn(f"not in the chain's tab; open your own with `{own}`", charter(self.root, "next").stdout)
+
+    def test_a_closed_session_writes_and_commits_nothing_more(self):
+        # session 1 of the re-check committed after `chain next` closed it, unseen (docs/trials/2026-10-05-owner-gate-recheck.md)
+        self.waiting()
+        for tool, ti, deny in (("Edit", {"file_path": str(self.u1), "old_string": "a", "new_string": "b"}, True),
+                               ("Write", {"file_path": str(self.root / "x.txt"), "content": "x"}, True),
+                               ("Bash", {"command": "sed -i '' 's/a/b/' .taskets/u1.md; git commit -qam 'tick AC-1'"}, True),
+                               ("Bash", {"command": f"git -C {self.root} add -A && git push"}, True),
+                               ("Bash", {"command": "git log --oneline -3; git status --short"}, False),
+                               ("Bash", {"command": "python3 .charter/bin/charter chain next"}, False),
+                               ("Read", {"file_path": str(self.u1)}, False)):
+            code, out, so, se = run_hook(self.root, "chain_gate", {"hook_event_name": "PreToolUse", "session_id": "s1",
+                                                                  "tool_name": tool, "tool_input": ti})
+            self.assertEqual(bool(denied(out)), deny, f"{tool} {ti} {so} {se}")
+            if deny:
+                self.assertIn(f"session 1 of chain {self.cid} is closed (wait)", denied(out))
+
+    def test_commits_since_the_wait_are_named_and_the_next_session_checks_them(self):
+        at = self.waiting()
+        (self.root / "notes.txt").write_text("the owner, during the wait\n")
+        git(self.root, "add", "notes.txt")
+        git(self.root, "commit", "-qm", "owner: a note during the wait")
+        extra = self.head()
+        r = resume(self.root, "ok all done")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"committed since session 1 handed over, and not by your /resume-chain: {extra[:7]} owner: a note during the wait", r.stdout)
+        after = chainlib.load(self.root)["last_resume"]["after"]
+        self.assertEqual(len(after), 1, after)   # the owner's resume commit is not one of them
+        b = self.launched(2)
+        self.assertIn("## Commits since session 1 handed over", b)
+        self.assertIn(f"{extra[:7]} owner: a note during the wait", b)
+        self.assertNotEqual(at, extra)
 
     def test_a_line_that_is_not_an_open_owner_line_changes_nothing(self):
         at = self.waiting()
