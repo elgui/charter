@@ -392,6 +392,13 @@ class PasteReady(WaitCase):
                     "closes <unit-id> AC-1, not in backticks", "run: `read \"b?name: \"`"):
             self.assertEqual(chainlib.placeholders(act), [], act)
 
+    def test_a_double_backtick_span_is_read_whole(self):
+        # markdown's form for a command that holds a backtick (cross-review of f8d72ef)
+        act = "- tag it — run: `` git log -1 --format=`%h` `` — closes u1 AC-2"
+        self.assertEqual(chainlib.run_commands(act), ["git log -1 --format=`%h`"])
+        self.assertEqual(chainlib.placeholders("run: `` echo `x` <bucket> ``"), ["<bucket>"])
+        self.assertEqual(chainlib.run_commands("run: `sudo rclone config`, then `x`"), ["sudo rclone config"])
+
     def test_on_wait_chain_next_prints_each_act_and_its_command(self):
         self.join(1, "s1")
         self.wait_handoff(1, wait=PASTE)

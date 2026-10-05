@@ -406,20 +406,25 @@ def wait_acts(body: str) -> list[str]:
     return [l.strip("-* ").strip() for l in text.splitlines() if l.strip() and not l.strip("-* ").startswith("<")]
 
 
-CODE_RE = re.compile(r"`([^`\n]+)`")
+CODE_RE = re.compile(r"(`+)([^\n]+?)\1(?!`)")   # a markdown code span: ``a `tick` `` holds a backtick
 PLACEHOLDER_RE = re.compile(r"<[A-Za-z][A-Za-z0-9_-]*>")
-RUN_RE = re.compile(r"\brun:\s*`([^`\n]+)`")
+RUN_RE = re.compile(r"\brun:\s*" + CODE_RE.pattern)
+
+
+def _span(text: str) -> str:
+    """A code span's content: one space padding each end is markdown's, not the command's."""
+    return text[1:-1] if len(text) > 2 and text[0] == text[-1] == " " else text
 
 
 def placeholders(act: str) -> list[str]:
     """The `<placeholder>`s in an act's backticked spans: pasted in zsh, `<bucket>` reads a file named `bucket`
     (bug 2026-10-05). `sort < in.txt` and a heredoc's `<<EOF` hold none."""
-    return [m for span in CODE_RE.findall(act) for m in PLACEHOLDER_RE.findall(span)]
+    return [m for _, span in CODE_RE.findall(act) for m in PLACEHOLDER_RE.findall(span)]
 
 
 def run_commands(act: str) -> list[str]:
     """The commands an act gives after `run:`, as the owner pastes them."""
-    return RUN_RE.findall(act)
+    return [_span(c) for _, c in RUN_RE.findall(act)]
 
 
 def handoff_status(text: str) -> tuple[str, str, str]:

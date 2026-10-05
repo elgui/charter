@@ -125,7 +125,7 @@ class OwnerJsonQueue(unittest.TestCase):
         self.assertEqual(set(rep), {"project", "charter", "owner", "items"})
         self.assertEqual(rep["project"], str(self.root))
         self.assertEqual(rep["owner"], "Test Owner")
-        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform"}
+        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run"}
         for it in rep["items"]:
             self.assertEqual(set(it), fields, it)
             self.assertIn(it["kind"], ("decide", "do", "check"))
