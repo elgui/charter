@@ -150,7 +150,9 @@ class OwnerGate(WaitCase):
                                ("Write", {"file_path": str(self.root / "x.txt"), "content": "x"}, True),
                                ("Bash", {"command": "sed -i '' 's/a/b/' .taskets/u1.md; git commit -qam 'tick AC-1'"}, True),
                                ("Bash", {"command": f"git -C {self.root} add -A && git push"}, True),
+                               ("Bash", {"command": "git -C 'a dir' commit -qm x"}, True),
                                ("Bash", {"command": "git log --oneline -3; git status --short"}, False),
+                               ("Bash", {"command": "echo 'git commit'; git tag -l; git stash list"}, False),
                                ("Bash", {"command": "python3 .charter/bin/charter chain next"}, False),
                                ("Read", {"file_path": str(self.u1)}, False)):
             code, out, so, se = run_hook(self.root, "chain_gate", {"hook_event_name": "PreToolUse", "session_id": "s1",
@@ -158,6 +160,13 @@ class OwnerGate(WaitCase):
             self.assertEqual(bool(denied(out)), deny, f"{tool} {ti} {so} {se}")
             if deny:
                 self.assertIn(f"session 1 of chain {self.cid} is closed (wait)", denied(out))
+        # the tab of a session of a completed chain is an ordinary session again
+        c = chainlib.load(self.root)
+        c["state"] = "complete"
+        chainlib.save(self.root, c)
+        code, out, so, se = run_hook(self.root, "chain_gate", {"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Edit",
+                                                              "tool_input": {"file_path": str(self.u1), "old_string": "a", "new_string": "b"}})
+        self.assertEqual(denied(out), "", so + se)
 
     def test_commits_since_the_wait_are_named_and_the_next_session_checks_them(self):
         at = self.waiting()

@@ -116,7 +116,7 @@ def git(root, *args, check=True, env=None):
 
 
 def make_project(with_charter=True, track="client"):
-    d = Path(tempfile.mkdtemp(prefix="charter-test-"))
+    d = Path(tempfile.mkdtemp(prefix="charter-test-")).resolve()   # TMPDIR may go through the /var symlink
     (d / "app").mkdir()
     (d / "tests").mkdir()
     (d / "app" / "__init__.py").write_text("")

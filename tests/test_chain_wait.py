@@ -199,7 +199,8 @@ class WaitSecondReview(WaitCase):
         self.assertEqual(self.next("s1").returncode, 0)
         it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
         self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1",
-                                                    WAIT + "\nthen type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)"))
+                                                    WAIT + "\nthen type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)"
+                                                f"\n(not in the chain's tab; open your own with `{chainlib.own_session(self.root)}`)"))
 
     def test_a_stop_requested_before_the_wait_wins(self):
         self.join(1, "s1")

@@ -66,8 +66,13 @@ RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
 RESUME_HOW = "type `/resume-chain ok|skip [note]` in a Claude Code session of your own in this project"
 # what a closed session may no longer do: write a file, or change the branch's history (the owner-gate re-check, 2026-10-05)
 CLOSED_WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
-CLOSED_GIT_RE = re.compile(r"\bgit\b(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+(?:commit|merge|rebase|reset|revert|cherry-pick|am|apply|"
-                           r"push|tag|stash|checkout|switch|restore|rm|mv|add|update-ref|branch|pull)\b")
+# best effort: a git command at the start of a shell command whose verb changes files, the index or the branch; an alias,
+# `bash -c` or a script gets past it (docs/gates.md § What a gate cannot see; cross-review, 2026-10-05)
+_ARG = r"(?:'[^']*'|\"[^\"]*\"|\S+)"
+CLOSED_GIT_RE = re.compile(r"(?:^|[;&|(\n]|\b(?:then|do|else)\b)\s*(?:\w+=\S*\s+)*(?:\S*/)?git"
+                           rf"(?:\s+(?:-[cC]\s+{_ARG}|--(?:git-dir|work-tree|namespace)\s+{_ARG}|--?[\w-]+(?:={_ARG})?))*"
+                           r"\s+(?:commit|merge|rebase|reset|revert|cherry-pick|am|apply|push|pull|checkout|switch|restore|rm|mv|add|"
+                           r"update-ref|clean|notes|stash(?!\s+(?:list|show)\b))\b")
 
 
 def own_session(root: Path) -> str:
@@ -843,7 +848,7 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
         return None
     chain, n, rec = j
     tool, ti = data.get("tool_name") or "", data.get("tool_input") or {}
-    if rec.get("closed_at"):
+    if rec.get("closed_at") and chain.get("state") != "complete":
         # a session that handed over is done: after `chain next` it committed again, past the commit the chain waited
         # at, and neither its facts nor the next session saw it (docs/trials/2026-10-05-owner-gate-recheck.md)
         if tool in CLOSED_WRITE_TOOLS or (tool == "Bash" and CLOSED_GIT_RE.search(str(ti.get("command") or ""))):
@@ -1359,7 +1364,13 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         return 1
     note = (a.note or "").strip()
     outside = closed_outside(root, end, chain["id"])
-    after = commits_since(root, end, chain["id"])
+    prev = chain.get("last_resume") or {}
+    if not end and prev.get("next") == n:
+        # a retry after a launch that failed: the failed link has no last commit, the earlier resume's lists hold
+        outside, after = outside or prev.get("outside", []), prev.get("after", [])
+    else:
+        named = {o.split(" in ", 1)[1][:7] for o in outside if " in " in o}
+        after = [c for c in commits_since(root, end, chain["id"]) if c[:7] not in named]   # named once, as closed outside
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
     commit = ""
@@ -1371,7 +1382,6 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
             print(f"not resumed, and no line closed: {e}")
             return 1
         commit = head(root)
-    prev = chain.get("last_resume") or {}
     if not closed and prev.get("next") in (n, n + 1) and prev.get("closed"):
         closed, commit = prev["closed"], prev.get("commit", "")   # a retry after a launch that failed (cross-review, 2026-10-04)
     sha = rules_sha(root)
