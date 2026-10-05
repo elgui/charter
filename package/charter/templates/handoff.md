@@ -33,7 +33,11 @@ next_unit: <tasket id>
 
 ## Wait
 
-<Only with `status: wait`: one line per act of the owner's, what it is, how it is done, and the unit line it closes, e.g. `- turn on FileVault (System Settings > Privacy & Security) — closes 20261004-0010 AC-8`.>
+<Only with `status: wait`: one line per act of the owner's, paste-ready (.charter/chain-rules.md section 5): ``- <what> — run: `<command>` — expect: <what success prints> — closes <unit-id> AC-n``, or the exact path of a setting instead of `run:`. The command runs as pasted in zsh: no `<placeholder>` in it (`chain next` refuses one), a value is read with `read "x?…"`.>
+<!-- e.g.
+- store the R2 bucket name — run: `read "b?R2 bucket name: " && echo "$b" | sudo tee /opt/app/etc/r2-bucket` — expect: the name echoed back, one Touch ID prompt — closes 20261004-0010 AC-7
+- turn on FileVault (System Settings > Privacy & Security > FileVault > Turn On) — expect: "FileVault is turned on" — closes 20261004-0010 AC-8
+-->
 
 ## Halt
 

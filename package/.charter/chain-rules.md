@@ -30,7 +30,7 @@ At the hand-over line, when the chain waits on the owner or halts, or when the r
 1. Commit what landed. Append a dated `## Log` line to the active unit saying exactly where it stands.
 2. Write the handoff at the path in your briefing, from `charter/templates/handoff.md`. It carries state, never rules: the next session gets these rules from the hook. Link to commits and unit logs instead of copying them. 80 lines at most.
 3. Run `python3 .charter/bin/charter chain next`. It validates the handoff, records what you landed, verifies it mechanically and launches the next session. If it refuses, fix what it names and run it again.
-4. End your turn. After a successful `chain next`, start nothing new.
+4. End your turn. After a successful `chain next`, start nothing new. At a wait, the closing message lists every `## Wait` act verbatim, each command in its own fenced block, then the `/resume-chain ok|skip <note>` line and `python3 .charter/bin/charter owner`; never a summary of the acts. `chain next` prints that block for you to copy.
 
 ## 5. Wait on the owner, or halt, instead of guessing
 
@@ -38,7 +38,16 @@ Some steps are the owner's alone: a decision, scope, a change request, an owner-
 
 1. Do first every part of the unit that does not need the owner, and commit it.
 2. Mark each acceptance line that only the owner can close with `— owner: do` or `— owner: check` (or `— owner: decide`), so that `charter owner` lists it with the unit. A decision or change request you need goes in as `proposed`.
-3. Hand over with `status: wait`, `next_unit:` the unit the chain goes on with, and under `## Wait` one line per act: what it is, how the owner does it (the command, the setting, the place), and the unit line it closes. Commit everything first: the chain waits at a commit, and the owner may work in this tree meanwhile.
+3. Hand over with `status: wait`, `next_unit:` the unit the chain goes on with, and under `## Wait` one line per act: what it is, how the owner does it: a paste-ready command (the standard below) or the exact path of the setting, and the unit line it closes, in the template's format (``— run: `<command>` — expect: … — closes <unit-id> AC-n``). Commit everything first: the chain waits at a commit, and the owner may work in this tree meanwhile.
+
+An owner act is paste-ready when:
+- each command runs as pasted in zsh, in its own fenced `sh` block (or after `run:` in a one-line act);
+- it holds no `<placeholder>`: a value the owner supplies is read with a prompt (`read "b?R2 bucket name: "`) or set on a first line to edit (`BUCKET=my-bucket  # edit`);
+- an interactive command (wizard, editor, TUI) stands alone, with the answers to give listed under it;
+- it says what success prints (or its exit code) and how many Touch ID / password prompts to expect;
+- no secret is typed on a command line (shell history, `ps`): a secret goes through an interactive prompt.
+
+`chain next` refuses a `## Wait` command that holds a `<placeholder>`.
 
 The owner is told, does the acts, and resumes the chain by typing `/resume-chain ok <note>` (the acts are done) or `/resume-chain skip <note>` (not yet). The charter hook closes those lines in a commit made as the owner, and resumes. You never tick, unmark or remove an `— owner:` line, and never run `charter chain resume`: the gates refuse both, because a line only the owner closes, closed by a session, would pass for the owner's act. The next session checks each act before anything else (the lines the owner closed are in its briefing), and waits again on any that is not done.
 

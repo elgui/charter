@@ -30,7 +30,7 @@ import rails
 
 CHARTER_BIN = ".charter/bin/charter"
 KINDS = ("decide", "do", "check")
-FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform")
+FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run")
 # `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
 # tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
 OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
@@ -46,7 +46,7 @@ OWNER_SWITCH = "CHARTER_OWNER"
 
 def _item(**kw) -> dict:
     it = {f: None for f in FIELDS}
-    it.update(options=[], marked=True)
+    it.update(options=[], marked=True, run=[])
     it.update(kw)
     return it
 
@@ -200,10 +200,17 @@ def next_line(it: dict) -> str:
         return f"- {it['title']}; `python3 .charter/bin/charter handover` prints the command"
     if key.startswith("chain:"):
         ask = ("\n" + "\n".join(f"    {l}" for l in it["ask"].splitlines())) if it["ask"] else ""
-        return f"- {it['title']}" + ask
+        return f"- {it['title']}" + ask + run_lines(it)
     if key.startswith("human:"):
         return f"- HUMAN-ONLY unit {key.split(':', 1)[1]} — {it['title']} ({it['file']}:{it['line']})"
     return f"- {'owner line' if it['marked'] else 'unmarked owner line'} {it['title']} ({it['file']}:{it['line']})"
+
+
+def run_lines(it: dict) -> str:
+    """The commands of a waiting chain's acts, each alone on its line so that a triple-click copies it whole (0.4.10)."""
+    if not it.get("run"):
+        return ""
+    return "\n    the commands, one per line, each to paste as is:\n" + "\n".join(it["run"])
 
 
 def handover_message(root: Path, staged: list[str], mine: list[str]) -> str:
@@ -236,6 +243,8 @@ def human(rep: dict) -> str:
             L.append(f"- [{i['key']}] {i['title']} ({i['file']}:{i['line']})" + ("" if i["marked"] else " (unmarked)"))
             if i["ask"]:
                 L += [f"    ask: {l}" for l in i["ask"].splitlines()]
+            if i["run"]:
+                L.append(run_lines(i).lstrip("\n"))
             if i["recommend"]:
                 L.append(f"    recommended: {i['recommend']}")
             if i["check"]:
