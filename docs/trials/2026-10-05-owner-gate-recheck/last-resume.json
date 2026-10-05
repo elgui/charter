@@ -1,0 +1,14 @@
+{
+ "last_resume": {
+  "at": "2026-10-05T17:05:30",
+  "via": "/resume-chain",
+  "event": "UserPromptExpansion",
+  "session": "6d290c0f-3aac-4e35-b7bf-d917a9eb19be",
+  "closed": [
+   "w5 AC-2"
+  ],
+  "commit": "87b5bdbc60dbc86fb6aa96f817c0da6263914214",
+  "outside": [],
+  "next": 2
+ }
+}

@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import PKG, REPO, git
-from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, handoff
+from test_chain_0_4_7 import VERIFIED, ChainCase, cli, env_for, handoff, resume
 from test_groups_0_4_8 import GroupCase
 from test_review_regressions import commit_all
 
@@ -102,18 +102,20 @@ class Wait(WaitCase):
         it = {i["key"]: i for i in q["items"]}
         self.assertEqual(it[f"chain:{self.cid}"]["kind"], "do")
         self.assertIn("turn on FileVault", it[f"chain:{self.cid}"]["ask"])
-        self.assertEqual(it[f"chain:{self.cid}"]["perform"][-3:], ["chain", "resume", self.cid])
+        # no command of the queue resumes a chain: the owner types `/resume-chain`, with the owner lines to close (0.4.9)
+        self.assertIsNone(it[f"chain:{self.cid}"]["perform"])
         self.assertIn("owner-line:u1:AC-2", it)
         nxt = charter(self.root, "next").stdout
-        self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1; then `python3 .charter/bin/charter chain resume`", nxt)
+        self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1", nxt)
         self.assertEqual(it[f"chain:{self.cid}"]["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
-        self.assertIn("then `python3 .charter/bin/charter chain resume`", nxt)
+        self.assertIn("then type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)", nxt)
+        self.assertNotIn("chain resume", nxt)
 
         r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"chain {self.cid} waits on the owner", r.stdout)
 
-        r = cli(self.root, "resume", "--note", "FileVault is on")
+        r = resume(self.root, "ok FileVault is on")
         self.assertEqual(r.returncode, 0, r.stdout)
         b = self.launched(2)
         self.assertIn("## The chain waited on the owner", b)
@@ -196,7 +198,9 @@ class WaitSecondReview(WaitCase):
         self.wait_handoff(1, wait="<Only with `status: wait`: one line per act>\n" + WAIT)
         self.assertEqual(self.next("s1").returncode, 0)
         it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
-        self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1", WAIT))
+        self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1",
+                                                    WAIT + "\nthen type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)"
+                                                f"\n(not in the chain's tab; open your own with `{chainlib.own_session(self.root)}`)"))
 
     def test_a_stop_requested_before_the_wait_wins(self):
         self.join(1, "s1")
@@ -211,13 +215,13 @@ class WaitSecondReview(WaitCase):
         self.waiting()
         u1 = self.root / ".taskets" / "u1.md"
         u1.write_text(u1.read_text().replace("- [ ] AC-2", "- [x] AC-2"))
-        r = cli(self.root, "resume")
+        r = resume(self.root)
         self.assertEqual(r.returncode, 1)
         self.assertIn("1 uncommitted change(s): .taskets/u1.md", r.stdout)
         self.assertIn("git commit -m \"owner: done during the chain's wait\" -- .taskets/u1.md", r.stdout)
         self.assertEqual(chainlib.load(self.root)["state"], "waiting")
         commit_all(self.root, "owner: AC-2 done")
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         self.launched(2)
 
     def test_resume_refuses_a_branch_that_lost_the_chains_last_commit(self):
@@ -225,7 +229,7 @@ class WaitSecondReview(WaitCase):
         commit_all(self.root, "s1 work")
         self.waiting()
         git(self.root, "reset", "-q", "--hard", "HEAD~1")
-        r = cli(self.root, "resume")
+        r = resume(self.root)
         self.assertEqual(r.returncode, 1)
         self.assertIn("no longer holds", r.stdout)
 
@@ -266,7 +270,7 @@ class WaitAtABoundary(GroupCase):
         r = cli(self.root, "next", sid="s1")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual((self.state()["state"], self.calls()), ("waiting", []))
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         b = self.launched(2)
         self.assertEqual((len(self.calls()), self.group(0)["state"], self.group()["key"]), (1, "cleared", "r2"))
         self.assertIn("## The chain waited on the owner", b)
@@ -300,7 +304,7 @@ class ReviewFixes(ChainCase):
 
     def test_a_late_tab_cannot_join_a_session_resume_closed(self):
         self.assertEqual(cli(self.root, "stop").returncode, 0)   # session 1 never joined: stopped at once
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         self.launched(2)
         _, out = self.join(1, "late")   # the tab of session 1 starts now, say after its folder-trust menu
         self.assertIn("is already closed", out["hookSpecificOutput"]["additionalContext"])
@@ -309,7 +313,7 @@ class ReviewFixes(ChainCase):
     def test_an_edit_to_a_file_untracked_at_launch_counts_as_uncommitted(self):
         cli(self.root, "stop")
         (self.root / "notes.md").write_text("draft\n")
-        self.assertEqual(cli(self.root, "resume").returncode, 0)
+        self.assertEqual(resume(self.root).returncode, 0)
         rec = chainlib.link(self.root, self.cid, 2)
         self.assertEqual(chainlib.uncommitted(self.root, rec), [])
         (self.root / "notes.md").write_text("draft, and the session's work\n")
@@ -319,7 +323,7 @@ class ReviewFixes(ChainCase):
     def test_resume_from_another_branch_is_refused(self):
         cli(self.root, "stop")
         git(self.root, "checkout", "-q", "main")
-        r = cli(self.root, "resume")
+        r = resume(self.root)
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"HEAD is on main, and the chain works on chain/{self.cid}", r.stdout)
         self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())

@@ -40,7 +40,7 @@ OWNED = [
     ".charter/githooks/pre-commit", ".charter/githooks/README.md",
     ".claude/rules/charter.md",
     ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md", ".claude/skills/charter-progress/SKILL.md",
-    ".claude/skills/charter-chain/SKILL.md",
+    ".claude/skills/charter-chain/SKILL.md", ".claude/commands/resume-chain.md",
     ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml",
     "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
@@ -379,7 +379,7 @@ def do_uninstall(project: Path, a) -> int:
     # empty dirs the package created
     for d in [".charter/hooks", ".charter/githooks", ".charter/bin", ".charter/state", ".charter",
               ".claude/skills/charter-unit", ".claude/skills/charter-decision", ".claude/skills/charter-progress", ".claude/skills/charter-chain",
-              ".claude/skills", ".claude/rules", ".claude/agents", ".claude", ".github/workflows", ".github",
+              ".claude/skills", ".claude/commands", ".claude/rules", ".claude/agents", ".claude", ".github/workflows", ".github",
               "charter/templates"]:
         p = project / d
         if p.is_dir():

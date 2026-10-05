@@ -1,0 +1,20 @@
+commit 1fca9cd83b18693d25ed217b1cd923691c64eb94
+Author: Test Owner <t@example.com>
+Date: Mon Oct 5 09:59:55 2026 +0200
+
+owner: closes w3 AC-2 (/resume-chain, chain 20261004-224239)
+
+
+diff --git a/.taskets/w3.md b/.taskets/w3.md
+index ca64368..f1b94a9 100644
+--- a/.taskets/w3.md
++++ b/.taskets/w3.md
+@@ -15,7 +15,7 @@ app/welcome.py: welcome(name), the line a new member reads first. A person must
+ ## Acceptance
+ 
+ - [x] AC-1: welcome("Ada") welcomes Ada — probe: `python3 -c "from app.welcome import welcome; m = welcome('Ada'); assert 'Ada' in m and 'elcome' in m"`
+-- [ ] AC-2: the owner reads welcome("Ada") and approves its tone — owner: check
++- [x] AC-2: the owner reads welcome("Ada") and approves its tone — owner: check
+ 
+ ## Evidence
+ 
