@@ -1,0 +1,29 @@
+commit 87b5bdbc60dbc86fb6aa96f817c0da6263914214
+Author: Test Owner <t@example.com>
+Date: Mon Oct 5 17:05:29 2026 +0200
+
+owner: closes w5 AC-2 (/resume-chain, chain 20261005-164742)
+
+
+diff --git a/.taskets/w5.md b/.taskets/w5.md
+index 9a2135f..f380e47 100644
+--- a/.taskets/w5.md
++++ b/.taskets/w5.md
+@@ -15,7 +15,7 @@ app/thanks.py: thanks(name), the line a member reads after helping. A person mus
+ ## Acceptance
+ 
+ - [x] AC-1: thanks("Ada") thanks Ada — probe: `python3 -c "from app.thanks import thanks; m = thanks('Ada'); assert 'Ada' in m and 'hank' in m"`
+-- [ ] AC-2: the owner reads thanks("Ada") and approves its tone — owner: check
++- [x] AC-2: the owner reads thanks("Ada") and approves its tone — owner: check
+ 
+ ## Evidence
+ 
+
+38ecde6 Test Owner charter-0.4.9-1b0cddd
+
+ .charter/chain.py            | 44 +++++++++++++++++++++++++++-------------
+ .charter/checks.py           | 48 ++++++++++++++++++++++++--------------------
+ .charter/hooks/chain_gate.py |  9 ++++++++-
+ .charter/manifest.json       |  6 +++---
+ .claude/settings.json        |  4 ++--
+ 5 files changed, 69 insertions(+), 42 deletions(-)
