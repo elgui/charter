@@ -1,0 +1,19 @@
+2026-10-04T01:15:22 chain started: chain 20261004-011522: unit t1, new branch chain/20261004-011522 from main; budget: hand over at 25%, cap 30% of 150,000 tokens; model sonnet, effort low; launcher: spawn (/Users/gui/.claude-lean/plugins/cache/elgui/spawn/1.1.0/agent-backend/agent_session.py); at most 4 sessions; mission: go with unit t1. Optimize context window, and as long as things go well, iterate on the next unit until it's done.; warning: a 150,000-token window leaves little room: start-up alone takes about 33,000 tokens (22% of it). A [1m] model gives each session ten times the work for the same start-up
+2026-10-04T01:15:23 s01 waiting: session 1 started in 1B524F7C-A2AE-4142-B3B8-166C636CFF7B/05EAF152-0F2A-4C5B-9E30-80D7A8BC4E43 but its briefing has not landed: the child is stopped at a menu (❯ No, exit); the briefing is its first prompt and runs once the menu is answered in cmux 1B524F7C-A2AE-4142-B3B8-166C636CFF7B/05EAF152-0F2A-4C5B-9E30-80D7A8BC4E43.. The owner answers the menu in that tab; the session then starts on its own
+2026-10-04T09:58:25 s01 joined: Claude Code session e9ce7e67
+2026-10-04T09:58:29 s01 wrap: context 33% >= 25%
+2026-10-04T09:58:36 s01 cap: context 32% >= cap 30%; only the handoff goes through
+2026-10-04T09:58:58 s01 closed: continue; 1 commit(s), peak 37%
+2026-10-04T09:59:01 s02 launched: session 2 in 1B524F7C-A2AE-4142-B3B8-166C636CFF7B/87390A86-2174-46CB-BDB8-AF84A85BE064
+2026-10-04T09:59:01 s02 joined: Claude Code session 4cbcaa9a
+2026-10-04T09:59:06 s02 wrap: context 33% >= 25%
+2026-10-04T09:59:17 s02 cap: context 33% >= cap 30%; only the handoff goes through
+2026-10-04T09:59:52 s02 closed: continue; 1 commit(s), peak 39%
+2026-10-04T09:59:53 s01 tab-closed: its transcript stays (`claude --resume`)
+2026-10-04T09:59:55 s03 joined: Claude Code session 176f5546
+2026-10-04T09:59:55 s03 launched: session 3 in 1B524F7C-A2AE-4142-B3B8-166C636CFF7B/FAEB1339-01FD-43BB-ACED-79BD2618D3B4
+2026-10-04T10:00:00 s03 cap: context 33% >= cap 30%; only the handoff goes through
+2026-10-04T10:00:11 s03 wrap: context 36% >= 25%
+2026-10-04T10:00:21 s03 closed: halt; 1 commit(s), peak 38%
+2026-10-04T10:00:21 s02 tab-closed: its transcript stays (`claude --resume`)
+2026-10-04T10:00:21 chain halted: session 3: Owner: raise the context budget (hand-over line above about 35%, cap about 45%), or trim the injected context (skill and agent listings, deferred tool lists, MCP instructions). Then resume the chain.

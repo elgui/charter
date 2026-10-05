@@ -1,0 +1,41 @@
+{
+  "n": 2,
+  "launched_at": "2026-10-04T20:49:16",
+  "launch_head": "b06cd8683fcb96386cc648ce1e11fa71ce3439c5",
+  "untracked_at_launch": [],
+  "untracked_stat_at_launch": {},
+  "session_id": "6cd589fa-e7f0-4726-9611-8484ac794923",
+  "transcript": "/Users/gui/.claude-lean/projects/-private-tmp-claude-501--Users-gui-dev-charter-3003bdde-4ea4-4551-8e33-9a5ca765bd48-scratchpad-chain-trial/6cd589fa-e7f0-4726-9611-8484ac794923.jsonl",
+  "joined_at": "2026-10-04T20:49:18",
+  "start_head": "b06cd8683fcb96386cc648ce1e11fa71ce3439c5",
+  "backend_id": "local-c5d7ee9c",
+  "launch": {
+    "ok": true,
+    "ready": true,
+    "id": "local-c5d7ee9c",
+    "note": "",
+    "where": "1B524F7C-A2AE-4142-B3B8-166C636CFF7B/83C87CCA-8DED-49EE-891B-54B59D1B49BC"
+  },
+  "stop_blocks": 0,
+  "peak_pct": 14.1,
+  "noted": 2,
+  "start_pct": 12.7,
+  "start_tokens": 50842,
+  "closed_at": "2026-10-04T20:49:40",
+  "end_head": "dd3fd2088f5ed182fe9a2a65b23aa56ac00406c4",
+  "status": "complete",
+  "abnormal": false,
+  "nums": {
+    "commits": 2,
+    "closed": [
+      "w1",
+      "w2"
+    ],
+    "box_delta": 1,
+    "probe_failures": 0,
+    "gates_blocked": false,
+    "dirty": 0,
+    "end_head": "dd3fd2088f5ed182fe9a2a65b23aa56ac00406c4",
+    "work": 1
+  }
+}

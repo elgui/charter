@@ -34,22 +34,23 @@ import checks as charter_checks  # noqa: E402  and its gate decides which staged
 
 # Files copied verbatim and owned by the package (relative to the package root).
 OWNED = [
-    ".charter/lib.py", ".charter/checks.py", ".charter/rails.py", ".charter/owner.py", ".charter/bin/charter",
+    ".charter/lib.py", ".charter/checks.py", ".charter/rails.py", ".charter/owner.py", ".charter/chain.py", ".charter/chain_groups.py", ".charter/chain-rules.md", ".charter/bin/charter",
     ".charter/hooks/_common.py", ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py",
-    ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py",
+    ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py",
     ".charter/githooks/pre-commit", ".charter/githooks/README.md",
     ".claude/rules/charter.md",
     ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md", ".claude/skills/charter-progress/SKILL.md",
+    ".claude/skills/charter-chain/SKILL.md",
     ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml",
     "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
-    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md",
+    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md",
 ]
 # Created once from the package if absent; owned by the project afterwards.
 SEEDED = ["charter/config.json"]
 EXECUTABLE = {".charter/bin/charter", ".charter/githooks/pre-commit",
               ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py", ".charter/hooks/stop_gate.py",
-              ".charter/hooks/session_start.py", ".charter/hooks/session_end.py"}
+              ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py"}
 HOOK_TAG = "/.charter/hooks/"
 AGENTS_BEGIN, AGENTS_END = "<!-- charter-section:begin -->", "<!-- charter-section:end -->"
 GITIGNORE_LINE = ".charter/state/"
@@ -137,10 +138,27 @@ def merge_settings(existing: dict, fragment: dict, project: Path) -> dict:
     out = json.loads(json.dumps(existing))
     hooks = out.setdefault("hooks", {})
     for event, groups in fragment["hooks"].items():
-        cur = hooks.get(event, [])
-        cur = [g for g in cur if not any(HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", [])) for h in g.get("hooks", []))]
+        cur = _without_charter(hooks.get(event, []))
         cur.extend(groups)
         hooks[event] = cur
+    return out
+
+
+def _is_charter(h: dict) -> bool:
+    return HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", []))
+
+
+def _without_charter(groups: list) -> list:
+    """The hook groups of one event with charter's hooks taken out: a project's hook that shares a group with one of
+    charter's stays, and a group left empty goes (cross-review, 2026-10-04: the whole group went)."""
+    out = []
+    for g in groups:
+        hs = g.get("hooks", [])
+        keep = [h for h in hs if not _is_charter(h)]
+        if len(keep) == len(hs):
+            out.append(g)
+        elif keep:
+            out.append(dict(g, hooks=keep))
     return out
 
 
@@ -148,7 +166,7 @@ def strip_settings(existing: dict) -> dict:
     out = json.loads(json.dumps(existing))
     hooks = out.get("hooks", {})
     for event in list(hooks):
-        hooks[event] = [g for g in hooks[event] if not any(HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", [])) for h in g.get("hooks", []))]
+        hooks[event] = _without_charter(hooks[event])
         if not hooks[event]:
             del hooks[event]
     if not hooks and "hooks" in out:
@@ -360,7 +378,7 @@ def do_uninstall(project: Path, a) -> int:
             plan.write(gp, ("\n".join(keep) + "\n").encode(), what="remove state dir from")
     # empty dirs the package created
     for d in [".charter/hooks", ".charter/githooks", ".charter/bin", ".charter/state", ".charter",
-              ".claude/skills/charter-unit", ".claude/skills/charter-decision", ".claude/skills/charter-progress",
+              ".claude/skills/charter-unit", ".claude/skills/charter-decision", ".claude/skills/charter-progress", ".claude/skills/charter-chain",
               ".claude/skills", ".claude/rules", ".claude/agents", ".claude", ".github/workflows", ".github",
               "charter/templates"]:
         p = project / d

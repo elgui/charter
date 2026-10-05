@@ -13,6 +13,7 @@
   config    print the track and opt-ins the gates read; list what in charter/config.json is not applied
   next      where the work stands and what comes next: the active unit, the road, what waits on the owner; read-only
   handover  who commits what is staged (the owner only for owner-only changes), and the command; read-only
+  chain     a continuous chain of sessions over the road: start | next | status | watch | stop | resume | join
   owner     what waits on the owner, with the command that performs each (--json for tools); read-only
   rule      the owner rules on a proposed decision: status, a Ruling line, the index, one commit as the owner
   approve   the owner approves or rejects a proposed change request, in one commit
@@ -723,6 +724,15 @@ def cmd_unit(a) -> int:
         if a.id not in units:
             print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
             return 1
+        try:   # in a chain session, a unit of a group that has not started waits for the current group's review
+            import chain_groups
+            why = chain_groups.unit_start_refusal(root, a.id)
+        except Exception as e:
+            why = ""
+            lib.log_event(root, "cli", "chain", "error", f"unit start: group check failed, so it allows: {e!r}"[:500])
+        if why:
+            print(why)
+            return 1
         (st / "active").write_text(a.id + "\n")
         own = lib.session_unit_file(root)
         if own is not None:
@@ -868,6 +878,12 @@ def cmd_handover(a) -> int:
     return 0
 
 
+def cmd_chain(a) -> int:
+    """A continuous chain of sessions over the road; .charter/chain.py has the commands."""
+    import chain
+    return chain.main(a.rest, lib.repo_root(a.root))
+
+
 # ---------------------------------------------------------------- the owner
 
 def cmd_owner(a) -> int:
@@ -885,6 +901,14 @@ def cmd_owner(a) -> int:
 
 def _owner_verb(a, fn, *args, **kw) -> int:
     root = lib.repo_root(a.root)
+    import chain
+    live = chain.live_session(root)
+    if live:
+        # the verbs commit as the owner; a chain session that ran one would act for the owner instead of waiting on
+        # them (cross-review, 2026-10-04)
+        print(f"charter {a.cmd}: refused: this is session {live[1]} of chain {live[0]['id']}, and a chain session never performs "
+              "the owner's act. Hand over with `status: wait` and name it under `## Wait`.", file=sys.stderr)
+        return 1
     ownerq.warn_in_session()
     try:
         return fn(root, lib.load_config(root), *args, trailer=a.trailer, dry_run=a.dry_run, **kw)
@@ -968,6 +992,8 @@ def main(argv=None) -> int:
     ho = sub.add_parser("handover", help="print the command the owner runs to commit what is staged; read-only")
     ho.add_argument("-m", "--message", default=None, help="the commit message (default: `charter <version>` for an install or upgrade)")
     ho.set_defaults(fn=cmd_handover)
+    ch = sub.add_parser("chain", help="a continuous chain of sessions over the road (`charter chain --help`)", add_help=False)
+    ch.add_argument("rest", nargs=argparse.REMAINDER); ch.set_defaults(fn=cmd_chain)
     ow = sub.add_parser("owner", help="what waits on the owner, with the command for each; read-only")
     ow.add_argument("--json", action="store_true", help="the machine-readable queue a tool such as an owner desk reads"); ow.set_defaults(fn=cmd_owner)
     trailer = {"default": None, "help": "a git trailer for the commit, e.g. `Owner-Action: oa-7k2f (terminal)`"}
@@ -984,7 +1010,11 @@ def main(argv=None) -> int:
     ra.add_argument("id"); ra.add_argument("status"); ra.add_argument("--note", default=None); ra.add_argument("--trailer", **trailer)
     ra.add_argument("--dry-run", action="store_true", help="print the diff and the commit; change nothing"); ra.set_defaults(fn=cmd_rail)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
-    a = ap.parse_args(argv)
+    a, extra = ap.parse_known_args(argv)
+    if a.cmd == "chain":
+        a.rest = extra + a.rest   # a leading option (`chain --help`) is not part of argparse's REMAINDER
+    elif extra:
+        ap.error(f"unrecognized arguments: {' '.join(extra)}")
     if a.cmd not in GATE_COMMANDS:
         return a.fn(a)
     try:
