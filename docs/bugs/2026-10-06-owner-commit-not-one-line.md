@@ -1,7 +1,7 @@
 # The owner's commit of an upgrade is handed over as a 17-path command, and the paste fails
 
 - Seen: 2026-10-06, leCRM at its main of that day (reported in the leCRM session as `1372fcb2`), upgrading charter 0.4.8 to 0.4.11 in a worktree (https://github.com/elgui/lecrm/pull/99)
-- Status: fixed on branch `owner-line-0.4.12` (charter 0.4.12). Tests: `tests/test_owner_commit_0_4_12.py`; `tests/test_handover_0_4_5.py` follows the new line
+- Status: fixed in cc7b4f6 (charter 0.4.12). Tests: `tests/test_owner_commit_0_4_12.py`; `tests/test_handover_0_4_5.py` follows the new line
 
 ## What happened
 
