@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Charter desk sheet</title>
-<meta name="description" content="Charter 0.4.8 on one A4 sheet, both sides: the unit loop, a new project, a migration, the weekly look, the reference, and working the road unattended.">
+<meta name="description" content="Charter 0.4.11 on one A4 sheet, both sides: the unit loop, a new project, a migration, a chain of sessions, the weekly look, the words it uses, the reference, and working the road unattended.">
 <style>
 /* Tokens from docs/method-visual.html (light theme): same family, printed on white. */
 :root{--paper:#ffffff;--fg:#1c1c1e;--muted:#5d6166;--line:#3c3c40;--faint:#dcd9cf;--panel2:#f2f0ea;
@@ -27,7 +27,7 @@ ul,ol{margin:0;padding-left:3.6mm}
 li{margin:0 0 .5mm}
 code,.m{font-family:var(--mono);font-size:6.3pt;background:var(--panel2);padding:0 .35mm;border-radius:.8mm;overflow-wrap:break-word}
 .cols>*,.grid2>*,.steps>*,.anat>*,.weekly>*,.lane>*{min-width:0}
-.back{font-size:6.7pt;line-height:1.25;gap:1.4mm;padding-bottom:5mm}.back h2{font-size:10.5pt;margin-bottom:.8mm}.back .box{padding-top:1mm}.back code{font-size:5.9pt}.back .cnotes,.back .ev{font-size:6.5pt}.back td,.back table{font-size:6.3pt}
+.back{font-size:6.7pt;line-height:1.25;gap:1.2mm;padding-bottom:5mm}.back h2{font-size:10.5pt;margin-bottom:.8mm}.back .box{padding-top:1mm}.back code{font-size:5.9pt}.back .cnotes{font-size:6.5pt}.back td,.back table{font-size:6.3pt}
 pre{font:6.5pt/1.32 var(--mono);margin:0;white-space:pre-wrap}
 .back pre{font-size:5.4pt}
 .src{color:var(--muted);font-size:6.2pt;margin-top:auto;padding-top:.8mm}
@@ -74,6 +74,7 @@ b,strong{font-weight:700}
 
 /* front: two flows */
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:4mm;flex:1;min-height:0}
+.stack{display:flex;flex-direction:column;gap:1.6mm;min-width:0}.stack>.flow{flex:none}.stack>.flow:last-child{flex:1}
 .flow{display:flex;flex-direction:column;border-top:.4mm solid var(--fg);padding-top:1.4mm}
 .flow .lede{font-size:7pt;color:var(--muted);margin-bottom:1.2mm}
 ol.spine{list-style:none;padding:0;margin:0;position:relative}
@@ -107,14 +108,10 @@ table{border-collapse:collapse;width:100%;font-size:6.8pt}
 th{font-family:var(--serif);text-align:left;font-size:7pt;border-bottom:.3mm solid var(--line);padding:.4mm 1mm .4mm 0}
 td{border-bottom:.2mm solid var(--faint);padding:.45mm 1mm .45mm 0;vertical-align:top}
 td code{white-space:normal}
-.refuse td:first-child{width:36%}
+.refuse td:first-child{width:36%}.refuse .o,.refuse .a{width:2.9mm;height:2.9mm;font-size:5pt}.refuse td{padding-top:.35mm;padding-bottom:.35mm}
 .refuse td:nth-child(2){width:6%;white-space:nowrap}
 .cli td:first-child{width:54%}
 .cli td:last-child{width:17%;color:var(--muted)}
-.ev{display:grid;grid-template-columns:1fr 1fr;gap:1.6mm;font-size:6.8pt}
-.ev ul{list-style:none;padding:0}
-.ev li{margin-bottom:.7mm}
-.tracks td:first-child{color:var(--muted);width:30%}
 .strip{border-top:.4mm solid var(--fg);padding-top:1mm;display:grid;grid-template-columns:24mm 1fr;gap:.4mm 2mm}
 .strip ul{display:grid;grid-template-columns:1fr 1.5fr 1.6fr;gap:2.4mm;padding:0;list-style:none}
 .strip h3{font-size:8.6pt}
@@ -123,6 +120,9 @@ td code{white-space:normal}
 .road-cols{display:grid;grid-template-columns:.9fr 1.75fr .85fr;gap:2.6mm}.road-cols>*{min-width:0}
 .road p{margin:0 0 .7mm;font-size:6.4pt;line-height:1.24}
 .flags th{font-size:6.6pt}.flags td{font-size:6.2pt;padding:.25mm 1mm .25mm 0}.flags td:first-child{width:22%}.flags td:first-child code{white-space:nowrap}
+.words .wl{font-size:6.3pt;line-height:1.24;text-align:left}
+.words .wl b{font-family:var(--serif);font-size:6.9pt;line-height:1}
+.words .wl i.sep{font-style:normal;color:var(--muted);padding:0 .5mm}
 .back .lead{margin:1mm 0 0}.back .lead>b:first-child{font-family:var(--serif);font-size:7.6pt;margin-right:.6mm}
 .foot{border-top:.3mm solid var(--line);padding-top:1mm;font-size:6.1pt;color:var(--muted);display:flex;justify-content:space-between;gap:4mm;margin-top:auto}
 svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
@@ -132,7 +132,7 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
 <section class="sheet" aria-label="Front: the three flows">
 <header class="head">
   <div><h1>Charter at the desk</h1>
-  <div class="sub">Package 0.4.8. Front: the working day, a new project, a migration. Back: the reference.<br>
+  <div class="sub">Package 0.4.11. Front: the working day and three flows. Back: the reference.<br>
   <code>charter</code> = <code>python3 .charter/bin/charter</code> (project root), <code>charter-pkg</code> = <code>python3 ~/Projects/charter/bin/charter-pkg</code></div></div>
   <div class="legend" aria-label="Legend">
     <span><i class="o">O</i>the owner acts</span>
@@ -171,7 +171,7 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
   </svg>
   <div class="steps">
     <div class="step"><h3>Open a session</h3>
-      <p>Read the banner:</p><span class="out">charter 0.4.8, track prototype, opt-ins: none</span>
+      <p>Read the banner:</p><span class="out">charter 0.4.11, track prototype, opt-ins: none</span>
       <ul><li><code>charter next</code>: active unit, road, next units, what waits on you. Writes nothing.</li>
       <li>Hook not active: <code>charter setup</code> once.</li>
       <li>On 0.4.2 or older you see no banner: <code>charter config</code>.</li></ul></div>
@@ -205,12 +205,12 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
   </div>
   <div class="lane" aria-label="The owner's lane">
     <div class="who"><i class="o">O</i>Only you</div>
-    <div><b>Commit what is handed over</b> (install, config, settings): one line, <code>CHARTER_OWNER=1 python3 &lt;root&gt;/.charter/bin/charter owner commit</code>, after <code>!</code> in Claude Code or as is in a terminal; <code>charter handover</code> prints it again.</div>
+    <div><b>Commit what is handed over</b> (install, config, settings), one line after <code>!</code> or in a terminal: <code>CHARTER_OWNER=1 python3 &lt;root&gt;/.charter/bin/charter owner commit</code>. <code>charter handover</code> prints it again.</div>
     <div><b>Rule</b> a proposal: <code>charter rule &lt;id&gt; active|rejected</code>, or <code>rule &lt;old&gt; superseded --by &lt;new&gt;</code>. <b>Approve</b> a change: <code>charter approve &lt;id&gt; [--reject]</code>. Each commits itself.</div>
     <div><b>Let a frozen file grow</b>: a <code>kind: split</code> unit, or a <code>size_exceptions</code> entry (budget, <code>because:</code>, <code>expires:</code>).</div>
     <div><b>Re-plan</b>: add or reorder rows in <code>charter/rails.md</code>; <code>charter rail &lt;id&gt; done</code> closes one.</div>
     <div><b>Push, open, merge</b> with a merge commit, which keeps evidence SHAs. <b>Deploy.</b></div>
-    <div><b>Your queue</b>: <code>charter owner</code>, each item with its command. Answer the agent's commitments (price, dates, data, releases).</div>
+    <div><b>Your queue</b>: <code>charter owner</code>, each item with its command, a chain's wait included. Answer the agent's commitments (price, dates, data, releases).</div>
   </div>
 </section>
 
@@ -230,61 +230,47 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
 <!-- ------------------------------------------------ new project -->
 <section class="flow" aria-label="A new project">
   <h2>A new project</h2>
-  <p class="lede">Say <span class="say">install charter on &lt;project&gt;</span>. The agent follows <code>docs/install.md</code> and stops with the files staged. <code>$P</code> is the project; counts are from a 0.4.8 rehearsal.</p>
+  <p class="lede">Say <span class="say">install charter on &lt;project&gt;</span>. The agent follows <code>docs/install.md</code> and stops with the files staged. <code>$P</code> is the project; counts are from a 0.4.11 rehearsal.</p>
   <ol class="spine">
     <li><span class="n">0</span><b class="t">Preconditions.</b> A git repo with a commit; a clean tree; no other session in it; <code>charter-pkg status $P</code> → <code>installed: none</code>.</li>
     <li><span class="n">3</span><b class="t">Branch.</b> <code>git -C $P switch -c charter/install</code>, never the main line.</li>
-    <li><span class="n">4</span><b class="t">Dry run.</b> <code>charter-pkg install $P --track prototype --dry-run</code> → <code>dry run: 36 change(s)</code>. Watch for <code>KEEP git hooks</code> (step 6) and <code>IGNORED by</code> (ask the owner).</li>
+    <li><span class="n">4</span><b class="t">Dry run.</b> <code>charter-pkg install $P --track prototype --dry-run</code> → <code>dry run: 45 change(s)</code>. Watch for <code>KEEP git hooks</code> (step 6) and <code>IGNORED by</code> (ask the owner).</li>
     <li><span class="n">5</span><b class="t">Install.</b> The same without <code>--dry-run</code>. Run again: <code>already installed … nothing to do</code>.</li>
     <li class="opt"><span class="n">6</span><b class="t">Only after KEEP git hooks:</b> add <code>python3 -B .charter/bin/charter check --staged</code> to the lefthook, pre-commit or husky hook.</li>
-    <li><span class="n">7</span><b class="t">Staged by the installer</b>, by name (35 files); a step 6 file you stage by name. Never <code>git add -A</code>.</li>
+    <li><span class="n">7</span><b class="t">Staged by the installer</b>, by name (44 files); a step 6 file you stage by name. Never <code>git add -A</code>.</li>
     <li class="own"><span class="n">8</span><b class="t">You commit.</b> Set <code>"owner"</code> in <code>charter/config.json</code> to your git author name; <code>charter config</code> shows no <code>problem:</code>; run the handed-over <code>git -C $P commit … -- &lt;paths&gt;</code>. The agent's attempt gets <span class="chip block">2 blocking</span> (settings, config): expected.</li>
     <li><span class="n">9</span><b class="t">Verify.</b> <code>charter check --all</code> → 0 blocking; <code>charter-pkg status $P</code> → 0 modified, missing, differing; a new session shows the banner; a fresh clone passes <code>check --all --strict</code>.</li>
   </ol>
   <div class="note own"><i class="o">O</i> You push and merge (merge commit). Each other clone: <code>charter setup</code> once. Client track: you write <code>charter/scope.md</code> from the signed devis, one item per sold deliverable, no prices.</div>
   <div class="note"><b>Later, a new version:</b> <code>charter-pkg fleet --upgrade</code> upgrades each project behind, commits it when only package files changed, hands over the rest. One by hand: <code>docs/install.md</code> § Upgrade. Rollback: <code>git revert</code>.</div>
-  <div class="src">Sources: <code>docs/install.md</code> steps 0-9, § Every other clone, § Upgrade; <code>docs/migration.md</code> Paths A and B; the 0.4.8 counts: an install into an empty repository, 2026-09-30.</div>
+  <div class="src">Sources: <code>docs/install.md</code> steps 0-9, § Every other clone, § Upgrade; <code>docs/migration.md</code> Paths A and B; the 0.4.11 counts: an install into an empty repository, 2026-10-06.</div>
 </section>
 
 <!-- ------------------------------------------------ migrate -->
+<div class="stack">
 <section class="flow" aria-label="Migrating an existing project">
   <h2>Migrating an existing project</h2>
   <p class="lede">Say <span class="say">put charter on &lt;project&gt;</span>: <code>CharterAdmin</code> runs its <code>Migrate</code> workflow. Nothing touches the project before your go-ahead.</p>
   <ol class="spine">
-    <li><span class="n">1</span><b class="t">Survey, read-only.</b> <code>charter-pkg survey $P --track prototype --out &lt;dir outside&gt;</code> writes <code>survey.md</code> and <code>plan.md</code> and rehearses the install in a throwaway clone. <code>--test-cmd "&lt;tests&gt;"</code> exit 0: probes can run at commit.</li>
+    <li><span class="n">1</span><b class="t">Survey, read-only.</b> <code>charter-pkg survey $P --track prototype --out &lt;dir outside&gt;</code>: <code>survey.md</code>, <code>plan.md</code>, an install rehearsed in a throwaway clone. <code>--test-cmd</code> exit 0: probes can run at commit.</li>
     <li><span class="n">2</span><b class="t">Settle what the facts settle.</b> A lookup is not a decision; a proposal is not a scope.</li>
     <li class="own"><span class="n">3</span><b class="t">Your calls on a Slate</b>, including the go-ahead for the real tree.</li>
     <li><span class="n">4</span><b class="t">Rehearse the whole plan</b> in a kept clone (<code>--keep-clone</code>), the only place <code>CHARTER_OWNER=1</code> is allowed.</li>
-    <li><span class="n">5</span><b class="t">Execute, after the go-ahead,</b> in a worktree on <code>charter/install</code>: one step, one commit, one check; a red check stops it. Owner-only steps stop staged for <i class="o">O</i>.</li>
+    <li><span class="n">5</span><b class="t">Execute</b> in a worktree on <code>charter/install</code>: one step, one commit, one check; red stops it; owner-only steps wait staged.</li>
     <li class="own"><span class="n">6</span><b class="t">You push and merge.</b> The agent reports each step with its check, and what is left.</li>
   </ol>
-  <h3 style="margin-top:1mm">What happens to the old work</h3>
-  <ul style="font-size:6.8pt;line-height:1.25">
-    <li>Taskets with neither <code>## Acceptance</code> nor <code>scope:</code> are listed in <code>charter/legacy-taskets.txt</code>; closing one only <span class="chip warn">warns</span>.</li>
-    <li>Units done before the install show under <b>Done before charter</b> in <code>charter synth</code>, not as failures.</li>
-    <li>Triage by batch: each open tasket gets <code>scope:</code>, <code>perimeter:</code> and probes, or is parked with a reason; its id leaves the legacy list.</li>
-    <li><code>CLAUDE.md</code> rulings become decisions; progress files are archived (<code>charter synth</code> replaces them); BMAD plans stay inputs.</li>
-  </ul>
-  <h3 style="margin-top:1.6mm">Where the gates run, from then on</h3>
-  <svg viewBox="0 0 420 62" role="img" aria-label="Three places run the same checks: Claude Code hooks during the session, the git pre-commit hook at every commit, and CI at merge from a clean clone." style="width:100%;height:auto;display:block">
-    <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3c3c40"/></marker></defs>
-    <g font-size="10"><rect x="2" y="2" width="124" height="56" rx="6" fill="#edf2f8" stroke="#244b77"/>
-    <text x="64" y="16" text-anchor="middle" font-weight="700" font-size="10.5">Claude Code hooks</text>
-    <text x="64" y="29" text-anchor="middle">each Edit, Write, NotebookEdit</text><text x="64" y="41" text-anchor="middle">refuses early, with the fix</text>
-    <text x="64" y="53" text-anchor="middle" fill="#5d6166">not Bash, not Codex</text>
-    <path d="M128,30 H146" stroke="#3c3c40" stroke-width="1.2" marker-end="url(#ah3)"/>
-    <rect x="148" y="2" width="124" height="56" rx="6" fill="#fff" stroke="#3c3c40"/>
-    <text x="210" y="16" text-anchor="middle" font-weight="700" font-size="10.5">git pre-commit</text>
-    <text x="210" y="29" text-anchor="middle">every commit, any agent</text><text x="210" y="41" text-anchor="middle">judges the index</text>
-    <text x="210" y="53" text-anchor="middle" fill="#5d6166">--no-verify skips it</text>
-    <path d="M274,30 H292" stroke="#3c3c40" stroke-width="1.2" marker-end="url(#ah3)"/>
-    <rect x="294" y="2" width="124" height="56" rx="6" fill="#e3e7ff" stroke="#4338ca"/>
-    <text x="356" y="16" text-anchor="middle" font-weight="700" font-size="10.5">CI</text>
-    <text x="356" y="29" text-anchor="middle">at merge, clean clone</text><text x="356" y="41" text-anchor="middle">checks who authored</text>
-    <text x="356" y="53" text-anchor="middle" fill="#5d6166">owner-only changes</text></g>
-  </svg>
-  <div class="src">Sources: <code>personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md</code>; <code>docs/migration.md</code> Paths C-E; <code>is_charter_unit</code> in <code>package/.charter/lib.py</code>; <code>docs/gates.md</code> § Git hook, § CI.</div>
+  <p style="font-size:6.8pt;margin-top:.6mm"><b>The old work:</b> a tasket listed in <code>charter/legacy-taskets.txt</code> closes with a <span class="chip warn">warning</span> only; units done before show as <b>Done before charter</b> in <code>charter synth</code>.</p>
 </section>
+
+<!-- ------------------------------------------------ the chain -->
+<section class="flow" aria-label="Running units in a chain">
+  <h2>Running units in a chain</h2>
+  <p class="lede">Say <span class="say">/charter-chain &lt;unit&gt; &lt;your words&gt;</span>. This session starts it on <code>chain/&lt;id&gt;</code> and watches; fresh sessions work, each checking the last, handing over at 25% of context (cap 30%). Codex reviews each group; the next session answers each finding. Ends <code>complete</code>, <code>halted</code> (its reason is your question) or <code>stopped</code>. Keep out of the clone meanwhile. This machine's <code>/supervise</code> road: back.</p>
+  <div class="note own" style="margin-top:0"><i class="o">O</i> <b>It waits on you:</b> <code>! python3 .charter/bin/charter owner run</code> runs the acts in your shell (<code>--only N</code> reruns one), then <code>/resume-chain ok</code> closes the lines whose acts passed; <code>skip &lt;note&gt;</code> closes none; a halt: <code>/resume-chain &lt;note&gt;</code>. Only you can resume it.</div>
+  <p style="font-size:6.9pt;margin-top:1mm"><code>charter chain status</code> names each group's cleared commit: merge up to one, never by squash. <code>chain report</code> is the PR comment.</p>
+  <div class="src">Sources: CharterAdmin <code>workflows/Migrate.md</code>; <code>docs/migration.md</code> Paths C-E; <code>docs/daily-use.md</code> § Running units in a chain; <code>docs/design/continuous-chain.md</code>.</div>
+</section>
+</div>
 </div>
 
 <!-- ------------------------------------------------ weekly -->
@@ -301,11 +287,13 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
 <!-- ======================================================= BACK ======================================================= -->
 <section class="sheet back" aria-label="Back: the reference">
 <header class="head" style="padding-bottom:1mm">
-  <div><h1 style="font-size:14pt;display:inline">Charter reference</h1> <span class="sub" style="margin-left:2mm">A unit, evidence, refusals, every command, the road.</span></div>
+  <div><h1 style="font-size:14pt;display:inline">Charter reference</h1> <span class="sub" style="margin-left:2mm">A unit, the words, every command, refusals, the road.</span></div>
   <div class="legend"><span><i class="o">O</i>owner</span><span><i class="a">A</i>agent</span><span><i class="chip block">refused</i></span><span><i class="chip warn">warns</i></span><span><i class="chip ro">writes nothing</i></span></div>
 </header>
 
+
 <div class="grid2" style="grid-template-columns:1.12fr 1fr">
+<div class="stack">
 <section class="box" aria-label="Anatomy of a unit">
   <h2>A unit, <code style="font-size:8pt">.taskets/&lt;id&gt;.md</code></h2>
   <div class="anat">
@@ -334,7 +322,7 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
     <li><span class="cn">1</span><span><code>now</code> <code>next</code> <code>later</code> <code>blocked</code> <code>done</code>; closed without evidence, honestly: <code>parked</code>, <code>skipped</code>. Comments go on their own line, never after a value.</span></li>
     <li><span class="cn">2</span><span><code>scope:</code> an in-scope item or an approved change (client track). <code>rail:</code> an open item of <code>charter/rails.md</code>.</span></li>
     <li><span class="cn">3</span><span>Paths it may touch. Outside them, a note under <code>## Outside perimeter</code>: <span class="chip block">refused</span> at commit on client, <span class="chip warn">warns</span> on prototype.</span></li>
-    <li><span class="cn">4</span><span>One binary probe per line, written before the code, failing before the work. Once the unit leaves <code>next</code>/<code>later</code>, changing a line needs a dated log line.</span></li>
+    <li><span class="cn">4</span><span>One binary probe per line, written first, failing before the work; once started, a changed line needs a dated log line. <code>— owner: check|do</code> before the probe: only you close it.</span></li>
     <li><span class="cn">5</span><span>A commit, a <code>path:line</code>, the <code>$ command</code> lines <code>charter probe</code> printed. With <code>review.required</code>: <code>- review: &lt;who, model&gt; — &lt;verdict&gt; — &lt;anchor&gt;</code>.</span></li>
     <li><span class="cn">6</span><span>Append-only and dated. The next session resumes from here, not from the transcript.</span></li>
   </ol>
@@ -342,33 +330,49 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
 
   <div class="src">Sources: <code>package/charter/templates/unit.md</code>; <code>package/.claude/rules/charter.md:7-25</code>; <code>TERMINAL_STATUSES</code> in <code>package/.charter/lib.py</code>.</div>
 </section>
+<section class="box" aria-label="In-project commands">
+  <h2>In a project</h2>
+  <table class="cli">
+  <tr><th>Command</th><th>What it does</th><th>Writes</th></tr>
+  <tr><td><code>charter next [--limit N]</code></td><td>Where it stands, what comes next</td><td><span class="chip ro">nothing</span></td></tr>
+  <tr><td><code>charter config</code> · <code>version</code> · <code>unit show</code></td><td>Track, opt-ins; version; unit</td><td><span class="chip ro">nothing</span></td></tr>
+  <tr><td><code>charter log [--days N] [--verbose]</code></td><td>What the gates did, 30 days</td><td><span class="chip ro">nothing</span></td></tr>
+  <tr><td><code>charter owner [--json]</code> · <code>handover</code></td><td>Your queue; your commit, again</td><td><span class="chip ro">nothing</span></td></tr>
+  <tr><td><code>charter chain start|status|stop|report</code></td><td>Via <code>/charter-chain</code></td><td>a branch</td></tr>
+  <tr><td><code>charter synth [--write]</code></td><td>The synthesis, all anchored</td><td><code>progress.md</code></td></tr>
+  <tr><td><code>charter unit start &lt;id&gt;</code> · <code>unit stop</code></td><td>Attribute edits and cost</td><td>git dir</td></tr>
+  <tr><td><code>charter probe &lt;id&gt; [--timeout S]</code></td><td>Runs probes, prints <code>$</code> lines</td><td>gate log</td></tr>
+  <tr><td><code>charter check --staged|--all [--base REF]</code></td><td>Every gate; <code>--all</code>: <code>check:</code></td><td>gate log</td></tr>
+  <tr><td><code>charter anchors &lt;file&gt; [--pr]</code></td><td>Every claim has an anchor</td><td>gate log</td></tr>
+  <tr><td><code>charter ledger fold</code> · <code>add --human-minutes N</code></td><td>Sessions' cost; your time</td><td><code>ledger.jsonl</code></td></tr>
+  <tr><td><code>charter decisions index</code> · <code>setup</code></td><td>Decision index; git hook</td><td><code>INDEX.md</code>, git</td></tr>
+  <tr><td><i class="o">O</i> <code>charter rule|approve|rail …</code></td><td>Rule, approve, rail; <code>--dry-run</code></td><td>one commit</td></tr>
+  <tr><td><i class="o">O</i> <code>charter owner run [--only N]</code></td><td>A wait's acts, your shell</td><td>git dir</td></tr>
+  </table>
 
-<section class="box" aria-label="Evidence and tracks">
-  <h2>Evidence the done gate accepts</h2>
-  <div class="ev">
-    <ul><li><span class="chip pass">counts</span> a commit SHA that resolves</li>
-    <li><span class="chip pass">counts</span> <code>$ command</code> → exit 0, as run</li>
-    <li><span class="chip pass">counts</span> <code>path:line</code> of the change, beside a commit or run</li>
-    <li><span class="chip pass">counts</span> every <code>- [x]</code> ticked after its probe passed</li></ul>
-    <ul><li><span class="chip block">refused</span> a path or a URL alone</li>
-    <li><span class="chip block">refused</span> “it works”, “tests pass”</li>
-    <li><span class="chip block">refused</span> an anchor that does not resolve</li>
-    <li><span class="chip block">refused</span> one box left <code>[ ]</code></li></ul>
-  </div>
-  <p style="margin-top:1mm">A probe that passes before the work <span class="chip warn">warns</span> (<span class="chip block">refused</span> with <code>probes.base_must_fail</code>). The gate sees that evidence resolves, not that it proves the claim: that is the reviewer's job, and yours.</p>
-
-  <h2 style="margin-top:1.8mm">Two tracks</h2>
-  <table class="tracks"><tr><th></th><th>client</th><th>prototype</th></tr>
-  <tr><td>Scope</td><td><code>charter/scope.md</code> required, gate <span class="chip block">hard</span></td><td>none, gate off</td></tr>
-  <tr><td>Perimeter note</td><td><span class="chip block">hard</span> at commit</td><td><span class="chip warn">warns</span></td></tr>
-  <tr><td>Anchored reports</td><td><span class="chip block">hard</span> in CI</td><td><span class="chip warn">warns</span></td></tr>
-  <tr><td>Done, size, decisions</td><td colspan="2"><span class="chip block">hard</span> on both; rails optional on both</td></tr>
-</table>
-  <p style="margin-top:.6mm">A prototype that gains a client: <i class="o">O</i> writes <code>charter/scope.md</code>, sets <code>"track": "client"</code>.</p>
-
-
-  <div class="src">Sources: <code>docs/gates.md</code> § Done needs evidence; <code>docs/method.md</code> § Two tracks.</div>
+  <p class="lead"><b>Personal layer</b> <code>CharterAdmin</code>: <span class="say">charter status</span> <span class="say">upgrade charter on X</span> <span class="say">migrate X</span>; decisions → Slate. <code>package X available</code>: X is the branch <code>~/Projects/charter</code> has out.</p>
+  <div class="src">Sources: <code>docs/package.md</code> § Commands; <code>cmd_*</code> in <code>package/.charter/bin/charter</code>; <code>owner.py</code>, <code>owner_acts.py</code>, <code>chain.py</code> in <code>package/.charter/</code>; <code>personal/claude-home/</code>.</div>
 </section>
+</div>
+<div class="stack">
+<section class="box words" aria-label="Words on this sheet">
+  <h2>Words on this sheet</h2>
+  <p class="wl"><b>act</b>: a step only the owner can take while a chain waits, written in <code>owner.md</code> with the owner lines it closes; <code>charter owner run</code> runs them. <i class="sep">▪</i> <b>anchor</b>: what a claim points to, so it can be checked: a <code>path:line</code>, a commit, a <code>$ command</code> run, a URL. <i class="sep">▪</i> <b>change request</b>: <code>charter/changes/&lt;id&gt;.md</code>: work outside the scope, until the owner approves it. <i class="sep">▪</i> <b>decision</b>: <code>charter/decisions/&lt;id&gt;.md</code>: a choice code depends on, cited as <code>charter:&lt;id&gt;</code>; its <code>check:</code>, if any, enforces it. <i class="sep">▪</i> <b>evidence</b>: what done needs under <code>## Evidence</code>: a SHA that resolves, a <code>$ command</code> run → exit 0, a <code>path:line</code> beside them, every anchor resolving; never a path or URL alone, nor “it works”. <i class="sep">▪</i> <b>frozen file</b>: over its limit (800 lines; 400 for governance: rules, scope, decisions): it may shrink, not grow, unless the owner opens a <b>split unit</b> (<code>kind: split</code>) or a <code>size_exceptions</code> entry. <i class="sep">▪</i> <b>gate</b>: a check at each edit, commit and CI run. A hard gate refuses and names its <b>Override</b>, the way through; the others warn and log. <i class="sep">▪</i> <b>group</b>: in a chain, the units of one rail item. Codex reviews its commits; the commit where every finding is answered (its end, if none) is its <b>cleared commit</b>. <i class="sep">▪</i> <b>handover</b>: <code>charter handover</code> prints the owner's one line that commits what the agent staged. In a chain, a session hands over: its handoff, then <code>charter chain next</code>. <i class="sep">▪</i> <b>ledger</b>: <code>charter/ledger.jsonl</code>: tokens and estimated cost per session and unit, and your minutes. <i class="sep">▪</i> <b>opt-in</b>: a stricter setting the owner turns on in <code>config.json</code> (front, Once a week). <i class="sep">▪</i> <b>owner</b>: whom <code>"owner"</code> names in <code>config.json</code>. <b>Owner-only</b>: what only the owner changes (below); the agent's edit is refused, CI checks the author. <i class="sep">▪</i> <b>probe</b>: a command that proves one criterion: it fails before the work, passes after; passing before warns (refused with <code>probes.base_must_fail</code>). <i class="sep">▪</i> <b>rails</b>: <code>charter/rails.md</code>, the owner's plan: one <b>rail item</b> per row, with a status and an order. The <b>road</b>: the open items in order and their units, as <code>charter next</code> lists them. <i class="sep">▪</i> <b>scope</b>: <code>charter/scope.md</code>, the signed devis summed up, one item per sold deliverable. <i class="sep">▪</i> <b>synthesis</b>: <code>charter/progress.md</code>, written by <code>charter synth</code>, every line anchored. <i class="sep">▪</i> <b>track</b>: <code>client</code> under a signed devis or contract: <code>scope.md</code> required, and scope, perimeter note and anchored reports refuse. Else <code>prototype</code>: no scope, and the other two warn. Done, size and decisions refuse on both. <i class="sep">▪</i> <b>unit, tasket</b>: one deliverable, a markdown file in <code>.taskets/</code> (left). <i class="sep">▪</i> <b>wait, halt</b>: a chain waits on acts, once the rest is done; it halts for your answer: a session's question, a review that cannot run, two sessions landing nothing, the session limit. Only your <code>/resume-chain</code> goes on. <span class="muted">Defined where used: baseline, guard (front 2-3); chain (front); perimeter, owner line (left 3-4); commitment (below).</span></p>
+  <div class="src">Sources: <code>docs/daily-use.md</code> § Words used here, § Running units in a chain; <code>docs/gates.md</code> § Rails, § Size, § Done needs evidence; <code>docs/method.md</code> § Accepted results, § Two tracks; <code>docs/design/continuous-chain.md</code>; <code>"owner"</code>, <code>OPT_INS</code> in <code>lib.py</code>.</div>
+</section>
+<section class="box" aria-label="Installer, owner-only, skills">
+  <h2>From the charter checkout</h2>
+  <pre>charter-pkg survey $P --track T --out DIR [--test-cmd C] [--keep-clone]
+charter-pkg install $P --track T [--dry-run]
+charter-pkg upgrade|uninstall $P [--dry-run]; uninstall [--purge-state]
+charter-pkg status $P · fleet [--root DIR] [--upgrade]</pre>
+
+  <p class="lead"><b><i class="o">O</i> Only the owner changes</b> <code>charter/scope.md</code>, <code>rails.md</code>, <code>config.json</code>, <code>.charter/**</code>, <code>.claude/settings*.json</code>, <code>.github/workflows/charter.yml</code>; a new id in <code>legacy-taskets.txt</code>; a change's approval fields; a decision's <code>status</code>, <code>superseded_by</code>, and an active one's <code>check:</code>, <code>binds:</code>; opening a <code>kind: split</code> unit; closing an <code>— owner:</code> line. And every commitment: what is sold, price, dates, deploys, production data, releases, merging.</p>
+  <p class="lead"><b><i class="a">A</i> The agent never</b> sets <code>CHARTER_OWNER</code>, passes <code>--no-verify</code> (or <code>--force</code>, <code>--replace-hooks</code> without your word), writes a refused file through Bash, runs <code>git add -A</code> or <code>charter owner run</code>, resumes a chain, pushes, merges or deploys.</p>
+  <p class="lead"><b>Skills in the project</b> <code>charter-unit</code> <span class="say">start unit</span> <span class="say">resume</span> <span class="say">finish the unit</span>; <code>charter-decision</code> <span class="say">record the decision</span> <span class="say">this is out of scope</span> <span class="say">change request</span> <span class="say">lesson learned</span>; <code>charter-progress</code> <span class="say">where does this stand</span> <span class="say">status for the client</span>; <code>charter-chain</code> <span class="say">/charter-chain</span> <span class="say">chain status</span> <span class="say">stop the chain</span>.</p>
+  <div class="src">Sources: <code>package/.claude/rules/charter.md:28-47</code>; <code>docs/install.md</code> § Rules for the agent; <code>package/.claude/skills/</code>.</div>
+</section>
+</div>
 </div>
 
 <section class="box" aria-label="When a gate refuses">
@@ -378,58 +382,21 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
   <tr><td><code>charter/done block</code> … <code>unchecked</code></td><td><i class="a">A</i></td><td>Run each probe, tick the box, cite the run under <code>## Evidence</code>; or keep the status open.</td></tr>
   <tr><td><code>charter/done block</code> … <code>names no commit … and no $ command</code></td><td><i class="a">A</i></td><td>Add the SHA and the <code>$ command</code> lines <code>charter probe &lt;id&gt;</code> prints. No flag overrides done: without evidence, <code>parked</code> or <code>skipped</code>.</td></tr>
   <tr><td><code>charter/protected block [&lt;path&gt;]</code> at commit, or a denied Edit of an owner-only file</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Leave it staged; <code>charter handover</code> prints the owner's line. In session, propose instead: a change request, a successor decision, a draft outside the project.</td></tr>
-  <tr><td>Out-of-scope path (client track)</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Write <code>charter/changes/&lt;slug&gt;.md</code> from <code>charter/templates/change.md</code>, <code>status: proposed</code>; the owner approves.</td></tr>
+  <tr><td>Out-of-scope path (client track)</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Write <code>charter/changes/&lt;slug&gt;.md</code> from its template, <code>status: proposed</code>; the owner approves.</td></tr>
   <tr><td>Frozen file grew past its limit</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Move code out; shrinking always passes. Or the owner opens a <code>kind: split</code> unit or a <code>size_exceptions</code> entry.</td></tr>
   <tr><td>Retired decision cited, or a decision's <code>check:</code> fails</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Cite the successor the message names; or write a new decision with <code>supersedes:</code>, and the owner retires the old one.</td></tr>
-  <tr><td><code>charter/rails warn</code> … <code>names no rail</code> (refused with <code>rails.required</code>)</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Set <code>rail: &lt;open id&gt;</code>. Work the road does not name waits: the owner adds a rail first.</td></tr>
-  <tr><td><code>charter/config block</code>, or <code>problem:</code> from <code>charter config</code></td><td><i class="o">O</i></td><td>The owner corrects <code>charter/config.json</code>; the message names the key it meant (<code>did you mean `required`?</code>).</td></tr>
+  <tr><td><code>charter/rails warn</code> … <code>names no rail</code></td><td><i class="a">A</i>→<i class="o">O</i></td><td>Set <code>rail: &lt;open id&gt;</code> (refused with <code>rails.required</code>). Work the road does not name waits: the owner adds a rail first.</td></tr>
+  <tr><td>A chain session past the 30% cap: all refused but the handoff, unit files, git, the CLI</td><td><i class="a">A</i></td><td>Hand over: the handoff as in <code>charter/templates/handoff.md</code>, then <code>charter chain next</code>.</td></tr>
+  <tr><td><code>/resume-chain &lt;note&gt;</code>: owner lines still open</td><td><i class="o">O</i></td><td><code>/resume-chain ok</code> after <code>charter owner run</code>, or <code>skip &lt;note&gt;</code>; <code>AC-n</code> names one line.</td></tr>
   <tr><td>Stop hook: a done claim with no commit, <code>path:line</code> or run</td><td><i class="a">A</i></td><td>Cite one, or say plainly what is not done. It blocks once per turn; an anchor it cannot resolve only warns.</td></tr>
   </table>
-  <div class="src">Sources: <code>docs/install.md</code> § When a gate refuses; <code>docs/gates.md</code> § The gates, § Config; each message checked against 0.4.8.</div>
+  <div class="src">Sources: <code>docs/install.md</code> § When a gate refuses; <code>docs/gates.md</code> § The gates, § Chain budget and hand-over, § The owner's resume; each checked against 0.4.11.</div>
 </section>
 
-<div class="grid2" style="grid-template-columns:1.22fr 1fr">
-<section class="box" aria-label="In-project commands">
-  <h2>In a project</h2>
-  <table class="cli">
-  <tr><th>Command</th><th>What it does</th><th>Writes</th></tr>
-  <tr><td><code>charter next [--limit N]</code></td><td>Where it stands, what comes next</td><td><span class="chip ro">nothing</span></td></tr>
-  <tr><td><code>charter config</code> · <code>version</code> · <code>unit show</code></td><td>Track, opt-ins (exit 1 on a problem); version; active unit</td><td><span class="chip ro">nothing</span></td></tr>
-  <tr><td><code>charter log [--days N] [--verbose]</code></td><td>What the gates did, 30 days</td><td><span class="chip ro">nothing</span></td></tr>
-  <tr><td><code>charter owner [--json]</code> · <code>handover</code></td><td>Your queue, with commands; your commit, again</td><td><span class="chip ro">nothing</span></td></tr>
-  <tr><td><code>charter synth [--write]</code></td><td>The synthesis; refused if unanchored</td><td><code>progress.md</code></td></tr>
-  <tr><td><code>charter unit start &lt;id&gt;</code> · <code>unit stop</code></td><td>Attribute edits and cost</td><td>git dir</td></tr>
-  <tr><td><code>charter probe &lt;id&gt; [--timeout S]</code></td><td>Runs probes, prints <code>$</code> lines</td><td>gate log</td></tr>
-  <tr><td><code>charter check --staged|--all [--base REF] [--strict]</code></td><td>Every gate; <code>--all</code> runs <code>check:</code></td><td>gate log</td></tr>
-  <tr><td><code>charter anchors &lt;file&gt; [--pr]</code></td><td>Every claim has an anchor</td><td>gate log</td></tr>
-  <tr><td><code>charter ledger fold</code> · <code>add --human-minutes N</code></td><td>Sessions' cost; your time</td><td><code>ledger.jsonl</code></td></tr>
-  <tr><td><code>charter decisions index</code> · <code>setup</code></td><td>Decision index; git hook, once a clone</td><td><code>INDEX.md</code>, git</td></tr>
-  <tr><td><i class="o">O</i> <code>charter rule|approve|rail &lt;id&gt; … [--dry-run]</code></td><td>Rule, approve, set a rail</td><td>one commit</td></tr>
-  </table>
-
-  <div class="src">Sources: <code>docs/package.md</code> § Commands; <code>cmd_*</code> in <code>package/.charter/bin/charter</code>; <code>package/.charter/owner.py</code>.</div>
-</section>
-
-<section class="box" aria-label="Installer, owner-only, skills">
-  <h2>From the charter checkout</h2>
-  <pre>charter-pkg survey    $P --track T --out DIR [--test-cmd C] [--keep-clone]
-charter-pkg install   $P --track T [--dry-run]
-charter-pkg upgrade   $P [--dry-run]
-charter-pkg uninstall $P [--dry-run] [--purge-state]
-charter-pkg status    $P
-charter-pkg fleet     [--root DIR] [--upgrade]</pre>
-
-  <p class="lead"><b><i class="o">O</i> Only the owner changes</b> <code>charter/scope.md</code>, <code>rails.md</code>, <code>config.json</code>, <code>.charter/**</code>, <code>.claude/settings*.json</code>, <code>.github/workflows/charter.yml</code>; a new id in <code>legacy-taskets.txt</code>; a change's approval fields; a decision's <code>status</code>, <code>superseded_by</code>, and an active one's <code>check:</code>, <code>binds:</code>; opening a <code>kind: split</code> unit. And every commitment: what is sold, price, dates, deploys, production data, releases, merging.</p>
-  <p class="lead"><b><i class="a">A</i> The agent never</b> sets <code>CHARTER_OWNER</code>, passes <code>--no-verify</code> (or <code>--force</code>, <code>--replace-hooks</code> without your word), writes a refused file through Bash, runs <code>git add -A</code>, pushes, merges or deploys.</p>
-  <p class="lead"><b>Skills in the project</b> <code>charter-unit</code> <span class="say">start unit</span> <span class="say">resume</span> <span class="say">finish the unit</span>; <code>charter-decision</code> <span class="say">record the decision</span> <span class="say">this is out of scope</span> <span class="say">change request</span> <span class="say">lesson learned</span>; <code>charter-progress</code> <span class="say">where does this stand</span> <span class="say">status for the client</span>.</p>
-  <p class="lead"><b>Personal layer</b> <code>CharterAdmin</code>: <span class="say">charter status</span> <span class="say">upgrade charter on X</span> <span class="say">migrate X to charter</span> <span class="say">fold the ledgers</span>; open decisions → a Crossroads or Slate page. <code>package X available</code> reads the branch <code>~/Projects/charter</code> has out: X can be unmerged.</p>
-  <div class="src">Sources: <code>package/.claude/rules/charter.md:28-44</code>; <code>docs/install.md</code> § Rules for the agent; <code>package/.claude/skills/</code>; <code>personal/claude-home/</code> <code>Skills/CharterAdmin/SKILL.md</code>, <code>hooks/charter-personal.py</code>.</div>
-</section>
-</div>
 
 <section class="road" aria-label="Personal layer: working the road unattended">
   <div class="road-head"><h2>Personal layer: work the road unattended</h2>
-  <span class="muted">This machine only. <code>/supervise</code> needs tele-claude; typing it is your word to merge each PR it verifies.</span></div>
+  <span class="muted">This machine only, needs tele-claude; it merges each PR it verifies. The package's own way is the chain (front).</span></div>
   <div class="road-cols">
   <div>
     <p><code>/supervise --road [--context-cap 25] [--max-units N]</code>: the units in <code>charter next</code> order, one run each; verifies each PR, merges it via <code>/reviewPR</code>, closes the unit. Stops on a problem, the cap, an empty road.</p>
@@ -441,19 +408,19 @@ charter-pkg fleet     [--root DIR] [--upgrade]</pre>
     <tr><td><code>--week-target 70</code></td><td>The week's usage it may reach, paced: a day's share at once, then even. <b>70</b> a working week, <b>90</b> a week off; none: the 95% cap only.</td></tr>
     <tr><td><code>--stop-at-rail &lt;id&gt;</code></td><td>End before this rail; offered: <code>after-active</code>, <code>before-parked</code>, the whole road.</td></tr>
     <tr><td><code>--max-units 2</code></td><td>A first trial on a new project.</td></tr>
-    <tr><td><code>--gate "&lt;cmd&gt;"</code></td><td>One command judges every merge; else worked out per unit (decisions' <code>check:</code>, its tests, what imports the change), each test file alone, 3G, 10 min. Files red on main at the start run but cannot fail it.</td></tr>
+    <tr><td><code>--gate "&lt;cmd&gt;"</code></td><td>One command judges every merge; else worked out per unit (decisions' <code>check:</code>, its tests, what imports the change). Files red on main at the start cannot fail it.</td></tr>
     </table>
   </div>
   <div>
-    <p><b>Start sweep</b>: <code>grant</code> a kind of change, <code>review</code> (PR parked for you), <code>keep</code> a <code>gate: human</code>, <code>last</code>, <code>hold</code>. Unit keys: <code>on_block: park|stop</code>, <code>road_grant</code>, <code>road_review</code>.</p>
+    <p><b>Start sweep</b>, what needs you: <code>grant</code> a kind of change, <code>review</code> (PR parked), <code>keep</code> a <code>gate: human</code>, <code>last</code>, <code>hold</code>. Unit keys: <code>on_block: park|stop</code>, <code>road_grant</code>, <code>road_review</code>.</p>
     <p><b>Running</b>: <code>Road.py tally report --file &lt;state&gt;</code>; say <span class="say">stop the road</span>; <code>--resume &lt;state&gt;</code>. A cron keeper wakes it.</p>
     <p class="muted">Always: no launch past 85% of the 5-hour window, 95% of the week, or 00:00–06:00 Paris.</p>
   </div>
   </div>
-  <div class="src" style="margin:0;padding:0">Sources, <code>~/AI_tooling/PAI/generic/claude/</code> at 1605b02: <code>Commands/supervise.md:37-62</code>, <code>Skills/SupervisedMaster/tools/RoadGate.py</code>; <code>Skills/SupervisedMaster/</code> <code>INFINITE_CHEATSHEET.md</code>, <code>workflows/InfiniteRoad.md</code>.</div>
+  <div class="src" style="margin:0;padding:0">Sources, <code>~/AI_tooling/PAI/generic/claude/</code> at 1605b02: <code>Commands/supervise.md:37-62</code>; <code>Skills/SupervisedMaster/</code> <code>INFINITE_CHEATSHEET.md</code>, <code>workflows/InfiniteRoad.md</code>.</div>
 </section>
 
 <footer class="foot"><span>Where it stops: evidence is checked for existence, not truth; the scope gate matches paths; a Bash edit skips the session hooks; gates fail open on their own errors: one error line and a pass is a charter bug, see <code>charter log</code> (<code>docs/gates.md</code> § What a gate cannot see).</span>
-<span style="white-space:nowrap">Checked against 0.4.8 and a rehearsal, 2026-09-30. <code>docs/cheatsheet.html</code></span></footer>
+<span style="white-space:nowrap">Checked against 0.4.11 and a rehearsal, 2026-10-06. <code>docs/cheatsheet.html</code></span></footer>
 </section>
 </body></html>
