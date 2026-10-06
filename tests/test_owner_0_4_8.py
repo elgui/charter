@@ -162,8 +162,12 @@ class OwnerJsonQueue(unittest.TestCase):
         staged = items["staged"]
         self.assertEqual(staged["kind"], "do")
         self.assertIn("charter/config.json", staged["title"])
+        # 0.4.12: nothing to perform until `charter handover` records it; then the owner's line, `owner commit`
+        self.assertEqual((staged["perform"], staged["run"]), (None, []))
+        charter(self.root, "handover")
+        staged = {i["key"]: i for i in self.queue()["items"]}["staged"]
         self.assertEqual(staged["perform"][:2], ["env", "CHARTER_OWNER=1"])
-        self.assertEqual(staged["perform"][-2:], ["--", "charter/config.json"])
+        self.assertEqual(staged["perform"][-2:], ["owner", "commit"])
 
     def test_owner_json_human_only_and_owner_lines(self):
         items = {i["key"]: i for i in self.queue()["items"]}
