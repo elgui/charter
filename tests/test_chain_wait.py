@@ -95,7 +95,7 @@ class Wait(WaitCase):
         self.assertEqual(c["state"], "waiting")
         self.assertIn("session 1 waits on the owner: turn on FileVault", c["reason"])
         self.assertIn("chain wait: session 1 waits on the owner", self.events())
-        self.assertIn(f"{self.cid} | session 1 waits on the owner: turn on FileVault", self.notes())
+        self.assertIn(f"{self.cid} | 1 act waits: run `python3 .charter/bin/charter owner` in {self.root}", self.notes())
         self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
 
         q = json.loads(charter(self.root, "owner", "--json").stdout)
@@ -359,6 +359,80 @@ class Package(unittest.TestCase):
         cfg = lib.config_from({"chain": {"notify": "off", "notify_command": "echo {text}"}})
         self.assertEqual((cfg["chain"]["notify"], cfg[lib.PROBLEMS]), ("off", []))
         self.assertEqual(lib.config_from({})["chain"]["notify"], "auto")
+
+
+PASTE = ("- write the bucket name — run: `read \"b?R2 bucket name: \" && echo \"$b\" | sudo tee /opt/x/r2-bucket` "
+         "— expect: the name echoed, one Touch ID — closes u1 AC-2\n"
+         "- turn on FileVault (System Settings > Privacy & Security) — closes u1 AC-2\n"
+         "- configure the remote — run: `sudo rclone config` — expect: `rclone config` lists r2 — closes u1 AC-2")
+CMDS = ['read "b?R2 bucket name: " && echo "$b" | sudo tee /opt/x/r2-bucket', "sudo rclone config"]
+
+
+class PasteReady(WaitCase):
+    """Charter 0.4.10 (docs/bugs/2026-10-05-owner-acts-not-paste-ready.md): an owner act reaches the owner as commands
+    that run as pasted in zsh, in the terminal, not as labels in a file the owner does not read."""
+
+    def test_a_placeholder_in_a_wait_command_is_refused_and_a_redirection_passes(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait="- write the bucket — run: `echo <bucket> | sudo tee x` — closes u1 AC-2")
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("`<bucket>`", r.stdout)
+        self.assertIn("shell redirection", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "running")
+        self.wait_handoff(1, wait="- sort the list — run: `sort < in.txt` — closes u1 AC-2")
+        r = self.next("s1")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "waiting")
+
+    def test_what_counts_as_a_placeholder(self):
+        for act in ("run: `echo <bucket> | sudo tee x`", "run: `set <R2_bucket-name>`", "`a` then `cp <src> /x`"):
+            self.assertTrue(chainlib.placeholders(act), act)
+        for act in ("run: `sort < in.txt`", "run: `cat <<EOF`", "run: `cat <<'EOF'`", "run: `a <in >out`",
+                    "closes <unit-id> AC-1, not in backticks", "run: `read \"b?name: \"`"):
+            self.assertEqual(chainlib.placeholders(act), [], act)
+
+    def test_a_double_backtick_span_is_read_whole(self):
+        # markdown's form for a command that holds a backtick (cross-review of f8d72ef)
+        act = "- tag it — run: `` git log -1 --format=`%h` `` — closes u1 AC-2"
+        self.assertEqual(chainlib.run_commands(act), ["git log -1 --format=`%h`"])
+        self.assertEqual(chainlib.placeholders("run: `` echo `x` <bucket> ``"), ["<bucket>"])
+        self.assertEqual(chainlib.run_commands("run: `sudo rclone config`, then `x`"), ["sudo rclone config"])
+
+    def test_on_wait_chain_next_prints_each_act_and_its_command(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait=PASTE)
+        r = self.next("s1")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        for line in PASTE.splitlines():
+            self.assertIn(line + "\n", r.stdout)
+        for c in CMDS:
+            self.assertIn(f"```sh\n{c}\n```", r.stdout)
+        self.assertIn("/resume-chain ok", r.stdout)
+        self.assertIn("listed again by `python3 .charter/bin/charter owner`", r.stdout)
+        self.assertIn("never a summary", r.stdout)
+
+    def test_charter_owner_prints_each_run_command_on_a_line_of_its_own(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait=PASTE)
+        self.assertEqual(self.next("s1").returncode, 0)
+        out = charter(self.root, "owner").stdout.splitlines()
+        for c in CMDS:
+            self.assertIn(c, out)
+        self.assertIn(CMDS[0], charter(self.root, "next").stdout.splitlines())
+        it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
+        self.assertEqual(it["run"], CMDS)
+        self.assertIn("— run: `sudo rclone config`", it["ask"])
+
+    def test_the_wait_notification_points_to_charter_owner(self):
+        self.join(1, "s1")
+        self.wait_handoff(1, wait=PASTE)
+        self.assertEqual(self.next("s1").returncode, 0)
+        self.assertIn(f"{self.cid} | 3 acts wait: run `python3 .charter/bin/charter owner` in {self.root}", self.notes())
+
+    def test_the_rules_and_the_template_carry_the_standard(self):
+        for f in (".charter/chain-rules.md", "charter/templates/handoff.md"):
+            self.assertIn("paste-ready", (PKG / f).read_text(), f)
 
 
 if __name__ == "__main__":

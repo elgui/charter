@@ -379,6 +379,11 @@ def check_handoff(root: Path, chain: dict, n: int, text: str) -> list[str]:
         if vague:
             problems.append(f"`## Wait` lines that name no unit, decision or change request: {'; '.join(v[:60] for v in vague[:3])}. "
                             "Each act says which unit line (or decision) it closes")
+        ph = [p for a in acts for p in placeholders(a)]
+        if ph:
+            problems.append(f"`## Wait` commands hold {', '.join(f'`{p}`' for p in dict.fromkeys(ph))}: a `<bucket>` placeholder is a "
+                            "shell redirection: prompt with `read` or set it on its own line (`read \"b?R2 bucket name: \"`, "
+                            "or `BUCKET=my-bucket  # edit` first). Each act is paste-ready (.charter/chain-rules.md section 5)")
     if n > 1:
         k = checks.classify_anchors(root, lib.section(body, "Verified"))
         if not (k["sha"] or k["fileline"] or k["run"]):
@@ -399,6 +404,27 @@ def wait_acts(body: str) -> list[str]:
     """The owner's acts under `## Wait`: its non-blank lines, the template's `<...>` placeholder and comments left out."""
     text = re.sub(r"<!--.*?-->", "", lib.section(body, "Wait"), flags=re.S)
     return [l.strip("-* ").strip() for l in text.splitlines() if l.strip() and not l.strip("-* ").startswith("<")]
+
+
+CODE_RE = re.compile(r"(`+)([^\n]+?)\1(?!`)")   # a markdown code span: ``a `tick` `` holds a backtick
+PLACEHOLDER_RE = re.compile(r"<[A-Za-z][A-Za-z0-9_-]*>")
+RUN_RE = re.compile(r"\brun:\s*" + CODE_RE.pattern)
+
+
+def _span(text: str) -> str:
+    """A code span's content: one space padding each end is markdown's, not the command's."""
+    return text[1:-1] if len(text) > 2 and text[0] == text[-1] == " " else text
+
+
+def placeholders(act: str) -> list[str]:
+    """The `<placeholder>`s in an act's backticked spans: pasted in zsh, `<bucket>` reads a file named `bucket`
+    (bug 2026-10-05). `sort < in.txt` and a heredoc's `<<EOF` hold none."""
+    return [m for _, span in CODE_RE.findall(act) for m in PLACEHOLDER_RE.findall(span)]
+
+
+def run_commands(act: str) -> list[str]:
+    """The commands an act gives after `run:`, as the owner pastes them."""
+    return [_span(c) for _, c in RUN_RE.findall(act)]
 
 
 def handoff_status(text: str) -> tuple[str, str, str]:
@@ -658,8 +684,15 @@ def halt(root: Path, chain: dict, reason: str, state: str = "halted") -> None:
     save(root, chain)
     event(root, chain["id"], "chain", "wait" if state == "waiting" else state, reason)   # `waiting` is a tab at a menu
     if state != "stopped":   # a waiting chain's reason already says it waits on the owner
-        notify(root, chain, f"{reason}. Then type /{RESUME_CMD} in Claude Code" if state == "waiting" else
+        notify(root, chain, _wait_note(root, chain) if state == "waiting" else
                {"halted": "halted", "complete": "is complete"}.get(state, state) + f": {reason}")
+
+
+def _wait_note(root: Path, chain: dict) -> str:
+    """The notification of a wait: where the acts are, not a cut of them (bug 2026-10-05)."""
+    k = len(owner_steps(root, chain, int(chain.get("sessions") or 0))[0])
+    return (f"{k} act{'s wait' if k != 1 else ' waits'}: run `python3 .charter/bin/charter owner` in {root}, "
+            f"then type /{RESUME_CMD} in a Claude Code session of your own")
 
 
 NOTIFY_ENV = "CHARTER_NOTIFY"   # `off` silences every notification (the tests set it)
@@ -755,6 +788,18 @@ def live_session(root: Path) -> tuple[dict, int] | None:
     return j[0], j[1]
 
 
+def owner_steps(root: Path, ch: dict, n: int) -> tuple[list[str], list[str], str]:
+    """(acts, commands, how) of a chain that waits after session n: the `## Wait` lines, the commands they give after
+    `run:`, and how the owner resumes. `charter owner`, `charter next` and `chain next` print the same."""
+    hp = link_dir(root, ch["id"], n) / "handoff.md"
+    acts = wait_acts(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2]) if hp.exists() else []
+    lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)]
+    how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
+           if lines else f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>")
+    how += f"\n(not in the chain's tab; open your own with `{own_session(root)}`)"
+    return acts, [c for a in acts for c in run_commands(a)], how
+
+
 def owner_items(root: Path) -> list[dict]:
     """What the last chain of this repository waits on the owner for, as fields of an owner-queue item
     (`queue` in owner.py): a chain that waits or halted, and a session whose tab needs a look. No item carries a
@@ -765,19 +810,17 @@ def owner_items(root: Path) -> list[dict]:
     cid, n = ch["id"], int(ch.get("sessions") or 0)
     hp = link_dir(root, cid, n) / "handoff.md"
     where = lib.rel(root, hp) if hp.exists() else lib.rel(root, chain_dir(root, cid) / "events.log")
-    if ch.get("state") in ("waiting", "halted"):
-        text = hp.read_text(encoding="utf-8") if hp.exists() else ""
-        body = lib.split_frontmatter(text)[2]
-        asks = ([f"- {a}" for a in wait_acts(body)] if ch["state"] == "waiting" else
-                [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()])
-        title = (f"chain {cid} waits on you: {len(asks)} act(s) from session {n}" if ch["state"] == "waiting" else
-                 f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200])
-        lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)] if ch["state"] == "waiting" else []
-        how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
-               if lines else f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>")
-        how += f"\n(not in the chain's tab; open your own with `{own_session(root)}`)"
-        return [{"key": f"chain:{cid}", "kind": "do" if ch["state"] == "waiting" else "decide", "title": title, "file": where, "line": 1,
-                 "ask": "\n".join(asks[:12] + [how]), "resume": True}]
+    if ch.get("state") == "waiting":
+        acts, run, how = owner_steps(root, ch, n)
+        return [{"key": f"chain:{cid}", "kind": "do", "title": f"chain {cid} waits on you: {len(acts)} act(s) from session {n}",
+                 "file": where, "line": 1, "ask": "\n".join([f"- {a}" for a in acts[:12]] + [how]), "run": run, "resume": True}]
+    if ch.get("state") == "halted":
+        body = lib.split_frontmatter(hp.read_text(encoding="utf-8") if hp.exists() else "")[2]
+        asks = [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()]
+        how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>"
+               f"\n(not in the chain's tab; open your own with `{own_session(root)}`)")
+        return [{"key": f"chain:{cid}", "kind": "decide", "title": f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200],
+                 "file": where, "line": 1, "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
         return []
     rec = link(root, cid, n)
@@ -1198,8 +1241,16 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
     then = (f", the review of group {groups.label(g['key'])} is running and the next session starts when it ends"
             if g and g["state"] == "reviewing" else f", session {n + 1} launched")
     if chain["state"] == "waiting":
-        print(f"session {n} closed (wait); chain {chain['id']} waits on the owner, who is told, closes the owner's lines and "
-              "resumes it by typing `/resume-chain`. End your turn now.")
+        acts, _, how = owner_steps(root, chain, n)
+        out = [f"session {n} closed (wait); chain {chain['id']} waits on the owner, who is told, closes the owner's lines and "
+               f"resumes it by typing `/{RESUME_CMD}`.",
+               "End your turn with a closing message that gives the owner what follows, verbatim, each command in its own "
+               "fenced block; never a summary of the acts, never only the handoff's path:", ""]
+        for a in acts:
+            out.append(f"- {a}")
+            out += [f"```sh\n{c}\n```" for c in run_commands(a)]
+        out += ["", how, "The acts are listed again by `python3 .charter/bin/charter owner`."]
+        print("\n".join(out))
         return 0
     print(f"session {n} closed ({status}); chain {chain['id']} is {chain['state']}" +
           (f": {chain['reason']}" if chain.get("reason") else then) + ". End your turn now.")
