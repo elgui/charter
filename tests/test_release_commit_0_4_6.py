@@ -139,7 +139,7 @@ class FleetCommitsUpgrades(unittest.TestCase):
         self.assertEqual(git(self.plain, "show", "-s", "--format=%s", "HEAD").stdout.strip(),
                          "charter " + (self.plain / "charter" / "VERSION").read_text().strip())
         self.assertIn("wait on the owner (.claude/settings.json)", rows["owned"])
-        self.assertIn("Waiting on the owner: 1 project(s), one command.", r.stdout)
+        self.assertIn("Waiting on the owner: 1 project(s), one line.", r.stdout)   # (0.4.12: `fleet --commit`)
         self.assertNotIn(str(self.plain), r.stdout.split("Waiting on the owner")[1])
 
 

@@ -362,7 +362,7 @@ def plan(s: dict, track: str) -> str:
     ignored = any(x["path"] == ".claude/settings.json" for x in cl["ignored_install_paths"])
     step(f"`{TOOL} install {proj} --track {track}`" + (" (add `--replace-hooks` only if the hooks decision is replace)" if hooks else "") +
          f"; stage by name, `{add}`" + (" (plus `.claude/settings.json` once it is no longer ignored)" if ignored else "") +
-         f"; commit `charter {ver}` as the owner (`CHARTER_OWNER=1 git commit`)",
+         f"; the owner commits `charter {ver}` with the one line the installer prints (`charter owner commit`, 0.4.12)",
          f"{rh.get('committed_files', 'about 30')} files: `.charter/`, `charter/`, `.claude/rules/`, three skills, one agent, `.github/workflows/charter.yml`, `AGENTS.md`, `.gitignore`",
          f"`{CLI} check --all` reports 0 blocking; the rehearsal said: {rh.get('check_all', {}).get('summary', 'not run')} (in the clone)",
          f"`{TOOL} uninstall {proj}`, commit", f"{rh.get('legacy', t['legacy_at_install'])} legacy taskets (in the clone)")

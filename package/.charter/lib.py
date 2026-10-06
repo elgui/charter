@@ -30,7 +30,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.11",
+    "version": "0.4.12",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -226,22 +226,101 @@ def commit_command(root: Path, paths: list[str], message: str) -> str:
             + " ".join(shlex.quote(p) for p in paths))
 
 
-def handover(root: Path, paths: list[str], message: str, owner: list[str]) -> list[str]:
-    """Who commits what is staged, and the command. `owner` lists the paths among them that are the owner's
-    change (`checks.owner_only_staged`); with none, the agent commits, and the owner is not asked."""
+CHARTER_BIN = f"{TOOL_DIR}/bin/charter"
+HANDOVER_FILE = "handover.json"
+OWNER_LINE_LABEL = "  the owner's line, after `!` in a Claude Code prompt or as is in a terminal:"
+
+
+def owner_line(root: Path) -> str:
+    """The one line the owner runs to commit a handover (0.4.12; docs/design/owner-handover.md). The switch is the
+    owner's to type, so it is on this line and in no file; the engine is named by its absolute path, so the line
+    commits this checkout (a worktree included) from any directory."""
+    import shlex
+    return f"CHARTER_OWNER=1 python3 {shlex.quote(str(root / CHARTER_BIN))} owner commit"
+
+
+def handover_path(root: Path) -> Path:
+    """The handover waiting on the owner: in this worktree's git directory, never in the tree."""
+    return local_state_dir(root) / HANDOVER_FILE
+
+
+def record_handover(root: Path, paths: list[str], message: str, by: str) -> dict:
+    """Record what the owner's `charter owner commit` commits: the branch, the message, the paths and each path's
+    staged blob (None for a removal). Data only: no command, and no owner switch."""
+    staged = {}
+    for entry in git(root, "ls-files", "-s", "-z", "--", *paths).stdout.split("\0"):
+        if "\t" in entry:
+            meta, rp = entry.split("\t", 1)
+            staged[rp] = meta.split()[1]
+    rec = {"at": _dt.datetime.now().astimezone().isoformat(timespec="seconds"), "by": by,
+           "branch": git(root, "branch", "--show-current").stdout.strip(),
+           "head": git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip() or None,
+           "message": message, "paths": list(paths), "staged": {p: staged.get(p) for p in paths}}
+    p = handover_path(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec, indent=2) + "\n")
+    os.replace(tmp, p)
+    return rec
+
+
+def load_handover(root: Path) -> dict | None:
+    p = handover_path(root)
+    try:
+        rec = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) and rec.get("paths") else None
+
+
+def handover_stale(root: Path, rec: dict) -> str:
+    """Why a recorded handover no longer stands, or "" when it does: it was made on another branch, or a commit since
+    touched one of its paths (it was committed another way, or overtaken). A commit since that touched none of them,
+    such as an agent's own work, leaves it standing."""
+    branch = git(root, "branch", "--show-current").stdout.strip()
+    if branch != (rec.get("branch") or ""):
+        return f"it was handed over on branch {rec.get('branch') or '(detached HEAD)'}, and this checkout is on {branch or '(detached HEAD)'}"
+    head = git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip()
+    if not head or head == rec.get("head"):
+        return ""
+    paths = [str(p) for p in rec.get("paths") or []]
+    if rec.get("head"):
+        r = git(root, "diff", "--name-only", "-z", str(rec["head"]), head, "--", *paths)
+        touched = [p for p in r.stdout.split("\0") if p] if r.returncode == 0 else paths[:1]
+    else:   # handed over before the first commit
+        touched = [p for p in git(root, "ls-tree", "-r", "-z", "--name-only", head, "--", *paths).stdout.split("\0") if p]
+    if touched:
+        return (f"{touched[0]}" + (f" and {len(touched) - 1} more" if len(touched) > 1 else "")
+                + f" changed in a commit since the handover (HEAD is {head[:7]})")
+    return ""
+
+
+def clear_handover(root: Path) -> None:
+    with contextlib.suppress(OSError):
+        handover_path(root).unlink()
+
+
+def handover(root: Path, paths: list[str], message: str, owner: list[str], by: str = "charter handover") -> list[str]:
+    """Who commits what is staged, and how. `owner` lists the paths among them that are the owner's change
+    (`checks.owner_only_staged`); with none, the agent commits, and the owner is not asked. With some, the handover
+    is recorded and the block ends with the owner's line, alone on the last line so a triple-click copies it whole."""
     branch = git(root, "branch", "--show-current").stdout.strip() or "(detached HEAD)"
     cmd = commit_command(root, paths, message)
+    note = [f"  note: {branch} is the main line; the change belongs on a branch (`git switch -c <branch>` keeps what is staged)"] \
+        if branch in ("main", "master") else []
     if not owner:
-        L = [f"Staged {len(paths)} file(s) on branch {branch}; none is an owner-only change, so an agent commits them:",
-             f"  {cmd}"]
-    else:
-        L = [f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
-             f"  in a Claude Code prompt:  ! CHARTER_OWNER=1 {cmd}",
-             f"  from your own terminal:   {cmd}",
+        clear_handover(root)
+        return [f"Staged {len(paths)} file(s) on branch {branch}; none is an owner-only change, so an agent commits them:",
+                f"  {cmd}"] + note
+    if (root / CHARTER_BIN).is_file():
+        record_handover(root, paths, message, by)
+        line = owner_line(root)
+    else:   # an uninstall: the engine has left the tree, so the owner commits with git itself
+        clear_handover(root)
+        line = f"CHARTER_OWNER=1 {cmd}"
+    return ([f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
              f"  owner-only among them ({len(owner)}): " + ", ".join(owner[:8]) + (f" and {len(owner) - 8} more" if len(owner) > 8 else "")]
-    if branch in ("main", "master"):
-        L.append(f"  note: {branch} is the main line; the change belongs on a branch (`git switch -c <branch>` keeps what is staged)")
-    return L
+            + note + [OWNER_LINE_LABEL, line])
 
 
 def ignored(root: Path, relpaths: list[str]) -> set[str]:

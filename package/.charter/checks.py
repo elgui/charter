@@ -820,7 +820,7 @@ OWNER_OVERRIDE = ("this is the owner's act: edit the file yourself, or start Cla
                   "for an owner session; as an agent, propose it (a change request, a new decision) and say so")
 # at commit the change is already made: the agent leaves it staged and hands the owner one command, not a new session
 OWNER_COMMIT_OVERRIDE = ("the owner commits it: leave it staged, run `python3 .charter/bin/charter handover` "
-                         "and give the owner the command it prints")
+                         "and give the owner the line it prints")
 
 
 MANIFEST = lib.TOOL_DIR + "/manifest.json"
