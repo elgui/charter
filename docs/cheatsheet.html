@@ -205,7 +205,7 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
   </div>
   <div class="lane" aria-label="The owner's lane">
     <div class="who"><i class="o">O</i>Only you</div>
-    <div><b>Commit what is handed over</b> (install, config, settings): paste the command after <code>!</code> in Claude Code, or run it in your own terminal; <code>charter handover</code> prints it again.</div>
+    <div><b>Commit what is handed over</b> (install, config, settings): one line, <code>CHARTER_OWNER=1 python3 &lt;root&gt;/.charter/bin/charter owner commit</code>, after <code>!</code> in Claude Code or as is in a terminal; <code>charter handover</code> prints it again.</div>
     <div><b>Rule</b> a proposal: <code>charter rule &lt;id&gt; active|rejected</code>, or <code>rule &lt;old&gt; superseded --by &lt;new&gt;</code>. <b>Approve</b> a change: <code>charter approve &lt;id&gt; [--reject]</code>. Each commits itself.</div>
     <div><b>Let a frozen file grow</b>: a <code>kind: split</code> unit, or a <code>size_exceptions</code> entry (budget, <code>because:</code>, <code>expires:</code>).</div>
     <div><b>Re-plan</b>: add or reorder rows in <code>charter/rails.md</code>; <code>charter rail &lt;id&gt; done</code> closes one.</div>
@@ -377,7 +377,7 @@ svg text{font-family:"Liberation Sans Narrow","Arial Narrow",Arial,sans-serif}
   <tr><th>You see</th><th>Who</th><th>Do this</th></tr>
   <tr><td><code>charter/done block</code> … <code>unchecked</code></td><td><i class="a">A</i></td><td>Run each probe, tick the box, cite the run under <code>## Evidence</code>; or keep the status open.</td></tr>
   <tr><td><code>charter/done block</code> … <code>names no commit … and no $ command</code></td><td><i class="a">A</i></td><td>Add the SHA and the <code>$ command</code> lines <code>charter probe &lt;id&gt;</code> prints. No flag overrides done: without evidence, <code>parked</code> or <code>skipped</code>.</td></tr>
-  <tr><td><code>charter/protected block [&lt;path&gt;]</code> at commit, or a denied Edit of an owner-only file</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Leave it staged; <code>charter handover</code> prints the owner's command. In session, propose instead: a change request, a successor decision, a draft outside the project.</td></tr>
+  <tr><td><code>charter/protected block [&lt;path&gt;]</code> at commit, or a denied Edit of an owner-only file</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Leave it staged; <code>charter handover</code> prints the owner's line. In session, propose instead: a change request, a successor decision, a draft outside the project.</td></tr>
   <tr><td>Out-of-scope path (client track)</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Write <code>charter/changes/&lt;slug&gt;.md</code> from <code>charter/templates/change.md</code>, <code>status: proposed</code>; the owner approves.</td></tr>
   <tr><td>Frozen file grew past its limit</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Move code out; shrinking always passes. Or the owner opens a <code>kind: split</code> unit or a <code>size_exceptions</code> entry.</td></tr>
   <tr><td>Retired decision cited, or a decision's <code>check:</code> fails</td><td><i class="a">A</i>→<i class="o">O</i></td><td>Cite the successor the message names; or write a new decision with <code>supersedes:</code>, and the owner retires the old one.</td></tr>

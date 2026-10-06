@@ -408,6 +408,11 @@ class Gates(OwnerActsCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("a chain session never performs the owner's acts", r.stderr)
 
+    def test_a_working_chain_session_cannot_commit_a_handover(self):   # 0.4.12, with the owner switch even
+        r = charter(self.root, "owner", "commit", sid="s1", env={"CHARTER_OWNER": "1"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("a chain session never commits the owner's change", r.stderr)
+
 
 
 class Config(ChainCase):

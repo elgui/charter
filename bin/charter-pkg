@@ -27,6 +27,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent / "package"
 VERSION = (PKG / "VERSION").read_text().strip()
+FLEET_ROOT = str(Path.home() / "Projects")
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(PKG / ".charter"))
 import lib as charter_lib  # noqa: E402  the package's own parser decides what counts as a charter unit
@@ -116,7 +117,7 @@ def stage(project: Path, rels: list[str], message: str, show: bool = True) -> li
                             capture_output=True, text=True).stdout.split("\0")
     staged = [r for r in staged if r]
     if staged and show:
-        print("\n".join(charter_lib.handover(project, staged, message, owner_paths(project, staged))))
+        print("\n".join(charter_lib.handover(project, staged, message, owner_paths(project, staged), by="charter-pkg")))
     return staged
 
 
@@ -433,10 +434,14 @@ def uncommitted_managed(project: Path) -> list[str]:
 
 def do_fleet(root: Path, a) -> int:
     """Every charter project under `root`: installed version, branch, and what waits. With --upgrade, the ones
-    behind are upgraded and staged, and the owner gets one command that commits every project's upgrade."""
+    behind are upgraded and staged, each one's handover is recorded, and the owner gets one line, `fleet --commit`,
+    that commits every project's upgrade (0.4.12)."""
     import contextlib
     import io
+    import shlex
     projects = sorted(p for p in root.iterdir() if (p / "charter" / "VERSION").is_file() and (p / ".git").exists())
+    if a.commit:
+        return do_fleet_commit(projects)
     rows, pending, notes = [], [], []
     for p in projects:
         installed = (p / "charter" / "VERSION").read_text().strip()
@@ -486,11 +491,39 @@ def do_fleet(root: Path, a) -> int:
     if not a.upgrade:
         print("\nre-run with --upgrade to upgrade, commit what an agent may, and get one command for the rest")
         return 0
-    cmds = [charter_lib.commit_command(p, paths, msg) for p, paths, msg in pending]
-    print(f"\nWaiting on the owner: {len(pending)} project(s), one command. The gate refuses these commits to an agent.")
-    print("  in a Claude Code prompt:  ! " + "; ".join(f"CHARTER_OWNER=1 {c}" for c in cmds))
-    print("  from your own terminal:   " + "; ".join(cmds))
+    for p, paths, msg in pending:
+        charter_lib.record_handover(p, paths, msg, by="fleet")
+    line = f"CHARTER_OWNER=1 python3 {shlex.quote(str(Path(__file__).resolve()))} fleet --commit"
+    if root != Path(FLEET_ROOT).resolve():
+        line += f" --root {shlex.quote(str(root))}"
+    print(f"\nWaiting on the owner: {len(pending)} project(s), one line. The gate refuses these commits to an agent.")
+    print(charter_lib.OWNER_LINE_LABEL)
+    print(line)
     return 0
+
+
+def do_fleet_commit(projects: list[Path]) -> int:
+    """`fleet --commit`, the owner's line: each project's `charter owner commit` of the handover `fleet --upgrade`
+    recorded. The owner switch comes from the owner's line, through the environment; a handover another tool
+    recorded is named, not committed, since the owner has not seen it here."""
+    ran, failed = 0, []
+    for p in projects:
+        rec = charter_lib.load_handover(p)
+        if not rec or (rec.get("by") != "fleet" and charter_lib.handover_stale(p, rec)):
+            continue   # a fleet handover that went stale still runs, so that its refusal is printed
+        if rec.get("by") != "fleet":
+            print(f"{p.name}: a handover from `{rec.get('by')}` waits too, left alone; its own line:\n{charter_lib.owner_line(p)}")
+            continue
+        print(f"== {p.name}", flush=True)
+        r = subprocess.run([sys.executable, str(p / charter_lib.CHARTER_BIN), "owner", "commit"])
+        ran += 1
+        if r.returncode != 0:
+            failed.append(p.name)
+    if not ran:
+        print("nothing handed over by fleet")
+    elif failed:
+        print(f"not committed: {', '.join(failed)} (each one's output is above; its handover is kept)")
+    return 1 if failed else 0
 
 
 def do_status(project: Path, a) -> int:
@@ -562,9 +595,11 @@ def main(argv=None) -> int:
         s.add_argument("--purge-state", action="store_true")
         s.add_argument("--replace-hooks", action="store_true",
                        help="point core.hooksPath at .charter/githooks even though the project runs other git hooks")
-    fl = sub.add_parser("fleet", help="every charter project under --root; with --upgrade, upgrade the ones behind and hand over one command")
-    fl.add_argument("--root", default=str(Path.home() / "Projects"))
-    fl.add_argument("--upgrade", action="store_true")
+    fl = sub.add_parser("fleet", help="every charter project under --root; with --upgrade, upgrade the ones behind and hand over one line")
+    fl.add_argument("--root", default=FLEET_ROOT)
+    mode = fl.add_mutually_exclusive_group()
+    mode.add_argument("--upgrade", action="store_true")
+    mode.add_argument("--commit", action="store_true", help="the owner's line: commit, as the owner, the upgrades `--upgrade` handed over")
     sv = sub.add_parser("survey", help="measure a project before a migration; read-only on the project")
     sv.add_argument("project")
     sv.add_argument("--track", choices=["client", "prototype"], required=True, help="the track the rehearsal installs and the plan assumes")

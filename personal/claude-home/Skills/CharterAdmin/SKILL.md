@@ -51,7 +51,7 @@ User: "What would it take to put charter on orqueveaux?"
 User: "Upgrade charter everywhere"
 → `python3 ~/Projects/charter/bin/charter-pkg fleet` to show the table, then `fleet --upgrade`
 → An upgrade of package files alone is committed by fleet itself (0.4.6); the table says `committed <sha>`
-→ Returns the fleet's handover block first, verbatim, if any project waits on the owner (a settings.json merge, a kept file)
+→ Returns the fleet's owner's line first, verbatim, as one `! <line>`, if any project waits on the owner (a settings.json merge, a kept file): `CHARTER_OWNER=1 python3 ~/Projects/charter/bin/charter-pkg fleet --commit` from 0.4.12
 → Then one line per project: the version change, and any KEEP, IGNORED or NOTE line
 ```
 
@@ -59,7 +59,7 @@ User: "Upgrade charter everywhere"
 ```
 User: "Upgrade charter on leCRM"
 → Follows "Install or upgrade" below: the dry run, then the upgrade on a branch, staged
-→ Returns the handover block the installer printed (the owner's one commit command), then the diff
+→ Returns the owner's line the installer printed, verbatim, as one `! <line>` (`CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit` from 0.4.12), then the diff
 ```
 
 ## Which projects, which version
@@ -71,9 +71,9 @@ Where one project stands and what comes next: `python3 .charter/bin/charter next
 
 ## Install or upgrade
 
-Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then read the block the installer prints. `so an agent commits them`: run the command yourself (from 0.4.6, package files matching the manifest are not an owner-only change). `Waiting on the owner`: stop and open the report with that block, copied verbatim (`docs/install.md` step 8); the owner makes that commit; never set `CHARTER_OWNER` or pass `--no-verify` yourself. The auto-mode classifier refuses a `CHARTER_OWNER=1` commit from an agent as a safety bypass unless Gui has explicitly asked, in that conversation, for the agent to make the owner's commit itself: on 2026-09-25 "set them up properly (performing git operations)" was refused, "do them yourself this time" was allowed. Without that word, hand over the command; don't try.
+Follow `~/Projects/charter/docs/install.md`: the preconditions, the track (`client` only under a signed devis, otherwise `prototype`), the dry run, the install or upgrade on a branch, then read the block the installer prints. `so an agent commits them`: run the command yourself (from 0.4.6, package files matching the manifest are not an owner-only change). `Waiting on the owner`: stop and open the report with the owner's line, the block's last line, copied verbatim as one `! <line>` (`docs/install.md` step 8). From 0.4.12 it is `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`, which commits the handover the installer recorded in the git directory: never a fenced block, a heredoc or a list of paths. If you staged or committed anything since the installer ran, run `python3 .charter/bin/charter handover` in that checkout first; it records the handover again and prints the line. A project still below 0.4.12 prints a pathspec `git commit` instead: put it, without the switch, in a scratchpad script (`set -euo pipefail`), check it with `bash -n` and `git commit --dry-run`, and hand over `CHARTER_OWNER=1 bash <path>`, per the global rule. The owner commits; never run the line yourself, never set `CHARTER_OWNER` or pass `--no-verify`. Owner commits are never the agent's, whatever Gui writes: on 2026-10-06 the auto-mode classifier refused an agent's `CHARTER_OWNER=1 git commit` of leCRM's 0.4.11 upgrade even after "do it yourself" ("judged dangerous"), although "do them yourself this time" had let one through on 2026-09-25. Don't try.
 
-Several projects at once: `charter-pkg fleet --upgrade` (from 0.4.5). It upgrades every project that is behind and stages each project's files. From 0.4.6 it commits a project itself when the project's gate agrees (package files only), and prints one command for the projects left, each by pathspec, so the owner's other work in each tree stays out. The upgrade lands on the branch each project is on. It skips the per-project preconditions of `docs/install.md` (a clean tree, no other session in the tree, a branch), so check each project's row before you run it: a project on a branch the owner is using for other work is upgraded there. A version note that asks for a step after the upgrade (a size check, a ledger fold) is still yours, per project. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
+Several projects at once: `charter-pkg fleet --upgrade` (from 0.4.5). It upgrades every project that is behind and stages each project's files. From 0.4.6 it commits a project itself when the project's gate agrees (package files only). From 0.4.12 it records each remaining project's handover and prints one owner's line for all of them, `CHARTER_OWNER=1 python3 ~/Projects/charter/bin/charter-pkg fleet --commit`, which commits each by pathspec, so the owner's other work in each tree stays out. The upgrade lands on the branch each project is on. It skips the per-project preconditions of `docs/install.md` (a clean tree, no other session in the tree, a branch), so check each project's row before you run it: a project on a branch the owner is using for other work is upgraded there. A version note that asks for a step after the upgrade (a size check, a ledger fold) is still yours, per project. A project that already has code, taskets or documents goes through the Migrate workflow, not a bare install.
 
 ## Ledger and cost per accepted result
 

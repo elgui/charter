@@ -72,6 +72,6 @@ The road's units come in groups: the items of `charter/rails.md`, or the tasket 
 
 - Edit `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, or a handoff other than your own.
 - Pass `--no-verify`, set `CHARTER_OWNER`, run the owner's verbs (`charter rule`, `approve`, `rail`), push, merge, rebase or rewrite history.
-- Close an `— owner:` line, run the owner's acts (`charter owner run`), resume a chain, or type into another session's terminal (`cmux send`, `tmux send-keys`, `osascript`) to do any of these.
+- Close an `— owner:` line, run the owner's acts (`charter owner run`) or commit a handover (`charter owner commit`), resume a chain, or type into another session's terminal (`cmux send`, `tmux send-keys`, `osascript`) to do any of these.
 - Close a unit whose probes you did not run in this session.
 - Launch a session any other way than `charter chain next`.

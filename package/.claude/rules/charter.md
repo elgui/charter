@@ -35,6 +35,7 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - Opening or widening a `kind: split` unit.
 - Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain ok` when a chain waits on it.
 - Running a waiting chain's acts: `charter owner run` is the owner's command (the hook denies it to an agent). Give the owner the command, never run it.
+- Committing an owner-only change. Leave it staged and run `python3 .charter/bin/charter handover`: it records the handover and prints the owner's one line, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`. Give the owner that line verbatim (as `! <line>` for a Claude Code prompt); never run it (the hook denies it to an agent).
 - Setting `CHARTER_OWNER` anywhere (the hook denies a Bash command that names it).
 - Resuming a chain: `charter chain resume` refuses; the owner types `/resume-chain`.
 

@@ -384,7 +384,11 @@ class Installed(unittest.TestCase):
         self.addCleanup(lambda: cleanup(root))
         for cmd, deny in (("CHARTER_OWNER=1 git commit -qm x", True), ("export CHARTER_OWNER=1", True), ("git status", False),
                           ("env -u CLAUDECODE git commit -qm x", True), ("unset CLAUDECODE; git commit", True), ("CLAUDECODE= git commit", True),
-                          ("echo $CLAUDECODE", False)):
+                          ("echo $CLAUDECODE", False),
+                          # 0.4.12: the owner's line, and the verb without the switch; the agent's handover is free
+                          ("CHARTER_OWNER=1 python3 /p/.charter/bin/charter owner commit", True),
+                          ("python3 .charter/bin/charter owner commit", True), ("python3 .charter/bin/charter handover", False),
+                          ("python3 .charter/bin/charter owner --json", False)):
             code, out, so, se = run_hook(root, "chain_gate", {"hook_event_name": "PreToolUse", "session_id": "any",
                                                              "tool_name": "Bash", "tool_input": {"command": cmd}})
             self.assertEqual(bool(denied(out)), deny, cmd + so + se)
