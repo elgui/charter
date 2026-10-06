@@ -229,7 +229,8 @@ PACKAGE_FILES = frozenset((
     ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/commands/resume-chain.md",
     ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml", "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
-    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md"))
+    "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md",
+    "charter/templates/owner.md"))
 
 
 def size_budget_for(root: Path, cfg: dict, rp: str, today: str | None = None) -> SizeBudget | None:

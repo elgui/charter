@@ -1,5 +1,5 @@
 ---
-description: "Owner only: resume the paused charter chain, closing the owner lines you name, with your note"
+description: "Owner only: resume the paused charter chain; ok closes the owner lines whose acts passed in `charter owner run`, or name them, with your note"
 argument-hint: "ok|skip [note]"
 disable-model-invocation: true
 ---

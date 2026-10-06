@@ -6,14 +6,21 @@ few milliseconds: no git, no charter import, one file test. A prompt joins its s
 the marker line `charter-chain: <id> session <n>`; from then on the hook measures the session's context, tells it
 when to hand over, refuses everything but the handoff past the cap, and keeps it from ending its turn before
 `charter chain next` closed it. In any session, the owner's `/resume-chain` prompt resumes a paused chain here, and
-the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER is denied, since an agent never
-sets it. Fails open on its own errors, as every charter gate does."""
+the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER, or runs `charter owner run`, is
+denied, since an agent never sets the one or runs the other (0.4.11). Fails open on its own errors, as every charter
+gate does."""
 import json
 import os
 import re
 import sys
 sys.dont_write_bytecode = True
 from pathlib import Path
+
+
+# `charter owner run` in any spelling argparse takes: the charter CLI by any path (`.charter/bin/charter`, `./charter`,
+# `charter`), then `owner` and `run` with options anywhere between (`owner --yes run`; cross-review of 2026-10-05). Quotes
+# are dropped first, so a quoted path matches; a commit message or a grep that spells the command is denied too
+OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|]*?\srun\b", re.M)
 
 
 def common_git_dir(start: Path):
@@ -66,6 +73,13 @@ def gate() -> int:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
                           "charter: an agent never sets CHARTER_OWNER; it switches the owner-only checks off. Leave the change staged "
                           "and run `python3 .charter/bin/charter handover`: it prints the command the owner runs."}}))
+        return 0
+    if ev == "PreToolUse" and OWNER_RUN_RE.search(command.replace("'", "").replace('"', "")):
+        # the owner's acts run in the owner's shell: sudo or Touch ID prompts raised by an agent's command would ask the
+        # owner to approve what they did not start (0.4.11). The owner's `!` command is not a tool call and is not seen here
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
+                          "charter: `charter owner run` is the owner's command: it runs the acts a chain waits on, sudo included, "
+                          "in the owner's shell. Tell the owner to run it (as `!` in Claude Code, or in a terminal); never run it yourself."}}))
         return 0
     if ev in ("UserPromptSubmit", "UserPromptExpansion"):
         if not resume and "charter-chain: " not in prompt:

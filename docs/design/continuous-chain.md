@@ -1,4 +1,4 @@
-# The continuous chain (0.4.9)
+# The continuous chain (0.4.9 to 0.4.11)
 
 A chain runs the road as a series of fresh Claude Code sessions. Each one verifies the one before, works unit after unit under a context budget, and hands over to the next through a validated handoff. The owner starts it with `/charter-chain` and a session of their own monitors it (`package/.claude/skills/charter-chain/SKILL.md`). The engine is `package/.charter/chain.py`; the hook is `package/.charter/hooks/chain_gate.py`.
 
@@ -161,6 +161,82 @@ The owner also said that "resume" in a chat often means "continue" after an inte
 - It does not check that the owner did an act. The owner's `/resume-chain AC-2` says they did; the next session checks what it can (a probe, the owner's note) and waits again on what is not done (chain rules § 5, `package/.charter/chain-rules.md`).
 - It does not work on other units while it waits. A wait pauses the whole chain; units that do not depend on the owner's act wait too (`_hand_over` in `package/.charter/chain.py`).
 - At a group's end, the review runs on resume, not during the wait (`on_resume` in `package/.charter/chain_groups.py`).
+
+## The owner's side of a wait (0.4.11)
+
+### What was asked
+
+0.4.10 made each act paste-ready (`docs/bugs/2026-10-05-owner-acts-not-paste-ready.md`): a command runs as pasted in zsh, holds no `<placeholder>`, and reaches the owner in the closing message and `charter owner` rather than as a label. 0.4.11 keeps that standard and moves the acts into one file the owner runs with one command.
+
+The owner ran a chain on a real project and reported two problems: every human gate made the resume painful, and the sessions asked for many manual actions as soon as anything needed `sudo`. They wanted "GPT Sol via codex native" to judge how relevant and how dangerous a command or a piece of code is, and either clear it or confirm that the owner's authorization is really needed; today every such step lands on them, "too much" (operator report, 2026-10-05). `codex exec` runs `gpt-5.6-sol` by default on this machine (codex-cli 0.147.0; no model is set in `~/.codex/config.toml`, and the CLI's output named it, 2026-10-05).
+
+### What the record showed
+
+One chain, `20261005-183724` in hermes-custom, which builds a confidential zone on the owner's Mac: a hidden role account, a sandbox, sudoers, LaunchDaemons (outside this repository: `~/dev/hermes-custom/.git/charter/chain/20261005-183724/`, its `events.log` and the `## Wait` of `s01/handoff.md` and `s02/handoff.md`, and the transcripts of its two sessions and of the owner's session under `~/.claude-lean/projects/-Users-gui-dev-hermes-custom/`).
+
+| The 16 acts of its two waits | Count | A judge could clear it | One script batches it |
+|---|---|---|---|
+| A command under sudo or Touch ID: an install, a probe through `conf` (outside this repository: the `## Wait` lines) | 10 | no: the agent cannot type a password or touch the sensor | yes |
+| A command the agent could have run itself, `brew install restic rclone` (outside this repository: `s02/handoff.md`) | 1 | yes | yes |
+| A cloud account, R2 "when ready" (outside this repository: both handoffs) | 2 | no | no |
+| A system setting, FileVault (outside this repository: `s01/handoff.md`) | 1 | no | no |
+| A ruling or a tick, `charter rule` and the plan's AC-5 (outside this repository: `s01/handoff.md`) | 2 | no | no |
+
+Off the lists, where most of the time went: the owner typed `/resume-chain` twice in the chain's closed tab and was refused (four more times in the two owner-gate trials); three pastes broke (a multi-line `/resume-chain`, a multi-line `git` command, a `<bucket> |` that zsh read as a redirection); the resume named 7 lines by hand, because `ok` would also have closed 0030 AC-3, which had failed, and the two R2 lines not yet done; an amend from another session's paste took session 1's commit off the branch, the resume refused, the owner-session agent's `git merge -s ours` was refused by the auto-mode classifier, and the owner ran it; a log line had to be committed before the resume; the round trip was run twice, in a terminal and then in the owner's session. About 30 messages and commands for the first wait, from 19:32 to 21:17. One prompt was Claude Code's own (a scan of `~/.claude` that the owner refused); everything else was charter's wait (outside this repository: the three transcripts above, and `git reflog chain/20261005-183724` in hermes-custom).
+
+A read-only review of the second wait's six acts by `codex exec -s read-only --output-schema`, at effort medium, returned a verdict per act in 57 s for about 35,000 tokens. It sent back 1 of 6, `brew install`, and rated the others owner credential (4) or outward (1) (in the scratchpad of this session, 2026-10-05). The bottleneck was the credential, not the judgement.
+
+### Choices, with the owner (decision page, 2026-10-05)
+
+| Question | Chosen | Why | Weighed and not taken |
+|---|---|---|---|
+| How the command acts reach the owner | One owner script per wait, `owner.md`, run as the owner with one command, `charter owner run` | (operator report, 2026-10-05) It removes the pasting, the per-output back-and-forth and the long resume line, and changes nothing about who holds root: each sudo inside still asks | The same script under one `sudo` (one touch, but every step root, and the zone's "sudo asks every time" check would test nothing); numbered paste-safe commands (the back-and-forth stays) |
+| What the second model may do (operator report, 2026-10-05) | Triage and risk notes only: an act an agent could do goes back to the session; each act the owner keeps gets a note on its risk, what it touches and whether it can be undone. Codex never closes a line and never runs anything | The owner's note: "honestly, I didn't verify the command. Having the perspective of a different model could really help." The owner gate of 0.4.9 stays whole | Codex closing low-risk checks (it would close owner lines without the owner, and saved nothing here: those checks needed the touch to run); Codex clearing steps that a NOPASSWD broker then runs as root (agent-written code as root on a model's say-so, through the zone's own rule) |
+| What `/resume-chain ok` closes (operator report, 2026-10-05) | The lines whose acts passed in the owner's run; a failed act, a declined one and a `later` one stay open | "what has happened to me is having to write many exception in order to leave certain lines open" (the owner). A wrong or forged run log can only make `ok` close fewer lines than 0.4.9's `ok`, which closed every waited line | `ok except <n>` (the owner still judges each result) |
+| Where the owner may resume (operator report, 2026-10-05) | Also in a chain's tab once its session has handed over | Nothing types into that tab after the launcher's first prompt, and a program that wanted to pass for the owner could already type into the owner's own tab (`docs/gates.md` § What a gate cannot see); six slips in three chains | Own session only |
+| When a session waits (operator report, 2026-10-05) | After everything on the road that does not need the owner: the rest of the mission, not only the rest of the unit | Fewer waits per road. Session 1 waited with unit 0040's owner-free parts still buildable, and session 2 built them | Wait at the first act |
+| sudo without a password (operator report, 2026-10-05) | The owner may add NOPASSWD rules for a short named list of fixed, root-owned scripts in a project, written by the owner, and checked by Codex. "Most sudo command are not really sensitive (deleting temp files, etc.)" (the owner) | A fixed root-owned script is not agent-written at a wait. The review flags a NOPASSWD rule whose command the user can write, which would hand root to anything able to edit it. In the record, the "temp file" delete was a root glob `rm` in the zone's inbox, rated medium risk and impossible to undo | — |
+
+### The shape
+
+```
+session n: does everything that does not need the owner, marks the lines `— owner:`, writes owner.md beside its handoff
+         └─ chain next: validates owner.md; Codex reviews it read-only (owner-review.json, pinned to its SHA-256)
+               ├─ an act an agent could do ──> refused: the session does it, or keeps it with `owner-because:`
+               └─ waiting; the session's last message is the block chain next printed: the acts with their notes
+owner: `! python3 .charter/bin/charter owner run` (in the chain's tab, any session, or a terminal)
+         └─ each act in order, in the owner's shell; sudo asks there; a high-risk act asks y/N at a terminal
+         └─ owner-run.json: passed, failed (with its output), declined, skipped, later
+owner: `/resume-chain ok` ──> closes exactly the lines whose acts passed, as the owner; resumes
+session n+1: briefing has the run (each failed act's output) and the lines left open, and why
+```
+
+### Each requirement and what holds it
+
+| Requirement | What holds it |
+|---|---|
+| A wait carries every act in one file the owner runs with one command | `check_handoff` in `package/.charter/chain.py` refuses `status: wait` without a valid `owner.md` (`validate`, `parse` in `package/.charter/owner_acts.py`; template `package/charter/templates/owner.md`). Each `closes:` line must be an open `— owner:` line of an open unit |
+| A second model reads the acts before the owner, and an act an agent could do goes back | `cmd_next` calls `review` and `sent_back` in `package/.charter/owner_acts.py`: `codex exec -C <root> -s read-only --ephemeral --output-schema`, effort `chain.owner_review_effort`, at most `chain.owner_review_timeout_s`. A review that cannot run is recorded as not reviewed and the wait goes on. One review per version of `owner.md` |
+| What the owner runs is what was reviewed | `cmd_next` in `package/.charter/chain.py` records `owner_sha` in the session's `link.json`; `run` and `resume_plan` in `package/.charter/owner_acts.py` refuse an `owner.md` whose SHA-256 differs |
+| The owner sees the acts where they look, with the notes, and pastes nothing but one command | `act_lines` in `package/.charter/owner_acts.py`, through `owner_steps` in `package/.charter/chain.py`, which 0.4.10 made the one source of the session's closing message (`_hand_over`), of `charter owner` and `charter next` (`owner_items`) and of the notification (`_wait_note`): each act with its note, then `charter owner run` alone on its line and in a fenced block |
+| Each act is paste-ready, as 0.4.10 asks | `validate` in `package/.charter/owner_acts.py` refuses an `owner.md` command or `check:` that holds a `<placeholder>`; `check_handoff` refuses a `## Wait` that gives commands of its own, which `charter owner run` would not run (chain rules § 5) |
+| One command runs them | `charter owner run [--only N] [--yes]` (`_owner_run` in `package/.charter/bin/charter`, `run` in `package/.charter/owner_acts.py`): `zsh -c` at the repository root, the owner's terminal as stdin; `expect-exit`, `expect-output`, `check:`, `stop-on-fail`, `later`; `owner-run.json` and `owner-run.log` beside the handoff |
+| An agent never runs them | The hook denies a Bash command that runs `charter owner run`, in every session (`package/.charter/hooks/chain_gate.py`); `_owner_run` refuses in a working chain session; chain rules § 5 and Never |
+| `ok` closes what passed, and no other | `resume_plan` in `package/.charter/owner_acts.py`, read by `_resume` in `package/.charter/chain.py`; `ok` before any run is refused with the command |
+| The next session knows what failed and what is still open | `last_resume.run` and `last_resume.kept`, read by `briefing` (`briefing_lines` in `package/.charter/owner_acts.py`) |
+| The owner may resume in the chain's tab once it has handed over | `typed_by_owner` in `package/.charter/chain.py` refuses only a session that is still working |
+| A session keeps going before it waits | Chain rules § 5, steps 1 and 2 (`package/.charter/chain-rules.md`) |
+| A session never puts a sudo prompt on the owner's screen | The hook denies a working chain session's `sudo` without `-n` (`sudo_asks`, `on_pre_tool` in `package/.charter/chain.py`); such a command or probe goes into `owner.md` (chain rules § 5). In the record, session 2's probes through `conf` each raised a Touch ID prompt (outside this repository: `s02/handoff.md`, `## Watch out`) |
+
+### What it does not do
+
+- It does not check that the owner read anything. The review's notes say where the risk is (`note_line` in `package/.charter/owner_acts.py`); the owner's run is the act.
+- The review is advice. A session could edit `owner-review.json` by a Bash command after the hand-over, as it could any file under `.git/charter/` (`docs/gates.md` § What a gate cannot see). `owner_sha` catches an `owner.md` changed after the review, not a forged review.
+- Codex judges from what it reads. A prompt injection in a file it reads could shape its note; it never runs anything (`-s read-only` in `review`, `package/.charter/owner_acts.py`), and its note never closes a line.
+- A command runs as written, with the owner's rights. `charter owner run` is the owner executing code an agent wrote, as before when they pasted it; the difference is that each act shows Codex's note first, and at a terminal a high-risk act waits for `y` (`run` and `_execute` in `package/.charter/owner_acts.py`).
+- Without a terminal (a `!` command may have none), nothing is asked: a manual act without a `check:` is taken as done by the owner's `ok`, as in 0.4.9 (`OK_STATUSES` in `package/.charter/owner_acts.py`).
+- It does not see a `sudo` inside a script or a probe: `charter probe` and the probes `chain next` re-runs for a closed unit still raise a prompt when they call one (`facts` in `package/.charter/chain.py`). The rules send such a probe to `owner.md`.
+- It removes no Touch ID. A project that wants fewer touches names fixed, root-owned scripts in a NOPASSWD rule, which the owner writes; charter never writes sudoers (chain rules § 5, `package/.charter/chain-rules.md`).
 
 ## Trial
 

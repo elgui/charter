@@ -18,6 +18,7 @@ State lives in the git common directory (`<git>/charter/chain/`), shared by work
   <id>/events.log             one line per event; `chain watch` follows it
   <id>/sNN/briefing.md        what session NN received (written by code)
   <id>/sNN/handoff.md         what session NN hands over (written by the session)
+  <id>/sNN/owner.md           with a wait: the owner's acts (written by the session; `owner_acts.py` has the rest)
   <id>/sNN/facts.md           the mechanical verification of session NN (written by `chain next`)
   <id>/sNN/link.json          the session's record: ids, heads, peak context, closing
 Python 3 standard library only."""
@@ -42,6 +43,7 @@ from pathlib import Path
 import lib
 import checks
 import chain_groups as groups
+import owner_acts
 
 RULES = ".charter/chain-rules.md"
 TEMPLATE = "charter/templates/handoff.md"
@@ -60,10 +62,43 @@ SESSION_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSIO
                "CLAUDE_PID", "CLAUDE_EFFORT", "CHARTER_OWNER", "CHARTER_UNIT")
 # a Bash command that performs an owner act: one of the owner's verbs, or the owner switch set by hand
 OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|rail)\b|\bCHARTER_OWNER\b")
+# where a command starts: the start of a line, a separator, a keyword, `!`, `{`, `$(`, a backquote, `sh -c '`; then the
+# words that run their argument as a command (`env`, `nohup`, `timeout 5`, an assignment). sudo there is a command
+_CMD_AT = (r"(?:^|[;&|()`{!]|\$\(|\b(?:then|do|else|elif|if|while|until|time)\b|-c\s+['\"])"
+           r"(?:\s*(?:\w+=\S*|env|command|exec|nohup|nice|builtin|xargs(?:\s+-\S+)*|timeout\s+\S+)(?=\s))*")
+SUDO_AT_RE = re.compile(_CMD_AT + r"\s*(?:\S*/)?sudo(?=[\s'\"]|$)(?P<rest>[^\n;&|)'\"]*)", re.M)
+# sudo's options that take a value as the next word, and those that never ask (a version, a help, forgetting the timestamp)
+_SUDO_ARG_OPTS = set("ugCDhpRrtTU")
+_SUDO_QUIET = ("-k", "-K", "-V", "-h", "--version", "--help", "--reset-timestamp", "--remove-timestamp")
+
+
+def sudo_asks(cmd: str) -> bool:
+    """Whether this shell command runs a sudo that may ask the owner for Touch ID or a password: a prompt on their
+    screen they did not start (0.4.11; hermes-custom's session 2 raised one per `conf` probe, 2026-10-05). `sudo -n`
+    never asks and runs a NOPASSWD rule, wherever `-n` comes among the options. Best effort: sudo inside a script or an
+    alias is not seen, and a quoted text that reads like a command (`git commit -m "a; sudo b"`) is (cross-review of
+    2026-10-05)."""
+    for m in SUDO_AT_RE.finditer(cmd):
+        words, i, quiet, never = m.group("rest").split(), 0, False, False
+        while i < len(words) and words[i].startswith("-") and words[i] != "--":
+            w = words[i]
+            if w in ("-n", "--non-interactive") or (not w.startswith("--") and "n" in w[1:].split("=")[0]
+                                                     and not any(c in _SUDO_ARG_OPTS for c in w[1:w[1:].find("n") + 1])):
+                never = True
+            if w in _SUDO_QUIET and len(words) == 1:
+                quiet = True
+            if not w.startswith("--") and len(w) == 2 and w[1] in _SUDO_ARG_OPTS:
+                i += 1   # its value
+            i += 1
+        if not (never or quiet):
+            return True
+    return False
+
+
 # the owner resumes a paused chain by typing this command; the prompt hook performs it (`owner_prompt`), and nothing else does
 RESUME_CMD = "resume-chain"
 RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
-RESUME_HOW = "type `/resume-chain ok|skip [note]` in a Claude Code session of your own in this project"
+RESUME_HOW = "type `/resume-chain ok|skip [note]` in Claude Code in this project: in the chain's tab once its session has handed over, or a session of your own"
 # what a closed session may no longer do: write a file, or change the branch's history (the owner-gate re-check, 2026-10-05)
 CLOSED_WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # best effort: a git command at the start of a shell command whose verb changes files, the index or the branch; an alias,
@@ -332,7 +367,8 @@ def allowed_at_cap(root: Path, chain: dict, n: int, tool: str, ti: dict) -> bool
         p = Path(ti.get("file_path") or "")
         p = p if p.is_absolute() else root / p
         handoff = (link_dir(root, chain["id"], n) / "handoff.md").resolve()
-        return p.resolve() == handoff or lib.rel(root, p.resolve()).startswith(lib.TASKETS_DIR + "/")
+        # owner.md too: a wait needs it, and a session that reaches the cap before writing it could only halt (cross-review of 2026-10-05)
+        return p.resolve() in (handoff, (link_dir(root, chain["id"], n) / "owner.md").resolve()) or lib.rel(root, p.resolve()).startswith(lib.TASKETS_DIR + "/")
     if tool == "Bash":
         # `git show HEAD > app/x.py` or `git log | tee x` would write anything: only plain git and charter commands
         cmds = plain_commands(ti.get("command") or "")
@@ -370,15 +406,20 @@ def check_handoff(root: Path, chain: dict, n: int, text: str) -> list[str]:
     if st == "halt" and not _filled(lib.section(body, "Halt")):
         problems.append("`status: halt` needs `## Halt`: what went wrong, and what the owner must decide")
     if st == "wait":
+        # every act is in owner.md, which the owner runs with one command and `/resume-chain ok` reads (0.4.11)
+        op = owner_acts.path(root, chain["id"], n)
+        if not op.exists():
+            problems.append(f"`status: wait` needs the owner's acts in {op}, from `{owner_acts.TEMPLATE}`: one `## <n>. <title>` per act, "
+                            "the `— owner:` lines it closes, and the command in a fenced block when it is one")
+        else:
+            problems += [f"owner.md: {p}" for p in owner_acts.validate(root, op.read_text(encoding="utf-8"))]
         acts = wait_acts(body)
         if not acts:
-            problems.append("`status: wait` needs `## Wait`: one line per act of the owner's, what it is and how it is done, "
-                            "and the unit line (`— owner: do` or `— owner: check`) it closes")
-        ids = set(lib.taskets(root)) | set(lib.decisions(root)) | set(lib.change_requests(root))
-        vague = [a for a in acts if not any(re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", a) for i in ids)]
-        if vague:
-            problems.append(f"`## Wait` lines that name no unit, decision or change request: {'; '.join(v[:60] for v in vague[:3])}. "
-                            "Each act says which unit line (or decision) it closes")
+            problems.append("`status: wait` needs `## Wait`: what the owner should know beyond owner.md, or `see owner.md`")
+        given = [c for a in acts for c in run_commands(a)]
+        if given and op.exists():
+            problems.append(f"`## Wait` gives commands ({', '.join(f'`{c[:40]}`' for c in given[:3])}): an act with a command goes in "
+                            "owner.md, where `charter owner run` runs it and `/resume-chain ok` reads whether it passed")
         ph = [p for a in acts for p in placeholders(a)]
         if ph:
             problems.append(f"`## Wait` commands hold {', '.join(f'`{p}`' for p in dict.fromkeys(ph))}: a `<bucket>` placeholder is a "
@@ -519,6 +560,12 @@ def briefing(root: Path, chain: dict, n: int, prev: tuple[str, str] | None = Non
         L += ["## Lines the owner closed on resuming", "",
               f"The owner typed `/{RESUME_CMD}`, which closed {', '.join(last['closed'])} in commit {str(last.get('commit'))[:7]}, as the owner. "
               "Only the owner closes an `— owner:` line; one still open stays open, and you wait on it again if the road needs it.", ""]
+    if last.get("next") == n and last.get("run"):
+        L += owner_acts.briefing_lines(last["run"])
+    if last.get("next") == n and last.get("kept"):
+        L += ["## Owner's lines the resume left open", "",
+              "These lines stay open, and why: " + "; ".join(last["kept"]) + ". Only the owner closes them; work on what does "
+              "not need them, and put each one the road needs back in your next owner.md.", ""]
     if last.get("next") == n and last.get("outside"):
         L += ["## Owner's lines closed outside the owner's resume", "",
               "These `— owner:` lines were closed since the wait by a commit other than the owner's `/resume-chain`: "
@@ -538,9 +585,11 @@ def briefing(root: Path, chain: dict, n: int, prev: tuple[str, str] | None = Non
               f"## Mechanical verification of session {n - 1} (computed by `charter chain next`)", "", fact.strip(), "",
               "Verify that work first (chain rules, step 1), then go on from its `## Next`.", ""]
         if handoff_status(handoff)[0] == "wait":
+            op = owner_acts.path(root, cid, n - 1)
             L += ["## The chain waited on the owner", "",
                   f"Session {n - 1} handed over with `status: wait`, and the owner resumed the chain. Before anything else, check "
-                  "each act under its `## Wait` (chain rules, section 5): the unit line it closes, the probe, the owner's note above. "
+                  + (f"each act of its owner.md (`{op}`)" if op.exists() else "each act under its `## Wait`")
+                  + " (chain rules, section 5): the unit line it closes, the probe, the owner's run and note above. "
                   "Record what you found under `## Verified`. An act that is not done: do what does not need it, then wait again with "
                   "the acts still open.", ""]
     L += groups.briefing_lines(root, chain, n)
@@ -690,9 +739,11 @@ def halt(root: Path, chain: dict, reason: str, state: str = "halted") -> None:
 
 def _wait_note(root: Path, chain: dict) -> str:
     """The notification of a wait: where the acts are, not a cut of them (bug 2026-10-05)."""
-    k = len(owner_steps(root, chain, int(chain.get("sessions") or 0))[0])
-    return (f"{k} act{'s wait' if k != 1 else ' waits'}: run `python3 .charter/bin/charter owner` in {root}, "
-            f"then type /{RESUME_CMD} in a Claude Code session of your own")
+    n = int(chain.get("sessions") or 0)
+    k = len(owner_steps(root, chain, n)[0])
+    run = f", `{owner_acts.RUN_CMD}` to run them" if owner_acts.load(root, chain["id"], n) is not None else ""
+    return (f"{k} act{'s wait' if k != 1 else ' waits'}: run `python3 .charter/bin/charter owner` in {root}{run}, "
+            f"then type /{RESUME_CMD}{' ok' if run else ''} in the chain's tab or a session of your own")
 
 
 NOTIFY_ENV = "CHARTER_NOTIFY"   # `off` silences every notification (the tests set it)
@@ -789,14 +840,23 @@ def live_session(root: Path) -> tuple[dict, int] | None:
 
 
 def owner_steps(root: Path, ch: dict, n: int) -> tuple[list[str], list[str], str]:
-    """(acts, commands, how) of a chain that waits after session n: the `## Wait` lines, the commands they give after
-    `run:`, and how the owner resumes. `charter owner`, `charter next` and `chain next` print the same."""
+    """(acts, commands, how) of a chain that waits after session n. `charter owner`, `charter next` and `chain next`
+    print the same. With owner.md (0.4.11): its acts with Codex's note on each, the one command that runs them all,
+    and `/resume-chain ok`. A wait handed over before 0.4.11: the `## Wait` lines and the commands they give after
+    `run:` (0.4.10)."""
+    where = f"in the chain's tab once its session has handed over, or a session of your own (`{own_session(root)}`)"
+    if owner_acts.load(root, ch["id"], n) is not None:
+        acts, note = owner_acts.act_lines(root, ch["id"], n)
+        how = (f"{note + chr(10) if note else ''}Run them all in {root}: `{owner_acts.RUN_CMD}` (after `!` in Claude Code, or in a terminal), "
+               f"then type `/{RESUME_CMD} ok` in Claude Code, {where}. It closes the lines whose acts passed; a failed act and a "
+               "`later` one stay open.")
+        return acts, [owner_acts.RUN_CMD], how
     hp = link_dir(root, ch["id"], n) / "handoff.md"
     acts = wait_acts(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2]) if hp.exists() else []
     lines = [x.replace(" ", ":") for x in open_waited_lines(root, ch, n)]
-    how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
-           if lines else f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>")
-    how += f"\n(not in the chain's tab; open your own with `{own_session(root)}`)"
+    how = (f"then type in Claude Code: /{RESUME_CMD} ok <your note> (done), or /{RESUME_CMD} skip <your note> (not done)"
+           if lines else f"then type in Claude Code: /{RESUME_CMD} <your note>")
+    how += f"\n({where})"
     return acts, [c for a in acts for c in run_commands(a)], how
 
 
@@ -812,13 +872,18 @@ def owner_items(root: Path) -> list[dict]:
     where = lib.rel(root, hp) if hp.exists() else lib.rel(root, chain_dir(root, cid) / "events.log")
     if ch.get("state") == "waiting":
         acts, run, how = owner_steps(root, ch, n)
+        if owner_acts.load(root, cid, n) is not None:
+            where = lib.rel(root, owner_acts.path(root, cid, n))
+        # every act of owner.md: `charter owner run` runs them all, so the owner sees them all (cross-review of 2026-10-05)
+        shown = acts if owner_acts.load(root, cid, n) is not None else acts[:12]
+        more = [f"(and {len(acts) - len(shown)} more in {where})"] if len(acts) > len(shown) else []
         return [{"key": f"chain:{cid}", "kind": "do", "title": f"chain {cid} waits on you: {len(acts)} act(s) from session {n}",
-                 "file": where, "line": 1, "ask": "\n".join([f"- {a}" for a in acts[:12]] + [how]), "run": run, "resume": True}]
+                 "file": where, "line": 1, "ask": "\n".join([f"- {a}" for a in shown] + more + [how]), "run": run, "resume": True}]
     if ch.get("state") == "halted":
         body = lib.split_frontmatter(hp.read_text(encoding="utf-8") if hp.exists() else "")[2]
         asks = [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()]
-        how = (f"then type in a Claude Code session of your own: /{RESUME_CMD} <your note>"
-               f"\n(not in the chain's tab; open your own with `{own_session(root)}`)")
+        how = (f"then type in Claude Code: /{RESUME_CMD} <your note>"
+               f"\n(in the chain's tab once its session has handed over, or your own: `{own_session(root)}`)")
         return [{"key": f"chain:{cid}", "kind": "decide", "title": f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200],
                  "file": where, "line": 1, "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
@@ -906,10 +971,14 @@ def on_pre_tool(root: Path, data: dict) -> dict | None:
         # hook knows the session from its own input (cross-review, 2026-10-04). A script that calls the package's functions
         # itself is not caught here: chain rules, Never
         return {"deny": "charter chain: a chain session never performs the owner's act (`charter rule`, `approve`, `rail`, "
-                        "`CHARTER_OWNER`). Hand over with `status: wait` and name the act under `## Wait`; the owner performs it."}
+                        "`CHARTER_OWNER`). Hand over with `status: wait` and put the act in owner.md; the owner performs it."}
+    if tool == "Bash" and sudo_asks(str(ti.get("command") or "")):
+        return {"deny": "charter chain: this command makes sudo ask the owner for Touch ID or a password, a prompt on their screen "
+                        "they did not start. Put it in owner.md as an act (chain rules, section 5): the owner runs it with "
+                        "`charter owner run`. A command the machine's sudoers lets you run without a password runs with `sudo -n`."}
     if tool == "AskUserQuestion":
         return {"deny": "charter chain: a chain session does not ask the owner mid-session. Hand over with `status: wait` and "
-                        "the act or the decision under `## Wait` (or `status: halt` if something went wrong; chain rules, section 5); "
+                        "the act or the decision in owner.md (or `status: halt` if something went wrong; chain rules, section 5); "
                         "the owner is told, answers, and resumes the chain."}
     tokens = context_tokens(data.get("transcript_path") or rec.get("transcript"))
     p = pct(chain, tokens)
@@ -1097,6 +1166,9 @@ def cmd_start(root: Path, a) -> int:
             f"budget: hand over at {wrap}%, cap {cap}% of {window:,} tokens; model {model or '(settings)'}, effort {effort or '(settings)'}",
             f"launcher: {kind} ({detail}); at most {a.max_sessions or int(cc.get('max_sessions', 12))} sessions",
             groups.plan_line(review, review_why, str(cc.get("review_effort", "high")), groups.unit_group(root, a.unit) or ""),
+            "owner's acts at a wait: " + ("reviewed by Codex, read-only, effort " + str(cc.get("owner_review_effort", "medium"))
+                                          if owner_acts.review_mode({"owner_review": a.owner_review}, cfg)[0] == "codex" else
+                                          f"review {owner_acts.review_mode({'owner_review': a.owner_review}, cfg)[1]}"),
             f"mission: {mission.splitlines()[0][:160]}"]
     startup, seen = measured_startup(root, kind)
     line = window * wrap // 100
@@ -1120,6 +1192,7 @@ def cmd_start(root: Path, a) -> int:
              "mission": mission, "model": model, "effort": effort, "window": window, "wrap_pct": wrap, "cap_pct": cap,
              "max_sessions": a.max_sessions or int(cc.get("max_sessions", 12)), "launcher": launcher, "rules_sha": rules_sha(root),
              "state": "running", "reason": "", "sessions": 0, "started_by": os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+             "owner_review": a.owner_review or str(cc.get("owner_review", "auto")),
              "review": review_why if review == "command" else review, "review_effort": str(cc.get("review_effort", "high")),
              "review_timeout_s": int(cc.get("review_timeout_s", 1800))}
     groups.begin(root, chain, a.unit)
@@ -1183,6 +1256,18 @@ def cmd_next(root: Path, a) -> int:
             and (p < chain["wrap_pct"] / 2 or (p < chain["wrap_pct"] and not landed))):
         problems.append(f"context is at {p:.0f}%, under the {chain['wrap_pct']}% hand-over line, " + ("" if landed else "nothing is committed yet, ")
                         + "and the handoff says continue: keep working in this session. If ending here is right, run this again with `--early \"<why>\"`")
+    if not problems and status == "wait" and not a.check:
+        # a reviewer of another model family reads the acts before the owner does: an act an agent could do goes back to
+        # the session, and each one the owner keeps gets a note on its risk (the owner chose triage only, 2026-10-05)
+        steps = owner_acts.load(root, chain["id"], n)[1]
+        rev = owner_acts.review(root, chain, n, lib.load_config(root))
+        back = owner_acts.sent_back(rev, steps)
+        if back:
+            problems.append("the review of owner.md (Codex, read-only) says you can do these acts yourself: " + " | ".join(back)
+                            + ". Do each one and remove it from owner.md, or keep it with `owner-because: <why it is the owner's>` "
+                            "under its title; then run this again (the review reads the new owner.md)")
+        halt_why = owner_acts.summary(steps)
+        reviewed = rev.get("sha", "")
     if problems:
         print("charter chain next: not handed over.\n- " + "\n- ".join(problems))
         return 1
@@ -1195,6 +1280,16 @@ def cmd_next(root: Path, a) -> int:
         if load(root, chain["id"]).get("state") != "running" or link(root, chain["id"], n).get("closed_at"):
             print(f"session {n} is already closed. End your turn.")
             return 0
+        if status == "wait":
+            # what the owner runs is what was reviewed: `charter owner run` and the resume refuse another owner.md, and
+            # an owner.md rewritten while Codex read it is not pinned as reviewed (cross-review of 2026-10-05)
+            now_sha = owner_acts.sha(owner_acts.path(root, chain["id"], n).read_text(encoding="utf-8"))
+            if now_sha != reviewed:
+                print("charter chain next: not handed over.\n- owner.md changed while it was reviewed; run this again, "
+                      "and leave owner.md alone until it is done")
+                return 1
+            with editing_link(root, chain["id"], n) as rec:
+                rec["owner_sha"] = now_sha
         return _hand_over(root, chain["id"], n, status, next_unit, halt_why, a.early)
 
 
@@ -1249,6 +1344,10 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
         for a in acts:
             out.append(f"- {a}")
             out += [f"```sh\n{c}\n```" for c in run_commands(a)]
+        if owner_acts.load(root, chain["id"], n) is not None:
+            # 0.4.11: the owner runs every act of owner.md with one command, then resumes
+            out += ["", f"Run them all with one command in {root}, after `!` in Claude Code (this tab works) or in a terminal:",
+                    f"```sh\n{owner_acts.RUN_CMD}\n```"]
         out += ["", how, "The acts are listed again by `python3 .charter/bin/charter owner`."]
         print("\n".join(out))
         return 0
@@ -1352,8 +1451,8 @@ def cmd_resume(root: Path, a) -> int:
     ran this command with a note in the owner's name, and the chain went on; nothing told its act from the owner's
     (docs/trials/2026-10-04-owner-gate.md). The owner types `/resume-chain`, which the prompt hook performs."""
     print(f"charter chain resume: refused. Resuming a chain is the owner's act: {RESUME_HOW}. The charter hook performs it "
-          "from the owner's own prompt, in an interactive session that is not a chain's. `/resume-chain ok <note>` closes the "
-          "`— owner:` lines the wait names as the owner (`skip` leaves them open, `AC-2` names one) and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
+          "from the owner's own prompt, in an interactive session that is not a working chain session's. `/resume-chain ok <note>` closes, as the owner, "
+          "the `— owner:` lines whose acts passed in `charter owner run` (`skip` leaves them open, `AC-2` names one) and passes the rest, verbatim, as the note; `--window`, `--wrap`, `--cap`, "
           "`--more` and `--skip-review` work there as they did here. An agent never resumes a chain: it tells the owner what to type.")
     return 1
 
@@ -1386,15 +1485,34 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         return 1
     refs = list(refs or [])
     waited = open_waited_lines(root, chain, n) if chain.get("state") == "waiting" else []
+    # 0.4.11: with owner.md, `ok` closes the lines whose acts passed in the owner's run, and no other (the owner, 2026-10-05:
+    # "having to write many exceptions in order to leave certain lines open"); None for a wait handed over before it
+    plan = owner_acts.resume_plan(root, chain, n) if chain.get("state") == "waiting" else None
     if waited and not refs and not mode:
         # the owner should not have to know a line's id: they say whether the acts are done (the owner, 2026-10-04)
+        if plan is not None:
+            acts = [f"{s['n']}. {s['title']}" for s in owner_acts.load(root, chain["id"], n)[1]]
+            how = (plan["problem"] if plan["problem"] else " ".join(owner_acts.plan_lines(plan)) + ".")
+            print(f"not resumed: the chain waits on {', '.join(waited)}" + "".join(f"\n  - {x}" for x in acts)
+                  + f"\n{how}\nDone? `/{RESUME_CMD} ok <note>`. Not done: `/{RESUME_CMD} skip <note>` goes on and leaves every line open.")
+            return 1
         hp = link_dir(root, chain["id"], n) / "handoff.md"
         acts = wait_acts(lib.split_frontmatter(hp.read_text(encoding="utf-8"))[2]) if hp.exists() else []
         print(f"not resumed: the chain waits on {', '.join(waited)}" + "".join(f"\n  - {x}" for x in acts)
               + f"\nDone? `/{RESUME_CMD} ok <note>` closes {'it' if len(waited) == 1 else 'them'} as yours. "
               f"Not done: `/{RESUME_CMD} skip <note>` goes on and leaves {'it' if len(waited) == 1 else 'them'} open.")
         return 1
-    if mode == "ok":
+    if plan is not None and plan["problem"] and mode != "skip" and not refs:
+        # `ok`, or a bare note on a wait whose acts close no line: the acts were not run, or owner.md changed since the
+        # hand-over (cross-review of 2026-10-05). The owner says so with `skip`, or names the lines they closed
+        print(f"not resumed, and no line closed: {plan['problem']}. Going on without them: `/{RESUME_CMD} skip <note>`")
+        return 1
+    if mode == "ok" and plan is not None:
+        if plan["problem"]:
+            print(f"not resumed, and no line closed: {plan['problem']}")
+            return 1
+        refs += [(u, k) for u, k in (w.split(" ", 1) for w in plan["close"]) if (u, k) not in refs]
+    elif mode == "ok":
         refs += [(u, k) for u, k in (w.split(" ", 1) for w in waited) if (u, k) not in refs]
     writes, closed, problem = owner_ticks(root, refs)
     if problem:
@@ -1447,7 +1565,9 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
     # at least one more session, and --more beyond that
     chain.update(state="running", reason="", max_sessions=max(int(chain["max_sessions"]), n + 1) + (a.more or 0),
                  last_resume={"at": now(), "via": f"/{RESUME_CMD}", "event": event_name, "session": by, "closed": closed,
-                              "commit": commit, "outside": outside, "after": after, "next": n + 1})
+                              "commit": commit, "outside": outside, "after": after, "next": n + 1,
+                              "run": [r for r in (plan or {}).get("run", []) if r["status"] != "not run"],
+                              "kept": [f"{line} ({why})" for line, why in (plan or {}).get("keep", []) if line in set(open_waited_lines(root, chain, n))]})
     save(root, chain)
     event(root, chain["id"], "chain", "resumed", f"by the owner's /{RESUME_CMD}" + (f" in session {by[:8]}" if by else "")
           + (f"; closed {', '.join(closed)} in {commit[:7]}" if closed else "") + (f"; note: {note[:200]}" if note else ""))
@@ -1461,7 +1581,9 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
               + (f" and {len(after) - 6} more" if len(after) > 6 else "") + ". The next session checks each one first")
     still = open_waited_lines(root, chain, n)
     if still:
-        print(f"still open, and no chain session may close them: {', '.join(still)} (`/resume-chain <AC-n>` once done)")
+        why = dict((plan or {}).get("keep", []))
+        print("still open, and no chain session may close them: " + ", ".join(f"{x} ({why[x]})" if x in why else x for x in still)
+              + " (`/resume-chain <unit>:AC-n` once done)")
     by_groups = groups.on_resume(root, chain, n, note, a.skip_review)
     if by_groups is not None:
         chain = load(root, chain["id"])
@@ -1604,7 +1726,12 @@ def commits_since(root: Path, since: str, cid: str) -> list[str]:
 
 
 def open_waited_lines(root: Path, chain: dict, n: int) -> list[str]:
-    """The owner's lines still open in the units the last session's `## Wait` names."""
+    """The owner's lines still open that the last session's wait names: those its owner.md acts close, or, for a wait
+    handed over before 0.4.11, every open owner line of the units its `## Wait` names."""
+    got = owner_acts.load(root, chain["id"], n)
+    if got is not None:
+        opened = owner_acts.open_owner_lines(root, tree=True)
+        return [f"{u} {k}" for u, k in owner_acts.waited_lines(got[1]) if (u, k) in opened]
     hp = link_dir(root, chain["id"], n) / "handoff.md"
     if not hp.exists():
         return []
@@ -1630,9 +1757,11 @@ def typed_by_owner(root: Path, sid: str) -> str:
     if not sid:
         return "no Claude Code session named this prompt; the owner types /resume-chain in an interactive session"
     j = joined(root, sid)
-    if j:
-        return (f"this is session {j[1]} of chain {j[0]['id']}, whose prompts come from the chain. "
-                f"Type it in a Claude Code session of your own: open one in a terminal with `{own_session(root)}`")
+    if j and not (j[2].get("closed_at") or j[2].get("stopped_unclosed")):
+        # an open session works for the chain, and its first prompt came from the launcher. Once it has handed over,
+        # nothing types into its tab but the owner, who landed there six times in three chains (the owner, 2026-10-05)
+        return (f"this is session {j[1]} of chain {j[0]['id']}, which is still working: its prompts come from the chain. "
+                f"Type it once the session has handed over, or in a session of your own (`{own_session(root)}`)")
     return ""
 
 
@@ -1694,6 +1823,7 @@ def main(argv: list[str], root: Path) -> int:
     s.add_argument("--launcher", default=None, help="auto | spawn | headless | a command template with {briefing}")
     s.add_argument("--here", action="store_true", help="stay on main/master instead of creating chain/<id>")
     s.add_argument("--review", default=None, help="review at the end of each group: auto | codex | off | a command template with {base} and {out}")
+    s.add_argument("--owner-review", default=None, help="review of the owner's acts at a wait: auto | codex | off | a command template with {prompt}, {schema} and {out}")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_start)
     n = sub.add_parser("next", help="validate this session's handoff, record its work, launch the next session")

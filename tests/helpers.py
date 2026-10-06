@@ -12,6 +12,7 @@ PKG = REPO / "package"
 INSTALLER = REPO / "bin" / "charter-pkg"
 # a chain under test must not raise macOS notifications; tests of notify() set their own value
 os.environ["CHARTER_NOTIFY"] = "off"
+os.environ["CHARTER_OWNER_REVIEW"] = "off"   # no test calls Codex unless it sets a review command itself (0.4.11)
 
 SCOPE = """# Scope
 

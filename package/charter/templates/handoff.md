@@ -33,11 +33,7 @@ next_unit: <tasket id>
 
 ## Wait
 
-<Only with `status: wait`: one line per act of the owner's, paste-ready (.charter/chain-rules.md section 5): ``- <what> — run: `<command>` — expect: <what success prints> — closes <unit-id> AC-n``, or the exact path of a setting instead of `run:`. The command runs as pasted in zsh: no `<placeholder>` in it (`chain next` refuses one), a value is read with `read "x?…"`.>
-<!-- e.g.
-- store the R2 bucket name — run: `read "b?R2 bucket name: " && echo "$b" | sudo tee /opt/app/etc/r2-bucket` — expect: the name echoed back, one Touch ID prompt — closes 20261004-0010 AC-7
-- turn on FileVault (System Settings > Privacy & Security > FileVault > Turn On) — expect: "FileVault is turned on" — closes 20261004-0010 AC-8
--->
+<Only with `status: wait`: the acts themselves go in `owner.md` next to this file, from `charter/templates/owner.md`, each paste-ready (.charter/chain-rules.md section 5). Here, what the owner should know beyond them (why the road waits, what the next session does with the result), or `see owner.md`; no command, since `charter owner run` runs only those of owner.md.>
 
 ## Halt
 
