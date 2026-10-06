@@ -6,9 +6,9 @@ few milliseconds: no git, no charter import, one file test. A prompt joins its s
 the marker line `charter-chain: <id> session <n>`; from then on the hook measures the session's context, tells it
 when to hand over, refuses everything but the handoff past the cap, and keeps it from ending its turn before
 `charter chain next` closed it. In any session, the owner's `/resume-chain` prompt resumes a paused chain here, and
-the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER, or runs `charter owner run`, is
-denied, since an agent never sets the one or runs the other (0.4.11). Fails open on its own errors, as every charter
-gate does."""
+the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER, or runs `charter owner run` or
+`charter owner commit`, is denied, since an agent never sets the one or runs the others (0.4.11, 0.4.12). Fails open on
+its own errors, as every charter gate does."""
 import json
 import os
 import re
@@ -17,10 +17,11 @@ sys.dont_write_bytecode = True
 from pathlib import Path
 
 
-# `charter owner run` in any spelling argparse takes: the charter CLI by any path (`.charter/bin/charter`, `./charter`,
-# `charter`), then `owner` and `run` with options anywhere between (`owner --yes run`; cross-review of 2026-10-05). Quotes
-# are dropped first, so a quoted path matches; a commit message or a grep that spells the command is denied too
-OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|]*?\srun\b", re.M)
+# `charter owner run` and `charter owner commit` (0.4.12) in any spelling argparse takes: the charter CLI by any path
+# (`.charter/bin/charter`, `./charter`, `charter`), then `owner` and the action with options anywhere between (`owner --yes
+# run`; cross-review of 2026-10-05). Quotes are dropped first, so a quoted path matches; a commit message or a grep that
+# spells the command is denied too
+OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|]*?\s(run|commit)\b", re.M)
 
 
 def common_git_dir(start: Path):
@@ -72,9 +73,16 @@ def gate() -> int:
         # or terminal, and an agent never does (.claude/rules/charter.md). Every session of the project, not only a chain's
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
                           "charter: an agent never sets CHARTER_OWNER; it switches the owner-only checks off. Leave the change staged "
-                          "and run `python3 .charter/bin/charter handover`: it prints the command the owner runs."}}))
+                          "and run `python3 .charter/bin/charter handover`: it prints the line the owner runs."}}))
         return 0
-    if ev == "PreToolUse" and OWNER_RUN_RE.search(command.replace("'", "").replace('"', "")):
+    m = OWNER_RUN_RE.search(command.replace("'", "").replace('"', "")) if ev == "PreToolUse" else None
+    if m and m.group(1) == "commit":
+        # the owner's commit of a handover (0.4.12): the owner types it with the switch; without it the gate refuses anyway
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
+                          "charter: `charter owner commit` is the owner's command: it commits what is handed over, as the owner. "
+                          "Run `python3 .charter/bin/charter handover` and give the owner the line it prints; never run it yourself."}}))
+        return 0
+    if m:
         # the owner's acts run in the owner's shell: sudo or Touch ID prompts raised by an agent's command would ask the
         # owner to approve what they did not start (0.4.11). The owner's `!` command is not a tool call and is not seen here
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":

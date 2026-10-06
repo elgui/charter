@@ -4,23 +4,38 @@ projects): the agent said "commit these 13 files" (13 was the count of changes, 
 not say whether anything was staged, and offered "start a session with CHARTER_OWNER=1", which it had read in the
 gate's own refusal. The installer now stages what it wrote and prints a pathspec commit; `charter handover` prints
 the same block from the index; the refusal at commit points at it.
-Every test here fails on 0.4.4 except the ones marked (guard), which pin behaviour that must not change."""
+Every test here fails on 0.4.4 except the ones marked (guard), which pin behaviour that must not change.
+0.4.12 replaced the pathspec command with the owner's line, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner
+commit`, which commits the handover recorded in the git directory; the tests here run that line where they ran the
+command (test_owner_commit_0_4_12 has the rest)."""
 import json
 import os
 import shlex
 import subprocess
 import unittest
 
-from helpers import charter, cleanup, clean_env, git, make_project
+from pathlib import Path
+
+from helpers import INSTALLER, charter, cleanup, clean_env, git, make_project
 from test_migration import pkg
 from test_review_regressions import commit_all
 
-IN_SESSION = "  in a Claude Code prompt:  ! "
+LABEL = "  the owner's line, after `!` in a Claude Code prompt or as is in a terminal:"
 
 
 def owner_command(out):
-    """The command the owner pastes after `!` in a Claude Code prompt, as the tool printed it."""
-    return next(l[len(IN_SESSION):] for l in out.splitlines() if l.startswith(IN_SESSION))
+    """The line the owner pastes after `!` in a Claude Code prompt, as the tool printed it: the line under the label."""
+    lines = out.splitlines()
+    return lines[lines.index(LABEL) + 1]
+
+
+def engine_line(root):
+    return f"CHARTER_OWNER=1 python3 {shlex.quote(str(root / '.charter' / 'bin' / 'charter'))} owner commit"
+
+
+def handover_record(root):
+    p = root / ".git" / "charter" / "handover.json"
+    return json.loads(p.read_text()) if p.exists() else None
 
 
 def run_as_owner_in_session(cmd):
@@ -68,8 +83,11 @@ class UpgradeHandsOver(unittest.TestCase):
         self.assertEqual(staged(self.root), sorted(wrote + ["notes.md"]))
         self.assertIn("Waiting on the owner: commit 4 staged file(s) on branch charter-upgrade.", r.stdout)
         cmd = owner_command(r.stdout)
-        self.assertTrue(cmd.startswith(f"CHARTER_OWNER=1 git -C {shlex.quote(str(self.root))} commit -m "), cmd)
-        self.assertEqual(shlex.split(cmd)[-5:], ["--"] + wrote)
+        self.assertEqual(cmd, engine_line(self.root))
+        self.assertEqual(r.stdout.rstrip("\n").splitlines()[-1], cmd)   # the last line, alone: a triple-click copies it
+        rec = handover_record(self.root)
+        self.assertEqual(rec["paths"], wrote)                            # what the installer wrote, not notes.md
+        self.assertEqual((rec["by"], rec["branch"], rec["message"].split()[0]), ("charter-pkg", "charter-upgrade", "charter"))
 
     def test_the_printed_command_commits_exactly_those_files_from_any_directory(self):
         cmd = owner_command(pkg("upgrade", str(self.root)).stdout)
@@ -91,9 +109,11 @@ class UpgradeHandsOver(unittest.TestCase):
         self.assertNotIn("start Claude Code with CHARTER_OWNER=1", out)
 
     def test_dry_run_stages_nothing(self):  # (guard)
+        before = handover_record(self.root)   # the fixture's own install, committed by hand: a stale record
         r = pkg("upgrade", str(self.root), "--dry-run")
         self.assertEqual(staged(self.root), ["notes.md"])
         self.assertNotIn("Waiting on the owner", r.stdout)
+        self.assertEqual(handover_record(self.root), before)
 
 
 class HandoverCommand(unittest.TestCase):
@@ -122,20 +142,24 @@ class HandoverCommand(unittest.TestCase):
         r = charter(self.root, "handover", "-m", "Settings: drop the hooks")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Waiting on the owner: commit 2 staged file(s) on branch work.", r.stdout)
-        self.assertIn("-m 'Settings: drop the hooks' -- .claude/settings.json notes.md", owner_command(r.stdout))
-        self.assertIn("owner-only among them (1): .claude/settings.json", r.stdout)   # (0.4.6: the block's last line)
+        self.assertEqual(owner_command(r.stdout), engine_line(self.root))
+        rec = handover_record(self.root)
+        self.assertEqual((rec["message"], rec["paths"]), ("Settings: drop the hooks", [".claude/settings.json", "notes.md"]))
+        self.assertIn("owner-only among them (1): .claude/settings.json", r.stdout)
         self.assertEqual(git(self.root, "diff", "--cached").stdout, before)
 
     def test_main_line_is_flagged(self):
         git(self.root, "switch", "-q", "main")
         (self.root / ".claude" / "settings.json").write_text("{}\n")
         git(self.root, "add", ".claude/settings.json")
-        self.assertIn("note: main is the main line", charter(self.root, "handover").stdout)
+        out = charter(self.root, "handover").stdout
+        self.assertIn("note: main is the main line", out)
+        self.assertEqual(out.rstrip("\n").splitlines()[-1], engine_line(self.root))   # the note comes before the line
 
     def test_next_points_at_handover(self):
         (self.root / ".claude" / "settings.json").write_text("{}\n")
         git(self.root, "add", ".claude/settings.json")
-        self.assertIn("`python3 .charter/bin/charter handover` prints the command", charter(self.root, "next").stdout)
+        self.assertIn("`python3 .charter/bin/charter handover` records it and prints the owner's line", charter(self.root, "next").stdout)
 
 
 class UninstallHandsOver(unittest.TestCase):
@@ -193,9 +217,11 @@ class Fleet(unittest.TestCase):
     def test_upgrade_gives_one_command_that_commits_every_project(self):
         r = pkg("fleet", "--root", str(self.dir), "--upgrade")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("Waiting on the owner: 3 project(s), one command.", r.stdout)
+        self.assertIn("Waiting on the owner: 3 project(s), one line.", r.stdout)
         cmd = owner_command(r.stdout)
-        self.assertEqual(cmd.count("CHARTER_OWNER=1 git -C "), 3)
+        self.assertEqual(shlex.split(cmd)[0], "CHARTER_OWNER=1")
+        self.assertEqual(shlex.split(cmd)[2:], [str(Path(INSTALLER).resolve()), "fleet", "--commit", "--root", str(self.dir)])
+        self.assertEqual(cmd.count("CHARTER_OWNER"), 1)   # one line, the same length whatever the fleet's size
         c = run_as_owner_in_session(cmd)
         self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
         for p in self.projects:

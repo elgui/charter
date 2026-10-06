@@ -168,10 +168,13 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
     staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
     mine = list(checks.owner_only_staged(root, cfg, staged))
     if mine:
-        cmd = shlex.split(lib.commit_command(root, staged, handover_message(root, staged, mine)))
+        # 0.4.12: once `charter handover` recorded it, the owner's line commits it; until then, that is the next step
+        rec = lib.load_handover(root)
+        handed = bool(rec) and not lib.handover_stale(root, rec) and set(mine) <= set(rec["paths"])
         items.append(_item(key="staged", kind="do", file=mine[0], line=1,
                            title=f"staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""),
-                           perform=["env", f"{OWNER_SWITCH}=1", *cmd]))
+                           run=[lib.owner_line(root)] if handed else [],
+                           perform=["env", f"{OWNER_SWITCH}=1", "python3", str(root / CHARTER_BIN), "owner", "commit"] if handed else None))
     closed = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
     legacy = _legacy_re(owner_names(root, cfg))
     for uid, u in units.items():
@@ -197,7 +200,9 @@ def next_line(it: dict) -> str:
     if key.startswith("change:"):
         return f"- change request {key.split(':', 1)[1]} — {it['title']} is proposed ({it['file']})"
     if key == "staged":
-        return f"- {it['title']}; `python3 .charter/bin/charter handover` prints the command"
+        if it.get("run"):
+            return f"- {it['title']}\n{lib.OWNER_LINE_LABEL}\n{it['run'][0]}"
+        return f"- {it['title']}; `python3 .charter/bin/charter handover` records it and prints the owner's line"
     if key.startswith("chain:"):
         ask = ("\n" + "\n".join(f"    {l}" for l in it["ask"].splitlines())) if it["ask"] else ""
         return f"- {it['title']}" + ask + run_lines(it)
@@ -207,9 +212,12 @@ def next_line(it: dict) -> str:
 
 
 def run_lines(it: dict) -> str:
-    """The commands of a waiting chain's acts, each alone on its line so that a triple-click copies it whole (0.4.10)."""
+    """The commands of a waiting chain's acts, each alone on its line so that a triple-click copies it whole (0.4.10),
+    or the owner's line of a handover (0.4.12)."""
     if not it.get("run"):
         return ""
+    if it["key"] == "staged":
+        return "\n" + lib.OWNER_LINE_LABEL + "\n" + "\n".join(it["run"])
     return "\n    the commands, one per line, each to paste as is:\n" + "\n".join(it["run"])
 
 

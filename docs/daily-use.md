@@ -142,7 +142,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 
 | When | What | How |
 |---|---|---|
-| The agent staged an owner-only file (install, upgrade, config) | Commit it | Paste the command the agent handed over, after `!` in the Claude Code prompt; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
+| The agent staged an owner-only file (install, upgrade, config) | Commit it | Run the one line the agent handed over, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`, after `!` in the Claude Code prompt or in a terminal; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
 | A decision is `proposed` | Adopt it, or reject it | `python3 .charter/bin/charter rule <id> active` (or `rejected`): status, a `## Ruling` line, the index and the commit in one command; `active` first runs the decision's `check:` (`rule` in `package/.charter/owner.py`) |
 | A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
 | A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
