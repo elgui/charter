@@ -193,7 +193,7 @@ def check_review(root: Path, ch: dict, n: int, text: str) -> list[str]:
         elif word == "dismissed" and (k["fileline"] or k["run"]):
             continue
         elif word == "halt":
-            problems.append(f"`## Review`, {f['id']}: `halt` needs the handoff's `status: wait` (an owner act, under `## Wait`) or `status: halt`")
+            problems.append(f"`## Review`, {f['id']}: `halt` needs the handoff's `status: wait` (an owner act, in owner.md) or `status: halt`")
         else:
             problems.append(f"`## Review`, {f['id']}: answer with `{f['id']} fixed <commit after {g['end'][:7]}>`, "
                             f"`{f['id']} dismissed <path:line or $ command> <why>`, or `{f['id']} halt <why>` with `status: halt`")

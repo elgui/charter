@@ -14,7 +14,8 @@
   next      where the work stands and what comes next: the active unit, the road, what waits on the owner; read-only
   handover  who commits what is staged (the owner only for owner-only changes), and the command; read-only
   chain     a continuous chain of sessions over the road: start | next | status | watch | stop | resume | join
-  owner     what waits on the owner, with the command that performs each (--json for tools); read-only
+  owner     what waits on the owner, with the command that performs each (--json for tools); read-only.
+            `owner run`: the owner runs the acts a waiting chain lists in owner.md, and records what passed
   rule      the owner rules on a proposed decision: status, a Ruling line, the index, one commit as the owner
   approve   the owner approves or rejects a proposed change request, in one commit
   rail      the owner sets the status of a rail in charter/rails.md, in one commit
@@ -888,8 +889,11 @@ def cmd_chain(a) -> int:
 
 def cmd_owner(a) -> int:
     """What waits on the owner (the list `charter next` ends with), each with the command that performs it.
-    Read-only: it runs no check and no probe, it reports them."""
+    Read-only: it runs no check and no probe, it reports them. `charter owner run` runs the acts a waiting chain's
+    owner.md lists, in the owner's shell (0.4.11)."""
     root = lib.repo_root(a.root)
+    if a.action == "run":
+        return _owner_run(root, a)
     cfg = lib.load_config(root)
     units = lib.taskets(root)
     legacy, before = lib.legacy_taskets(root), _done_before_charter(root, cfg)
@@ -897,6 +901,28 @@ def cmd_owner(a) -> int:
     rep = ownerq.report(root, cfg, ownerq.queue(root, cfg, units, states))
     print(ownerq.dumps(rep) if a.json else ownerq.human(rep))
     return 0
+
+
+def _owner_run(root, a) -> int:
+    import chain
+    import owner_acts
+    live = chain.live_session(root)
+    if live:
+        print(f"charter owner run: refused: this is session {live[1]} of chain {live[0]['id']}, and a chain session never performs "
+              "the owner's acts. Put them in owner.md and hand over with `status: wait`.", file=sys.stderr)
+        return 1
+    ch = chain.load(root, a.id)
+    if not ch:
+        print("charter owner run: no chain here", file=sys.stderr)
+        return 1
+    only = None
+    if a.only:
+        try:
+            only = sorted({int(x) for x in a.only.replace(" ", "").split(",") if x})
+        except ValueError:
+            print(f"charter owner run: --only takes act numbers separated by commas, not {a.only!r}", file=sys.stderr)
+            return 2
+    return owner_acts.run(root, ch, only=only, assume_yes=a.yes)
 
 
 def _owner_verb(a, fn, *args, **kw) -> int:
@@ -994,8 +1020,12 @@ def main(argv=None) -> int:
     ho.set_defaults(fn=cmd_handover)
     ch = sub.add_parser("chain", help="a continuous chain of sessions over the road (`charter chain --help`)", add_help=False)
     ch.add_argument("rest", nargs=argparse.REMAINDER); ch.set_defaults(fn=cmd_chain)
-    ow = sub.add_parser("owner", help="what waits on the owner, with the command for each; read-only")
-    ow.add_argument("--json", action="store_true", help="the machine-readable queue a tool such as an owner desk reads"); ow.set_defaults(fn=cmd_owner)
+    ow = sub.add_parser("owner", help="what waits on the owner, with the command for each; read-only. `owner run`: the owner runs a waiting chain's acts")
+    ow.add_argument("action", nargs="?", choices=["run"], help="run: run the acts of the waiting chain's owner.md in your shell, in order, and record what passed")
+    ow.add_argument("--json", action="store_true", help="the machine-readable queue a tool such as an owner desk reads")
+    ow.add_argument("--only", default=None, help="with run: the acts to run again, by number (`2` or `2,5`)")
+    ow.add_argument("--yes", action="store_true", help="with run: ask nothing (a high-risk act, a manual act)")
+    ow.add_argument("--id", default=None, help="with run: the chain (default: the last one)"); ow.set_defaults(fn=cmd_owner)
     trailer = {"default": None, "help": "a git trailer for the commit, e.g. `Owner-Action: oa-7k2f (terminal)`"}
     ru = sub.add_parser("rule", help="the owner rules on a decision, in one commit")
     ru.add_argument("decision"); ru.add_argument("status", choices=list(ownerq.DECISION_RULINGS))

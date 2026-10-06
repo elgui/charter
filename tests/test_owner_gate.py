@@ -129,19 +129,23 @@ class OwnerGate(WaitCase):
             self.assertIn("headless", r.stdout)
         self.assert_still_waiting(at)
 
-    def test_a_chain_session_cannot_resume(self):
-        at = self.waiting()
+    def test_a_working_chain_session_cannot_resume(self):
+        self.join(1, "s1")
         r = resume(self.root, "AC-2 ok", sid="s1")
         self.assertEqual(r.returncode, 1)
-        self.assertIn(f"this is session 1 of chain {self.cid}", r.stdout)
-        self.assert_still_waiting(at)
+        self.assertIn(f"this is session 1 of chain {self.cid}, which is still working", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "running")
 
-    def test_the_chain_tab_refusal_and_the_queue_say_how_to_open_your_own_session(self):
-        # the owner typed the command in the chain's tab four times in two trials (docs/trials/2026-10-05-owner-gate-recheck.md)
+    def test_the_chain_tab_resumes_once_its_session_handed_over(self):
+        # the owner typed the command in the chain's tab six times in three chains; once the session has handed over,
+        # nothing but the owner types there (0.4.11, the owner's choice of 2026-10-05)
         self.waiting()
         own = f"cd {shlex.quote(str(self.root.resolve()))} && claude"
-        self.assertIn(own, resume(self.root, "ok fine", sid="s1").stdout)
-        self.assertIn(f"not in the chain's tab; open your own with `{own}`", charter(self.root, "next").stdout)
+        self.assertIn(f"in the chain's tab once its session has handed over, or a session of your own (`{own}`)", charter(self.root, "next").stdout)
+        r = resume(self.root, "ok FileVault is on", sid="s1")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("closed u1 AC-2 as the owner", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["last_resume"]["session"], "s1")
 
     def test_a_closed_session_writes_and_commits_nothing_more(self):
         # session 1 of the re-check committed after `chain next` closed it, unseen (docs/trials/2026-10-05-owner-gate-recheck.md)
@@ -213,8 +217,8 @@ class OwnerGate(WaitCase):
         at = self.waiting()
         r = resume(self.root, "all good, carry on")
         self.assertEqual(r.returncode, 1)
-        self.assertIn("not resumed: the chain waits on u1 AC-2\n  - turn on FileVault", r.stdout)
-        self.assertIn("Done? `/resume-chain ok <note>` closes it as yours. Not done: `/resume-chain skip <note>`", r.stdout)
+        self.assertIn("not resumed: the chain waits on u1 AC-2\n  - 1. turn on FileVault", r.stdout)
+        self.assertIn("`/resume-chain ok` closes: u1 AC-2.\nDone? `/resume-chain ok <note>`. Not done: `/resume-chain skip <note>`", r.stdout)
         self.assert_still_waiting(at)
 
     def test_ok_closes_every_waited_line_and_skip_none(self):
@@ -266,7 +270,7 @@ class OwnerGate(WaitCase):
                            .replace("## Context\n", "## Context\n\n- [ ] AC-2 scratch step\n"))
         commit_all(self.root, "u1: an owner line without an id, and a scratch box named AC-2")
         self.join(1, "s1")
-        self.wait_handoff(1)
+        self.wait_handoff(1, owner='## 1. turn on FileVault\ncloses: u1 "FileVault is on"\ndo: System Settings\n')
         self.assertEqual(self.next("s1").returncode, 0)
         r = resume(self.root, "ok done")
         self.assertEqual(r.returncode, 0, r.stdout)

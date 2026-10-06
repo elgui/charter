@@ -11,6 +11,7 @@ the size gate skipped any file named like the installer's, and an upgrade droppe
 with one of charter's."""
 import argparse
 import contextlib
+import io
 import importlib.machinery
 import importlib.util
 import json
@@ -32,6 +33,9 @@ import checks  # noqa: E402
 import lib  # noqa: E402
 
 WAIT = "- turn on FileVault (System Settings > Privacy & Security) — closes u1 AC-2"
+# from 0.4.11 the acts are in owner.md; the handoff's `## Wait` says what the owner should know beyond them
+OWNER = ("# Owner's acts\n\n## 1. turn on FileVault (System Settings > Privacy & Security)\ncloses: u1 AC-2\n"
+         "do: System Settings > Privacy & Security > FileVault\n")
 
 
 def charter(root, *args, sid=None, env=None):
@@ -69,10 +73,12 @@ class WaitCase(ChainCase):
         """`chain next` with notifications on, as on the owner's machine (the tests turn them off elsewhere)."""
         return charter(self.root, "chain", "next", sid=sid, env={"CHARTER_NOTIFY": ""})
 
-    def wait_handoff(self, n, wait=WAIT, **kw):
+    def wait_handoff(self, n, wait=WAIT, owner=OWNER, **kw):
         p = self.write_handoff(n, status="wait", **kw)
         if wait:
             p.write_text(p.read_text() + f"\n## Wait\n\n{wait}\n")
+        if owner is not None:
+            (p.parent / "owner.md").write_text(owner)
         return p
 
     def notes(self):
@@ -93,9 +99,14 @@ class Wait(WaitCase):
         self.assertIn("waits on the owner, who is told", r.stdout)
         c = chainlib.load(self.root)
         self.assertEqual(c["state"], "waiting")
-        self.assertIn("session 1 waits on the owner: turn on FileVault", c["reason"])
+        self.assertIn("session 1 waits on the owner: 1 act(s) in owner.md (0 to run with `charter owner run`): turn on FileVault", c["reason"])
         self.assertIn("chain wait: session 1 waits on the owner", self.events())
-        self.assertIn(f"{self.cid} | 1 act waits: run `python3 .charter/bin/charter owner` in {self.root}", self.notes())
+        self.assertIn(f"{self.cid} | 1 act waits: run `python3 .charter/bin/charter owner` in {self.root}, "
+                      "`python3 .charter/bin/charter owner run` to run them, then type /resume-chain ok", self.notes())
+        # the session's last message to the owner: the acts verbatim and the command to paste, in a fenced block (0.4.10, 0.4.11)
+        self.assertIn("End your turn with a closing message that gives the owner what follows, verbatim", r.stdout)
+        self.assertIn("- 1. [you] turn on FileVault (System Settings > Privacy & Security) (closes u1 AC-2)", r.stdout)
+        self.assertIn("```sh\npython3 .charter/bin/charter owner run\n```", r.stdout)
         self.assertFalse(chainlib.link_dir(self.root, self.cid, 2).exists())
 
         q = json.loads(charter(self.root, "owner", "--json").stdout)
@@ -108,7 +119,7 @@ class Wait(WaitCase):
         nxt = charter(self.root, "next").stdout
         self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1", nxt)
         self.assertEqual(it[f"chain:{self.cid}"]["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
-        self.assertIn("then type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)", nxt)
+        self.assertIn("then type `/resume-chain ok` in Claude Code, in the chain's tab once its session has handed over, or a session of your own", nxt)
         self.assertNotIn("chain resume", nxt)
 
         r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")
@@ -130,6 +141,11 @@ class Wait(WaitCase):
         r = cli(self.root, "next", sid="s1")
         self.assertEqual(r.returncode, 1)
         self.assertIn("`status: wait` needs `## Wait`", r.stdout)
+        self.wait_handoff(1, owner=None)
+        (chainlib.link_dir(self.root, self.cid, 1) / "owner.md").unlink()
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("`status: wait` needs the owner's acts in", r.stdout)
         self.wait_handoff(1, state="app/billing.py: a draft, not committed")
         (self.root / "app" / "billing.py").write_text("def invoice(a):\n    return a * 2\n")
         r = cli(self.root, "next", sid="s1")
@@ -186,21 +202,27 @@ class WaitSecondReview(WaitCase):
             self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny", cmd)
         self.assertNotIn("hookSpecificOutput", self.hook("PreToolUse", "s1", tp, tool_name="Bash", tool_input={"command": "python3 .charter/bin/charter next"}))
 
-    def test_a_wait_line_names_what_it_closes(self):
+    def test_an_act_names_what_it_closes(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait="- later")
+        self.wait_handoff(1, owner="## 1. later\ncloses: -\ndo: something\n")
         r = cli(self.root, "next", sid="s1")
         self.assertEqual(r.returncode, 1)
-        self.assertIn("`## Wait` lines that name no unit, decision or change request: later", r.stdout)
+        self.assertIn("step 1 (later) closes no line and names no unit, decision or change request", r.stdout)
 
-    def test_the_template_placeholder_is_not_an_act(self):
+    def test_the_template_as_written_is_not_an_act(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait="<Only with `status: wait`: one line per act>\n" + WAIT)
+        self.wait_handoff(1, owner=(self.root / "charter" / "templates" / "owner.md").read_text())
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("owner.md: no act: one `## 1. <title>` per act", r.stdout)
+        self.wait_handoff(1)
         self.assertEqual(self.next("s1").returncode, 0)
         it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
-        self.assertEqual((it["title"], it["ask"]), (f"chain {self.cid} waits on you: 1 act(s) from session 1",
-                                                    WAIT + "\nthen type in a Claude Code session of your own: /resume-chain ok <your note> (done), or /resume-chain skip <your note> (not done)"
-                                                f"\n(not in the chain's tab; open your own with `{chainlib.own_session(self.root)}`)"))
+        self.assertEqual(it["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
+        self.assertTrue(it["ask"].startswith("- 1. [you] turn on FileVault (System Settings > Privacy & Security) (closes u1 AC-2)\n"
+                                             "   do: System Settings > Privacy & Security > FileVault\n"
+                                             "(not reviewed by a second model: review off)\n"), it["ask"])
+        self.assertIn(chainlib.own_session(self.root), it["ask"])
 
     def test_a_stop_requested_before_the_wait_wins(self):
         self.join(1, "s1")
@@ -209,7 +231,7 @@ class WaitSecondReview(WaitCase):
         self.assertEqual(self.next("s1").returncode, 0)
         c = chainlib.load(self.root)
         self.assertEqual(c["state"], "stopped")
-        self.assertIn("stopped by the owner; session 1 was waiting on: turn on FileVault", c["reason"])
+        self.assertIn("stopped by the owner; session 1 was waiting on: 1 act(s) in owner.md (0 to run with `charter owner run`): turn on FileVault", c["reason"])
 
     def test_resume_of_a_waiting_chain_wants_the_owners_changes_committed(self):
         self.waiting()
@@ -267,6 +289,7 @@ class WaitAtABoundary(GroupCase):
         self.work()
         p = self.write_handoff(1, status="wait", next_unit="u3")
         p.write_text(p.read_text() + f"\n## Wait\n\n{WAIT}\n")
+        (p.parent / "owner.md").write_text("## 1. approve the copy of u3\ncloses: -\ndo: read it and say yes\n")
         r = cli(self.root, "next", sid="s1")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual((self.state()["state"], self.calls()), ("waiting", []))
@@ -366,21 +389,33 @@ PASTE = ("- write the bucket name — run: `read \"b?R2 bucket name: \" && echo 
          "- turn on FileVault (System Settings > Privacy & Security) — closes u1 AC-2\n"
          "- configure the remote — run: `sudo rclone config` — expect: `rclone config` lists r2 — closes u1 AC-2")
 CMDS = ['read "b?R2 bucket name: " && echo "$b" | sudo tee /opt/x/r2-bucket', "sudo rclone config"]
+# the same three acts in owner.md (0.4.11)
+OWNER3 = ("## 1. Write the R2 bucket name, one Touch ID (u1)\ncloses: -\nexpect-output: .\n\n```sh\n" + CMDS[0] + "\n```\n\n"
+          "## 2. Turn on FileVault\ncloses: u1 AC-2\ndo: System Settings > Privacy & Security > FileVault\n\n"
+          "## 3. Configure the remote, interactive (u1)\ncloses: -\ndo: answer n, r2, s3, Cloudflare\n\n```sh\n" + CMDS[1] + "\n```\n")
+RUN = "python3 .charter/bin/charter owner run"
 
 
 class PasteReady(WaitCase):
     """Charter 0.4.10 (docs/bugs/2026-10-05-owner-acts-not-paste-ready.md): an owner act reaches the owner as commands
-    that run as pasted in zsh, in the terminal, not as labels in a file the owner does not read."""
+    that run as pasted in zsh, in the terminal, not as labels in a file the owner does not read. From 0.4.11 the acts
+    are in owner.md and the owner pastes one command, `charter owner run`; the standard holds for owner.md, and a wait
+    handed over before 0.4.11 is shown as 0.4.10 showed it."""
 
-    def test_a_placeholder_in_a_wait_command_is_refused_and_a_redirection_passes(self):
+    def test_a_placeholder_in_a_command_is_refused_and_a_redirection_passes(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait="- write the bucket — run: `echo <bucket> | sudo tee x` — closes u1 AC-2")
+        self.wait_handoff(1, owner="## 1. Write the bucket (u1)\ncloses: u1 AC-2\n\n```sh\necho <bucket> | sudo tee x\n```\n")
         r = cli(self.root, "next", sid="s1")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("`<bucket>`", r.stdout)
-        self.assertIn("shell redirection", r.stdout)
-        self.assertEqual(chainlib.load(self.root)["state"], "running")
+        self.assertIn("is a redirection", r.stdout)
+        # in `## Wait`, a backticked placeholder is refused too, and a `run:` command belongs in owner.md
+        self.wait_handoff(1, wait="- see owner.md; the bucket is `<bucket>` — closes u1 AC-2")
+        self.assertIn("`## Wait` commands hold `<bucket>`", cli(self.root, "next", sid="s1").stdout)
         self.wait_handoff(1, wait="- sort the list — run: `sort < in.txt` — closes u1 AC-2")
+        self.assertIn("`## Wait` gives commands (`sort < in.txt`): an act with a command goes in owner.md", cli(self.root, "next", sid="s1").stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "running")
+        self.wait_handoff(1, owner="## 1. Sort the list (u1)\ncloses: u1 AC-2\n\n```sh\nsort < in.txt\n```\n")
         r = self.next("s1")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(chainlib.load(self.root)["state"], "waiting")
@@ -399,39 +434,55 @@ class PasteReady(WaitCase):
         self.assertEqual(chainlib.placeholders("run: `` echo `x` <bucket> ``"), ["<bucket>"])
         self.assertEqual(chainlib.run_commands("run: `sudo rclone config`, then `x`"), ["sudo rclone config"])
 
-    def test_on_wait_chain_next_prints_each_act_and_its_command(self):
+    def test_on_wait_chain_next_prints_each_act_and_the_command(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait=PASTE)
+        self.wait_handoff(1, owner=OWNER3)
         r = self.next("s1")
         self.assertEqual(r.returncode, 0, r.stdout)
-        for line in PASTE.splitlines():
-            self.assertIn(line + "\n", r.stdout)
-        for c in CMDS:
-            self.assertIn(f"```sh\n{c}\n```", r.stdout)
-        self.assertIn("/resume-chain ok", r.stdout)
-        self.assertIn("listed again by `python3 .charter/bin/charter owner`", r.stdout)
-        self.assertIn("never a summary", r.stdout)
+        for want in ("- 1. [run] Write the R2 bucket name, one Touch ID (u1) (closes nothing)", f"   $ {CMDS[0]}",
+                     "- 2. [you] Turn on FileVault (closes u1 AC-2)", "- 3. [run] Configure the remote, interactive (u1) (closes nothing)",
+                     f"```sh\n{RUN}\n```", "/resume-chain ok", "listed again by `python3 .charter/bin/charter owner`", "never a summary"):
+            self.assertIn(want, r.stdout)
 
-    def test_charter_owner_prints_each_run_command_on_a_line_of_its_own(self):
+    def test_charter_owner_prints_the_command_on_a_line_of_its_own(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait=PASTE)
+        self.wait_handoff(1, owner=OWNER3)
         self.assertEqual(self.next("s1").returncode, 0)
-        out = charter(self.root, "owner").stdout.splitlines()
-        for c in CMDS:
-            self.assertIn(c, out)
-        self.assertIn(CMDS[0], charter(self.root, "next").stdout.splitlines())
+        self.assertIn(RUN, charter(self.root, "owner").stdout.splitlines())
+        self.assertIn(RUN, charter(self.root, "next").stdout.splitlines())
         it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
-        self.assertEqual(it["run"], CMDS)
-        self.assertIn("— run: `sudo rclone config`", it["ask"])
+        self.assertEqual(it["run"], [RUN])
+        self.assertIn(f"$ {CMDS[1]}", it["ask"])
 
     def test_the_wait_notification_points_to_charter_owner(self):
         self.join(1, "s1")
-        self.wait_handoff(1, wait=PASTE)
+        self.wait_handoff(1, owner=OWNER3)
         self.assertEqual(self.next("s1").returncode, 0)
-        self.assertIn(f"{self.cid} | 3 acts wait: run `python3 .charter/bin/charter owner` in {self.root}", self.notes())
+        self.assertIn(f"{self.cid} | 3 acts wait: run `python3 .charter/bin/charter owner` in {self.root}, `{RUN}` to run them", self.notes())
 
-    def test_the_rules_and_the_template_carry_the_standard(self):
-        for f in (".charter/chain-rules.md", "charter/templates/handoff.md"):
+    def test_a_wait_handed_over_before_0_4_11_is_shown_as_0_4_10_showed_it(self):
+        # a chain that waited before the project upgraded: its session wrote no owner.md, only `## Wait` acts
+        self.join(1, "s1")
+        self.wait_handoff(1, wait=PASTE, owner=None)
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"CHARTER_NOTIFY": ""}), contextlib.redirect_stdout(out):
+            self.assertEqual(chainlib._hand_over(self.root, self.cid, 1, "wait", "u1", "three acts", None), 0)
+        for line in PASTE.splitlines():
+            self.assertIn(line + "\n", out.getvalue())
+        for c in CMDS:
+            self.assertIn(f"```sh\n{c}\n```", out.getvalue())
+        printed = charter(self.root, "owner").stdout.splitlines()
+        for c in CMDS:
+            self.assertIn(c, printed)
+        it = {i["key"]: i for i in json.loads(charter(self.root, "owner", "--json").stdout)["items"]}[f"chain:{self.cid}"]
+        self.assertEqual(it["run"], CMDS)
+        self.assertIn(f"{self.cid} | 3 acts wait: run `python3 .charter/bin/charter owner` in {self.root}, then type /resume-chain in", self.notes())
+        r = resume(self.root, "ok all three done")   # 0.4.9's `ok`: every waited line
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("closed u1 AC-2 as the owner", r.stdout)
+
+    def test_the_rules_and_the_templates_carry_the_standard(self):
+        for f in (".charter/chain-rules.md", "charter/templates/handoff.md", "charter/templates/owner.md"):
             self.assertIn("paste-ready", (PKG / f).read_text(), f)
 
 
