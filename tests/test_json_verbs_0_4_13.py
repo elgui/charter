@@ -92,6 +92,14 @@ class JsonVerbs(unittest.TestCase):
         self.assertEqual(charter(self.root, "unit", "show", "--session", "s1").stdout.strip(), "acc")
         self.assertEqual(charter(self.root, "unit", "show").stdout.strip(), "dw")   # (guard) the text form is unchanged
 
+    def test_session_flag_on_start_and_stop(self):
+        charter(self.root, "unit", "start", "acc", "--session", "s1")
+        self.assertEqual((self.root / ".git" / "charter" / "active-s1").read_text().strip(), "acc")
+        charter(self.root, "unit", "start", "dw")                              # no session: the checkout's file only
+        self.assertEqual(self.json("unit", "show", "--session", "s1")["active"], "acc")
+        charter(self.root, "unit", "stop", "--session", "s1")
+        self.assertFalse((self.root / ".git" / "charter" / "active-s1").exists())
+
     # ------------------------------------------------------------ unit show <id> --json
 
     def test_one_unit_as_the_gates_read_it(self):

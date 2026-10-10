@@ -779,7 +779,7 @@ def cmd_unit(a) -> int:
             print(why)
             return 1
         (st / "active").write_text(a.id + "\n")
-        own = lib.session_unit_file(root)
+        own = lib.session_unit_file(root, a.session)
         if own is not None:
             own.write_text(a.id + "\n")   # this session's choice; the checkout's file is every session's
         cfg = lib.load_config(root)
@@ -791,7 +791,7 @@ def cmd_unit(a) -> int:
         print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
         return 0
     if a.action == "stop":
-        for p in (st / "active", lib.session_unit_file(root)):
+        for p in (st / "active", lib.session_unit_file(root, a.session)):
             if p is not None and p.exists():
                 p.unlink()
         print("no active unit")
@@ -1183,7 +1183,7 @@ def main(argv=None) -> int:
     l.set_defaults(fn=cmd_ledger)
     u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?")
     u.add_argument("--json", action="store_true", help="with show: the active unit and where it came from; with show <id>: that unit as the gates read it")
-    u.add_argument("--session", default=None, help="the Claude Code session whose active unit to read (default: CLAUDE_CODE_SESSION_ID)")
+    u.add_argument("--session", default=None, help="the Claude Code session whose active unit to start, stop or show (default: CLAUDE_CODE_SESSION_ID)")
     u.set_defaults(fn=cmd_unit)
     d = sub.add_parser("decisions"); d.add_argument("action", choices=["index"]); d.set_defaults(fn=cmd_decisions)
     lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
