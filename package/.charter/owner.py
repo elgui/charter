@@ -89,6 +89,17 @@ def _legacy_re(names: list[str]) -> re.Pattern:
     return re.compile(rf"\((?:{alts})\)|\b(?:{alts}) runs\b|\bafter (?:{alts}) restarts\b", re.I)
 
 
+def is_owner_line(line: str, legacy: re.Pattern) -> bool:
+    """An acceptance line only the owner closes: marked `— owner:`, or (unmarked) naming a human step or the owner
+    the way units did before the segment. `owner_lines` and `charter unit show --json` read it here (0.4.13)."""
+    return bool(OWNER_SEG_RE.search(line) or HUMAN_SEG_RE.search(line) or legacy.search(line))
+
+
+def legacy_re(root: Path, cfg: dict) -> re.Pattern:
+    """The pattern of an unmarked owner line in this project, from `owner_names`."""
+    return _legacy_re(owner_names(root, cfg))
+
+
 def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]:
     """Unchecked acceptance lines of an open unit that only the owner can close: marked with `— owner:`, or
     (unmarked, `marked: false`) naming a human step or the owner the way units did before the segment."""
@@ -109,7 +120,7 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
         if not box:
             continue
         seg = OWNER_SEG_RE.search(line)
-        if not seg and not HUMAN_SEG_RE.search(line) and not legacy.search(line):
+        if not is_owner_line(line, legacy):
             continue
         ac = box.group(2) or f"L{lineno}"
         probe = checks.PROBE_RE.match(line)
@@ -176,7 +187,7 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                            run=[lib.owner_line(root)] if handed else [],
                            perform=["env", f"{OWNER_SWITCH}=1", "python3", str(root / CHARTER_BIN), "owner", "commit"] if handed else None))
     closed = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
-    legacy = _legacy_re(owner_names(root, cfg))
+    legacy = legacy_re(root, cfg)
     for uid, u in units.items():
         if str(u.get("status", "")) in closed:
             continue

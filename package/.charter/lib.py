@@ -30,7 +30,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.12",
+    "version": "0.4.13",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -668,11 +668,17 @@ ACCEPTANCE_HEADINGS = ("Acceptance", "Done When")
 
 def acceptance(body: str) -> str:
     """The acceptance checklist: the first of ACCEPTANCE_HEADINGS the body has."""
+    return acceptance_span(body)[2]
+
+
+def acceptance_span(body: str) -> tuple[str | None, int, str]:
+    """(heading, index in body.splitlines() of the section's first line, text) of the checklist `acceptance` reads;
+    (None, -1, "") without one. `charter unit show --json` numbers the lines from it (0.4.13)."""
     for h in ACCEPTANCE_HEADINGS:
-        s = section(body, h)
+        start, s = _section_at(body, h)
         if s:
-            return s
-    return ""
+            return h, start, s
+    return None, -1, ""
 
 
 def session_id(session: str | None = None) -> str:
@@ -704,28 +710,39 @@ def active_unit(root: Path, session: str | None = None) -> str | None:
     but only while that unit is open. The checkout's `active` file is shared by every session in
     the tree: read on its own, it charged 29 of 61 sessions in tele-claude's main checkout to a
     unit that was already done (2026-09-29), and their Stop gate asked them for its Log line."""
+    return active_unit_source(root, session)[0]
+
+
+def active_unit_source(root: Path, session: str | None = None) -> tuple[str | None, str | None]:
+    """(the unit `active_unit` returns, where it came from: "env", "session", "checkout", or None with no unit)."""
     env = os.environ.get("CHARTER_UNIT", "").strip()
     if env:
-        return env
+        return env, "env"
     own = session_unit_file(root, session)
     if own is not None and own.exists():
-        return own.read_text().strip() or None
+        aid = own.read_text().strip() or None
+        return aid, "session" if aid else None
     p = local_state_dir(root) / "active"
     if p.exists():
         aid = p.read_text().strip() or None
         if aid and unit_is_open(root, aid):
-            return aid
-    return None
+            return aid, "checkout"
+    return None, None
 
 
 def section(body: str, title: str) -> str:
     """Text of the markdown section whose heading starts with the word(s) `title`, case-insensitive:
     `## Acceptance criteria` counts, `## Logging` does not. A level-1 heading is the document's title,
     never a section, so a tasket titled `# Log emails to the timeline` has no Log section."""
+    return _section_at(body, title)[1]
+
+
+def _section_at(body: str, title: str) -> tuple[int, str]:
+    """(index in body.splitlines() of the first line `section` returns, or -1; that text)."""
     lines = body.splitlines()
-    out, level, on = [], None, False
+    out, level, on, first = [], None, False, -1
     want = title.lower()
-    for line in lines:
+    for i, line in enumerate(lines):
         m = re.match(r"^(#{1,6})\s+(.*)", line)
         if m:
             if on and len(m.group(1)) <= level:
@@ -735,8 +752,10 @@ def section(body: str, title: str) -> str:
                 on, level = True, len(m.group(1))
                 continue
         if on:
+            if first < 0 and line.strip():
+                first = i
             out.append(line)
-    return "\n".join(out).strip()
+    return first, "\n".join(out).strip()
 
 
 # ---------------------------------------------------------------- git hooks
