@@ -9,7 +9,7 @@ import sys
 import unittest
 
 from helpers import PKG, charter, cleanup, git, make_project
-from test_next_0_4_4 import put, state_files, unit
+from test_next_0_4_4 import put, section, state_files, unit
 from test_review_regressions import commit_all
 
 sys.path.insert(0, str(PKG / ".charter"))
@@ -27,7 +27,7 @@ RAILS = """# Rails
 UNIT_KEYS = {"schema", "charter", "id", "title", "status", "path", "rail", "kind", "perimeter", "decisions", "gate",
              "acceptance_heading", "acceptance", "evidence", "log", "done_blockers"}
 ROW_KEYS = {"line", "label", "text", "checked", "probe", "owner"}
-NEXT_KEYS = {"schema", "charter", "active", "rails", "off_road", "done_without_acceptance", "owner_waiting"}
+NEXT_KEYS = {"schema", "charter", "active", "rails", "open", "off_road", "done_without_acceptance", "owner_waiting"}
 RAIL_KEYS = {"id", "title", "status", "order", "units"}
 RAIL_UNIT_KEYS = {"id", "title", "status", "path", "group", "order", "boxes", "state"}
 
@@ -217,6 +217,7 @@ class JsonVerbs(unittest.TestCase):
         n = self.json("next")
         self.assertEqual(set(n), NEXT_KEYS)
         self.assertEqual((n["schema"], n["charter"], n["active"]), (1, "0.4.13", "acc"))
+        self.assertIsNone(n["open"])   # with a road, `rails` and `off_road` hold the open units
         self.assertEqual([(r["id"], r["status"], r["order"]) for r in n["rails"]],
                          [("r0", "done", 5), ("r1", "in-progress", 10), ("r2", "next", 20), ("r3", "todo", 30)])
         self.assertTrue(all(set(r) == RAIL_KEYS for r in n["rails"]))
@@ -236,9 +237,22 @@ class JsonVerbs(unittest.TestCase):
         self.assertEqual(self.json("next", "--session", "s9")["active"], "acc")   # the checkout's choice, still open
 
     def test_no_rails_file(self):
+        """Without a road, `open` lists every open unit in the order the text `next` offers them (review of PR #13:
+        before it, a tool saw no open unit at all in such a project)."""
         (self.root / "charter" / "rails.md").unlink()
         n = self.json("next")
+        self.assertEqual(set(n), NEXT_KEYS)
         self.assertEqual((n["rails"], n["off_road"]), (None, []))
+        self.assertTrue(all(set(u) == RAIL_UNIT_KEYS for u in n["open"]))
+        text = section(charter(self.root, "next", "--limit", "100").stdout, "Open units")
+        self.assertEqual([u["id"] for u in n["open"]], [l.split(" — ")[0][2:] for l in text])
+        rank = {"in-progress": 0, "open": 1, "blocked": 2}
+        self.assertEqual([u["state"] for u in n["open"]], sorted((u["state"] for u in n["open"]), key=rank.get))   # started first
+        self.assertNotIn("dn", [u["id"] for u in n["open"]])
+        charter(self.root, "unit", "start", "acc")
+        n = self.json("next")
+        self.assertEqual(n["active"], "acc")
+        self.assertIn("acc", [u["id"] for u in n["open"]])   # the active unit stays in the list
 
     def test_json_writes_nothing(self):   # (guard) next stays read-only, its JSON form too
         charter(self.root, "unit", "start", "acc")

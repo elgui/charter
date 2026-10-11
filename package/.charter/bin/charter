@@ -588,8 +588,7 @@ def cmd_next(a) -> int:
         if len(off) > n:
             L.append(f"- +{len(off) - n} more (`--limit`)")
     else:
-        ahead = sorted(open_ids, key=lambda uid: (_NEXT_RANK[states[uid][0]], _num(units[uid].get("priority"), "p"),
-                                                   _num(units[uid].get("group_order")), _num(units[uid].get("order")), uid))
+        ahead = sorted(open_ids, key=_roadless_order(units, states))
         L += ["", f"Open units (no {rails.FILE}, so no road to order them by):"]
         L += [line(uid) for uid in ahead[:n]] or ["- none"]
         if len(ahead) > n:
@@ -617,6 +616,13 @@ def cmd_next(a) -> int:
     return 0
 
 
+def _roadless_order(units: dict, states: dict):
+    """The order `next` offers open units in without charter/rails.md: what has started first, then priority, group,
+    order; the text's "Open units" list and `next --json`'s `open` (0.4.13) sort by it."""
+    return lambda uid: (_NEXT_RANK[states[uid][0]], _num(units[uid].get("priority"), "p"),
+                        _num(units[uid].get("group_order")), _num(units[uid].get("order")), uid)
+
+
 def _int_or(v):
     """A frontmatter number as an int when it is one, else the value as written, or None when absent."""
     t = str(v).strip() if v is not None else ""
@@ -626,14 +632,16 @@ def _int_or(v):
 def _next_json(root: Path, cfg: dict, units: dict, states: dict, aid: str | None) -> dict:
     """The road a tool reads (`charter next --json`, 0.4.13): every rail of charter/rails.md in the road's order with
     every unit on it, the open units off the road, the done units without acceptance, and the size of the owner's
-    queue. No `--limit` cut. `rails` is null for a project without charter/rails.md."""
+    queue. No `--limit` cut. `rails` is null for a project without charter/rails.md, and `open` then lists every open
+    unit, the active one included, in the order the text `next` offers them; with the file, `open` is null, since
+    `rails` and `off_road` hold them."""
     def row(uid: str) -> dict:
         u, (st, info) = units[uid], states[uid]
         return {"id": uid, "title": str(u.get("title", "")), "status": str(u.get("status", "")), "path": u["_path"],
                 "group": str(u.get("group") or "") or None, "order": _int_or(u.get("order")), "state": st,
                 "boxes": {"checked": info["boxes"] - info["open"], "total": info["boxes"]}}
 
-    out_rails, off_road = None, []
+    out_rails, off_road, out_open = None, [], None
     loaded = rails.load(root, cfg)
     if loaded is not None:
         items, _ = loaded
@@ -650,9 +658,11 @@ def _next_json(root: Path, cfg: dict, units: dict, states: dict, aid: str | None
                 why = rails.off_road(u, keys, items)
                 if why is not None:
                     off_road.append({"id": uid, "reason": why[0], "path": u["_path"]})
+    else:
+        out_open = [row(uid) for uid in sorted((uid for uid in units if states[uid][0] in _NEXT_RANK), key=_roadless_order(units, states))]
     unacc = [uid for uid in units if states[uid][0] == "done-unaccepted"]
     queue = ownerq.queue(root, cfg, units, {uid: st[0] for uid, st in states.items()})
-    return {**_schema(root), "active": aid, "rails": out_rails, "off_road": off_road,
+    return {**_schema(root), "active": aid, "rails": out_rails, "open": out_open, "off_road": off_road,
             "done_without_acceptance": [{k: row(uid)[k] for k in ("id", "title", "status", "path")} for uid in unacc],
             "owner_waiting": len(queue)}
 
