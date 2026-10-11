@@ -143,18 +143,34 @@ def check(root: Path, cfg: dict, units: dict[str, dict], changed: set[str] | Non
         if not is_open(u, cfg) or (only_changed and (changed is None or u["_path"] not in changed)):
             continue
         level = "block" if rc["required"] and changed is not None and u["_path"] in changed else "warn"
-        ids = rails_of(u, rc["keys"], items)
-        known = [i for i in ids if i in items]
-        if not ids:
-            out.append(Finding("rails", level, f"unit {uid} names no rail from {f}", path=u["_path"], override=OVERRIDE.format(file=f)))
-        elif not known:
-            out.append(Finding("rails", level, f"unit {uid} names unknown rail {', '.join(ids)}", path=u["_path"],
+        why = off_road(u, rc["keys"], items)
+        if why is None:
+            continue
+        reason, closed = why
+        if closed:
+            out.append(Finding("rails", "warn", f"unit {uid} {reason}", path=u["_path"],
+                               override=f"move the unit to an open rail, close the unit, or ask the owner to reopen {closed}"))
+        else:
+            out.append(Finding("rails", level, f"unit {uid} {reason}" + (f" from {f}" if reason == NO_RAIL else ""), path=u["_path"],
                                override=OVERRIDE.format(file=f)))
-        elif all(items[i]["status"] in CLOSED for i in known):
-            i = known[0]
-            out.append(Finding("rails", "warn", f"unit {uid} is open, and its rail {i} is {items[i]['status']}", path=u["_path"],
-                               override=f"move the unit to an open rail, close the unit, or ask the owner to reopen {i}"))
     return out
+
+
+NO_RAIL = "names no rail"
+
+
+def off_road(unit: dict, keys: list[str], items: dict[str, dict]) -> tuple[str, str | None] | None:
+    """Why an open unit is off the road, or None when it is on it: (reason, the closed rail it is on, or None).
+    `check` words its findings from it and `charter next --json` lists it (0.4.13)."""
+    ids = rails_of(unit, keys, items)
+    known = [i for i in ids if i in items]
+    if not ids:
+        return NO_RAIL, None
+    if not known:
+        return f"names unknown rail {', '.join(ids)}", None
+    if all(items[i]["status"] in CLOSED for i in known):
+        return f"is open, and its rail {known[0]} is {items[known[0]]['status']}", known[0]
+    return None
 
 
 def synth_lines(root: Path, cfg: dict, units: dict[str, dict], state_of) -> list[str]:

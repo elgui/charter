@@ -516,6 +516,9 @@ def cmd_next(a) -> int:
     units = lib.taskets(root)
     legacy, before = lib.legacy_taskets(root), _done_before_charter(root, cfg)
     states = {uid: _unit_state(root, cfg, u, legacy, before) for uid, u in units.items()}
+    if a.json:
+        print(json.dumps(_next_json(root, cfg, units, states, lib.active_unit(root, a.session)), indent=2, ensure_ascii=False))
+        return 0
     n = max(1, a.limit)
     ver = (root / lib.CHARTER_DIR / "VERSION").read_text().strip() if (root / lib.CHARTER_DIR / "VERSION").exists() else "?"
     L = [f"charter {ver}, {lib.config_line(cfg)}"]
@@ -528,7 +531,7 @@ def cmd_next(a) -> int:
         u = units[uid]
         return f"- {uid} — {u.get('title', '')} [{u.get('status')}, {states[uid][0]}]{extra} ({u['_path']})"
 
-    aid = lib.active_unit(root)
+    aid = lib.active_unit(root, a.session)
     L.append("")
     if aid and aid in units:
         st, info = states[aid]
@@ -585,8 +588,7 @@ def cmd_next(a) -> int:
         if len(off) > n:
             L.append(f"- +{len(off) - n} more (`--limit`)")
     else:
-        ahead = sorted(open_ids, key=lambda uid: (_NEXT_RANK[states[uid][0]], _num(units[uid].get("priority"), "p"),
-                                                   _num(units[uid].get("group_order")), _num(units[uid].get("order")), uid))
+        ahead = sorted(open_ids, key=_roadless_order(units, states))
         L += ["", f"Open units (no {rails.FILE}, so no road to order them by):"]
         L += [line(uid) for uid in ahead[:n]] or ["- none"]
         if len(ahead) > n:
@@ -612,6 +614,57 @@ def cmd_next(a) -> int:
                                           if blocks else "no block, ") + f"{warns} warning(s). `python3 .charter/bin/charter log --verbose` has the detail"]
     print("\n".join(L))
     return 0
+
+
+def _roadless_order(units: dict, states: dict):
+    """The order `next` offers open units in without charter/rails.md: what has started first, then priority, group,
+    order; the text's "Open units" list and `next --json`'s `open` (0.4.13) sort by it."""
+    return lambda uid: (_NEXT_RANK[states[uid][0]], _num(units[uid].get("priority"), "p"),
+                        _num(units[uid].get("group_order")), _num(units[uid].get("order")), uid)
+
+
+def _int_or(v):
+    """A frontmatter number as an int when it is one, else the value as written, or None when absent."""
+    t = str(v).strip() if v is not None else ""
+    return int(t) if re.fullmatch(r"-?\d+", t) else (t or None)
+
+
+def _next_json(root: Path, cfg: dict, units: dict, states: dict, aid: str | None) -> dict:
+    """The road a tool reads (`charter next --json`, 0.4.13): every rail of charter/rails.md in the road's order with
+    every unit on it, the open units off the road, the done units without acceptance, and the size of the owner's
+    queue. No `--limit` cut. `rails` is null for a project without charter/rails.md, and `open` then lists every open
+    unit, the active one included, in the order the text `next` offers them; with the file, `open` is null, since
+    `rails` and `off_road` hold them."""
+    def row(uid: str) -> dict:
+        u, (st, info) = units[uid], states[uid]
+        return {"id": uid, "title": str(u.get("title", "")), "status": str(u.get("status", "")), "path": u["_path"],
+                "group": str(u.get("group") or "") or None, "order": _int_or(u.get("order")), "state": st,
+                "boxes": {"checked": info["boxes"] - info["open"], "total": info["boxes"]}}
+
+    out_rails, off_road, out_open = None, [], None
+    loaded = rails.load(root, cfg)
+    if loaded is not None:
+        items, _ = loaded
+        keys = rails.config(cfg)["keys"]
+        on = {uid: rails.rails_of(u, keys, items) for uid, u in units.items()}
+        out_rails = []
+        for rid, it in rails.ordered(items):
+            citing = sorted((uid for uid in units if rid in on[uid]),
+                            key=lambda uid: (_num(units[uid].get("group_order")), _num(units[uid].get("order")), uid))
+            out_rails.append({"id": rid, "title": it["title"], "status": it["status"], "order": it["order"],
+                              "units": [row(uid) for uid in citing]})
+        for uid, u in units.items():
+            if (states[uid][0] in _NEXT_RANK or uid == aid) and rails.is_open(u, cfg):
+                why = rails.off_road(u, keys, items)
+                if why is not None:
+                    off_road.append({"id": uid, "reason": why[0], "path": u["_path"]})
+    else:
+        out_open = [row(uid) for uid in sorted((uid for uid in units if states[uid][0] in _NEXT_RANK), key=_roadless_order(units, states))]
+    unacc = [uid for uid in units if states[uid][0] == "done-unaccepted"]
+    queue = ownerq.queue(root, cfg, units, {uid: st[0] for uid, st in states.items()})
+    return {**_schema(root), "active": aid, "rails": out_rails, "open": out_open, "off_road": off_road,
+            "done_without_acceptance": [{k: row(uid)[k] for k in ("id", "title", "status", "path")} for uid in unacc],
+            "owner_waiting": len(queue)}
 
 
 # ---------------------------------------------------------------- ledger
@@ -719,9 +772,12 @@ def cmd_ledger(a) -> int:
 
 def cmd_unit(a) -> int:
     root = lib.repo_root(a.root)
+    if a.json and a.action != "show":   # a tool that asks for JSON expects a read, and start and stop write
+        print(f"charter unit: --json works with `show` only, not `{a.action}`", file=sys.stderr)
+        return 2
     st = lib.local_state_dir(root)
-    st.mkdir(parents=True, exist_ok=True)
     if a.action == "start":
+        st.mkdir(parents=True, exist_ok=True)   # here only: `show` is a read, and `show --json` writes nothing
         units = lib.taskets(root)
         if a.id not in units:
             print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
@@ -736,7 +792,7 @@ def cmd_unit(a) -> int:
             print(why)
             return 1
         (st / "active").write_text(a.id + "\n")
-        own = lib.session_unit_file(root)
+        own = lib.session_unit_file(root, a.session)
         if own is not None:
             own.write_text(a.id + "\n")   # this session's choice; the checkout's file is every session's
         cfg = lib.load_config(root)
@@ -748,18 +804,86 @@ def cmd_unit(a) -> int:
         print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
         return 0
     if a.action == "stop":
-        for p in (st / "active", lib.session_unit_file(root)):
+        for p in (st / "active", lib.session_unit_file(root, a.session)):
             if p is not None and p.exists():
                 p.unlink()
         print("no active unit")
         return 0
-    aid = lib.active_unit(root)
+    if a.json:
+        out = _unit_json(root, a.id) if a.id else dict(zip(("active", "source"), lib.active_unit_source(root, a.session)))
+        print(json.dumps({**_schema(root), **out}, indent=2, ensure_ascii=False))
+        return 1 if "error" in out else 0
+    aid = lib.active_unit(root, a.session)
     last = (st / "active").read_text().strip() if (st / "active").exists() else ""
     if not aid and last:
         print(f"no active unit (the checkout's last choice, {last}, is closed)")
     else:
         print(aid or "no active unit")
     return 0
+
+
+JSON_SCHEMA = 1   # the version of the shapes `--json` prints; a new key keeps it, a changed or removed one bumps it
+
+
+def _schema(root: Path) -> dict:
+    ver = root / lib.CHARTER_DIR / "VERSION"
+    return {"schema": JSON_SCHEMA, "charter": ver.read_text().strip() if ver.exists() else None}
+
+
+_BULLET_RE = re.compile(r"^\s*[-*]\s+")
+
+
+def _lines(text: str) -> list[str]:
+    """A section's non-empty lines, without their list bullets."""
+    return [_BULLET_RE.sub("", l).strip() for l in text.splitlines() if l.strip()]
+
+
+def done_blockers(root: Path, cfg: dict, u: dict) -> list[str]:
+    """Each reason the done gate would refuse `done` on this unit now; [] when it would pass. The gate's own
+    `checks.check_unit_done`, on the unit's text with its status set to done, so the two cannot disagree. Probes are
+    not run (`probes.at_commit` runs them at commit; `charter probe <id>` runs them on demand)."""
+    text = (lib.artifact_root(root) / u["_path"]).read_text(encoding="utf-8", errors="replace")
+    done = lib.as_list(cfg.get("done_statuses")) or ["done"]
+    if str(u.get("status", "")) not in done:
+        text = ownerq.set_field(text, "status", done[0]) if lib.split_frontmatter(text)[1] else f"---\nstatus: {done[0]}\n---\n{text}"
+        fields, fm, _ = lib.split_frontmatter(text)
+        if str(fields.get("status", "")) not in done:   # a second `status:` line: set_field sets the first, the parser reads the last
+            text = text.replace(fm, f"{fm}\nstatus: {done[0]}", 1)
+    return [f.message for f in checks.check_unit_done(root, cfg, text, u["_path"]) if f.level == "block"]
+
+
+def _unit_json(root: Path, uid: str) -> dict:
+    """One unit as the gates read it (`charter unit show <id> --json`, 0.4.13)."""
+    cfg = lib.load_config(root)
+    units = lib.taskets(root)
+    u = units.get(uid)
+    if u is None:
+        return {"error": f"no tasket with id {uid} in {lib.TASKETS_DIR}/"}
+    body = u.get("_body", "")
+    text = (lib.artifact_root(root) / u["_path"]).read_text(encoding="utf-8", errors="replace")
+    offset = len(text.splitlines()) - len(body.splitlines())   # the file line before the body's first, as owner_lines counts
+    heading, at, acc = lib.acceptance_span(body)
+    legacy = ownerq.legacy_re(root, cfg)
+    rows = []
+    for i, line in zip(at, acc.splitlines()):
+        m = checks.BOX_LINE_RE.match(line)
+        if not m:
+            continue
+        label = re.match(r"(AC-\d+)\b:?\s*", m.group(2))
+        probe = checks.PROBE_RE.match(line)
+        rows.append({"line": offset + i + 1, "label": label.group(1) if label else None,
+                     "text": m.group(2)[label.end():].strip() if label else m.group(2).strip(),
+                     "checked": m.group(1) != " ", "probe": probe.group(2).strip() if probe else None,
+                     "owner": ownerq.is_owner_line(line, legacy)})
+    loaded = rails.load(root, cfg)
+    keys = rails.config(cfg)["keys"]
+    on = rails.rails_of(u, keys, loaded[0]) if loaded is not None else rails.rail_ids(u, keys)
+    return {"id": uid, "title": str(u.get("title", "")), "status": str(u.get("status", "")), "path": u["_path"],
+            "rail": on[0] if on else None, "kind": str(u.get("kind") or "") or None,
+            "perimeter": lib.as_list(u.get("perimeter")), "decisions": lib.as_list(u.get("decisions")),
+            "gate": str(u.get("gate") or "") or None, "acceptance_heading": heading, "acceptance": rows,
+            "evidence": _lines(lib.section(body, "Evidence")), "log": _lines(lib.section(body, "Log"))[-5:],
+            "done_blockers": done_blockers(root, cfg, u)}
 
 
 # ---------------------------------------------------------------- decisions index
@@ -1073,7 +1197,10 @@ def main(argv=None) -> int:
     l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None)
     l.add_argument("--human-minutes", type=int, default=None, help="with add: record time a person spent on the unit"); l.add_argument("--note", default=None)
     l.set_defaults(fn=cmd_ledger)
-    u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?"); u.set_defaults(fn=cmd_unit)
+    u = sub.add_parser("unit"); u.add_argument("action", choices=["start", "stop", "show"]); u.add_argument("id", nargs="?")
+    u.add_argument("--json", action="store_true", help="with show: the active unit and where it came from; with show <id>: that unit as the gates read it")
+    u.add_argument("--session", default=None, help="the Claude Code session whose active unit to start, stop or show (default: CLAUDE_CODE_SESSION_ID)")
+    u.set_defaults(fn=cmd_unit)
     d = sub.add_parser("decisions"); d.add_argument("action", choices=["index"]); d.set_defaults(fn=cmd_decisions)
     lg = sub.add_parser("log"); lg.add_argument("--days", type=int, default=30); lg.add_argument("--verbose", action="store_true"); lg.add_argument("--tail", type=int, default=50); lg.set_defaults(fn=cmd_log)
     st = sub.add_parser("setup"); st.add_argument("--replace-hooks", action="store_true", help="point core.hooksPath at .charter/githooks even though other git hooks run")
@@ -1081,7 +1208,10 @@ def main(argv=None) -> int:
     cf = sub.add_parser("config", help="print the track and opt-ins the gates read, and any problem in charter/config.json")
     cf.set_defaults(fn=cmd_config)
     nx = sub.add_parser("next", help="where the work stands and what comes next; read-only")
-    nx.add_argument("--limit", type=int, default=5, help="rows per list (default 5)"); nx.set_defaults(fn=cmd_next)
+    nx.add_argument("--limit", type=int, default=5, help="rows per list (default 5)")
+    nx.add_argument("--json", action="store_true", help="the road a tool reads: every rail and unit, no --limit cut")
+    nx.add_argument("--session", default=None, help="the Claude Code session whose active unit to read (default: CLAUDE_CODE_SESSION_ID)")
+    nx.set_defaults(fn=cmd_next)
     ho = sub.add_parser("handover", help="who commits what is staged; for an owner-only change, record the handover and print the owner's line")
     ho.add_argument("-m", "--message", default=None, help="the commit message (default: `charter <version>` for an install or upgrade)")
     ho.set_defaults(fn=cmd_handover)
