@@ -182,6 +182,14 @@ class JsonVerbs(unittest.TestCase):
             for uid in judged:
                 self.assertEqual(gate.get(uid, []), said[uid], f"{uid} with {args}:\n{out}")
 
+    def test_done_blockers_with_two_status_lines(self):
+        """The parser reads the last of two `status:` lines; `done_blockers` judges the unit as done all the same
+        (review of PR #13, 2026-10-11)."""
+        put(self.root, "dup", unit("dup", "next\nstatus: open", rail="r1"))   # an open box, no evidence
+        u = self.json("unit", "show", "dup")
+        self.assertEqual(u["status"], "open")
+        self.assertEqual(len(u["done_blockers"]), 2, u["done_blockers"])
+
     # ------------------------------------------------------------ next --json
 
     def test_the_road_every_row(self):

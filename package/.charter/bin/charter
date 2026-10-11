@@ -833,6 +833,9 @@ def done_blockers(root: Path, cfg: dict, u: dict) -> list[str]:
     done = lib.as_list(cfg.get("done_statuses")) or ["done"]
     if str(u.get("status", "")) not in done:
         text = ownerq.set_field(text, "status", done[0]) if lib.split_frontmatter(text)[1] else f"---\nstatus: {done[0]}\n---\n{text}"
+        fields, fm, _ = lib.split_frontmatter(text)
+        if str(fields.get("status", "")) not in done:   # a second `status:` line: set_field sets the first, the parser reads the last
+            text = text.replace(fm, f"{fm}\nstatus: {done[0]}", 1)
     return [f.message for f in checks.check_unit_done(root, cfg, text, u["_path"]) if f.level == "block"]
 
 
