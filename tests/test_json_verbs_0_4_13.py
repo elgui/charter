@@ -122,6 +122,21 @@ class JsonVerbs(unittest.TestCase):
         self.assertEqual(u["log"], [f"2026-10-10 0{i}:00 step {i}" for i in range(2, 7)])   # the last five
         self.assertEqual(u["done_blockers"], ["status is done but 3 acceptance box(es) are unchecked"])
 
+    def test_line_numbers_past_a_nested_acceptance_heading(self):
+        """A nested heading that starts with `Acceptance` again is not in the section's text, so `line` cannot count
+        on the section's lines being contiguous in the file (review of PR #13, 2026-10-11)."""
+        import lib
+        body = ("# Nested\n\n## Acceptance\n\n  - [ ] AC-1: the first\n### Acceptance, the owner's part\n"
+                "- [ ] AC-2: the second — owner: check\n\n- [x] AC-3: the third\n\n## Log\n")
+        put(self.root, "nest", "---\nid: nest\ntitle: Nested\nstatus: next\nrail: r1\n---\n\n" + body)
+        rows = self.json("unit", "show", "nest")["acceptance"]
+        lines = (self.root / ".taskets" / "nest.md").read_text().splitlines()
+        self.assertEqual([(x["label"], x["line"]) for x in rows], [("AC-1", 12), ("AC-2", 14), ("AC-3", 16)])
+        for x in rows:
+            self.assertIn(f"{x['label']}: {x['text']}", lines[x["line"] - 1])
+        # (guard) the text every gate reads is unchanged
+        self.assertEqual(lib.acceptance(body), "- [ ] AC-1: the first\n- [ ] AC-2: the second — owner: check\n\n- [x] AC-3: the third")
+
     def test_owner_flag_follows_the_owner_queue(self):
         """`owner` uses the rule `charter owner` applies, so every open line it marks is in the owner's queue."""
         rows = self.json("unit", "show", "acc")["acceptance"]

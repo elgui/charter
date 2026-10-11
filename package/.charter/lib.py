@@ -671,14 +671,14 @@ def acceptance(body: str) -> str:
     return acceptance_span(body)[2]
 
 
-def acceptance_span(body: str) -> tuple[str | None, int, str]:
-    """(heading, index in body.splitlines() of the section's first line, text) of the checklist `acceptance` reads;
-    (None, -1, "") without one. `charter unit show --json` numbers the lines from it (0.4.13)."""
+def acceptance_span(body: str) -> tuple[str | None, list[int], str]:
+    """(heading, the index in body.splitlines() of each line of the text, text) of the checklist `acceptance` reads;
+    (None, [], "") without one. `charter unit show --json` numbers the lines from it (0.4.13)."""
     for h in ACCEPTANCE_HEADINGS:
-        start, s = _section_at(body, h)
+        at, s = _section_at(body, h)
         if s:
-            return h, start, s
-    return None, -1, ""
+            return h, at, s
+    return None, [], ""
 
 
 def session_id(session: str | None = None) -> str:
@@ -737,10 +737,11 @@ def section(body: str, title: str) -> str:
     return _section_at(body, title)[1]
 
 
-def _section_at(body: str, title: str) -> tuple[int, str]:
-    """(index in body.splitlines() of the first line `section` returns, or -1; that text)."""
+def _section_at(body: str, title: str) -> tuple[list[int], str]:
+    """(the index in body.splitlines() of each line of the text `section` returns; that text). A nested heading that
+    starts with `title` again is not in the text, so the lines are not always contiguous in the body."""
     lines = body.splitlines()
-    out, level, on, first = [], None, False, -1
+    out, at, level, on = [], [], None, False
     want = title.lower()
     for i, line in enumerate(lines):
         m = re.match(r"^(#{1,6})\s+(.*)", line)
@@ -752,10 +753,10 @@ def _section_at(body: str, title: str) -> tuple[int, str]:
                 on, level = True, len(m.group(1))
                 continue
         if on:
-            if first < 0 and line.strip():
-                first = i
             out.append(line)
-    return first, "\n".join(out).strip()
+            at.append(i)
+    kept = [k for k, l in enumerate(out) if l.strip()]   # strip() drops the blank lines at either end
+    return (at[kept[0]:kept[-1] + 1] if kept else []), "\n".join(out).strip()
 
 
 # ---------------------------------------------------------------- git hooks
