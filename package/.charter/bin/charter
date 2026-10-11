@@ -762,6 +762,9 @@ def cmd_ledger(a) -> int:
 
 def cmd_unit(a) -> int:
     root = lib.repo_root(a.root)
+    if a.json and a.action != "show":   # a tool that asks for JSON expects a read, and start and stop write
+        print(f"charter unit: --json works with `show` only, not `{a.action}`", file=sys.stderr)
+        return 2
     st = lib.local_state_dir(root)
     if a.action == "start":
         st.mkdir(parents=True, exist_ok=True)   # here only: `show` is a read, and `show --json` writes nothing

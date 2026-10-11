@@ -111,6 +111,15 @@ class JsonVerbs(unittest.TestCase):
         charter(self.root, "unit", "start", "acc")   # (guard) start still makes it
         self.assertEqual((self.root / ".git" / "charter" / "active").read_text().strip(), "acc")
 
+    def test_json_on_start_and_stop_is_refused(self):
+        """`--json` asks for a read; `start` and `stop` write, so they refuse it and change nothing (review of PR #13)."""
+        charter(self.root, "unit", "start", "dw")
+        for args in (("start", "acc"), ("stop",)):
+            r = charter(self.root, "unit", *args, "--json")
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("charter unit: --json works with `show` only", r.stderr)
+            self.assertEqual((self.root / ".git" / "charter" / "active").read_text().strip(), "dw")
+
     # ------------------------------------------------------------ unit show <id> --json
 
     def test_one_unit_as_the_gates_read_it(self):
