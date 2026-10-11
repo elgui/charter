@@ -100,6 +100,17 @@ class JsonVerbs(unittest.TestCase):
         charter(self.root, "unit", "stop", "--session", "s1")
         self.assertFalse((self.root / ".git" / "charter" / "active-s1").exists())
 
+    def test_show_writes_nothing(self):
+        """`unit show` is a read: without `<git dir>/charter`, neither form makes it (review of PR #13, 2026-10-11)."""
+        import shutil
+        shutil.rmtree(self.root / ".git" / "charter", ignore_errors=True)
+        self.assertEqual(self.json("unit", "show")["active"], None)
+        self.json("unit", "show", "acc")
+        self.assertEqual(charter(self.root, "unit", "show").stdout.strip(), "no active unit")
+        self.assertFalse((self.root / ".git" / "charter").exists())
+        charter(self.root, "unit", "start", "acc")   # (guard) start still makes it
+        self.assertEqual((self.root / ".git" / "charter" / "active").read_text().strip(), "acc")
+
     # ------------------------------------------------------------ unit show <id> --json
 
     def test_one_unit_as_the_gates_read_it(self):

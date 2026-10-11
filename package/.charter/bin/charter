@@ -763,8 +763,8 @@ def cmd_ledger(a) -> int:
 def cmd_unit(a) -> int:
     root = lib.repo_root(a.root)
     st = lib.local_state_dir(root)
-    st.mkdir(parents=True, exist_ok=True)
     if a.action == "start":
+        st.mkdir(parents=True, exist_ok=True)   # here only: `show` is a read, and `show --json` writes nothing
         units = lib.taskets(root)
         if a.id not in units:
             print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/ (known: {', '.join(list(units)[:10])})")
