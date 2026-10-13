@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.13. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.15. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 
@@ -181,9 +181,10 @@ An honest guarantee is: every factual claim in a checked deliverable points at s
 5. **Done before charter** (only when there are some): done units the done gate never judged, listed apart from "Done but not accepted" (0.4.4). These are units whose done status was last set before the commit that added `charter/VERSION` and is still the committed status, and units of `charter/legacy-taskets.txt` without `## Acceptance`, which the gate only warns on (`check_unit_done` in `package/.charter/checks.py`). Their missing evidence says nothing about work done under charter.
 6. **In progress**: units with a non-terminal status and at least one log line, with the last log line and date. **Open, not started**: the same without a log line (`_unit_state` in `package/.charter/bin/charter`).
 7. **Blocked**: units with `status: blocked` and their stated blocker.
-8. **Open decisions**: decisions with `status: proposed`, and change requests with `status: proposed`.
-9. **Gate activity**: counts per gate and decision from the gate log over the last 30 days, which is the warning-to-gate promotion evidence. Printed only: the written `charter/progress.md` leaves it out, because the log lives on one machine and CI checks the file from a clean clone.
-10. **Cost**: from the ledger, the estimated total, cost per accepted unit (every session's cost, accepted or not, divided by the units accepted now), and the coverage: how many sessions have a cost, and how many of those record subagent usage. An unknown cost is never added as zero. While any session lacks a cost or subagent usage, the total and the figure per accepted unit are printed as lower bounds ("at least", "incomplete"). Per unit: its sessions, those without a cost, the subagents' share, the sessions after its first done, and the human minutes recorded, or "no human time recorded".
+8. **Perimeter fit** (0.4.15): one line per unit that a commit subject names (`unit <id>`): the commits and files, the files outside its `perimeter:` and how many are noted under `## Outside perimeter`, and the entries no commit touched; a first line counts the commits that name no unit, an id several units share, or several units, which it cannot see into. A report, never a gate (`perimeter_fits` in `package/.charter/checks.py`; `docs/gates.md` § Perimeter).
+9. **Open decisions**: decisions with `status: proposed`, and change requests with `status: proposed`.
+10. **Gate activity**: counts per gate and decision from the gate log over the last 30 days, which is the warning-to-gate promotion evidence. Printed only: the written `charter/progress.md` leaves it out, because the log lives on one machine and CI checks the file from a clean clone.
+11. **Cost**: from the ledger, the estimated total, cost per accepted unit (every session's cost, accepted or not, divided by the units accepted now), and the coverage: how many sessions have a cost, and how many of those record subagent usage. An unknown cost is never added as zero. While any session lacks a cost or subagent usage, the total and the figure per accepted unit are printed as lower bounds ("at least", "incomplete"). Per unit: its sessions, those without a cost, the subagents' share, the sessions after its first done, and the human minutes recorded, or "no human time recorded".
 
 It then runs `charter anchors` on its own output and exits non-zero without writing if the check fails. It is read-only apart from `charter/progress.md`.
 
