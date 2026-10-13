@@ -470,14 +470,17 @@ def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None)
         why.append(f"PR #{pr} is not green: {', '.join(str(b) for b in bad[:5])}")
     elif not any(state(c) == "SUCCESS" for c in rollup):
         why.append(f"PR #{pr} has no check that succeeded (all skipped or neutral), so it is not green")
-    # every file, paginated: `gh pr view --json files` stops at 100
-    fr = gh_api(f"repos/{slug}/pulls/{pr}/files", "--paginate", "--jq", ".[].filename")
-    files = [f for f in fr.stdout.splitlines() if f]
-    if fr.returncode != 0 or len(files) != int(p.get("changedFiles") or 0):
-        why.append(f"PR #{pr}: GitHub listed {len(files)} of its {p.get('changedFiles')} changed files, so the delegate cannot see them all")
-    touched = [f for f in files if f.startswith(PROTECTED_IN_PR) or f in PROTECTED_IN_PR]
+    # every file, paginated (`gh pr view --json files` stops at 100), and a renamed file under both its names: a rename
+    # away from a protected path removes it (/reviewPR of #17, 2026-10-13)
+    fr = gh_api(f"repos/{slug}/pulls/{pr}/files", "--paginate", "--jq", '.[] | [.filename, (.previous_filename // "")] | @tsv')
+    entries = [l.split("\t") for l in fr.stdout.splitlines() if l]
+    files = [e[0] for e in entries]
+    names = list(dict.fromkeys(n for e in entries for n in e if n))
+    if fr.returncode != 0 or len(entries) != int(p.get("changedFiles") or 0):
+        why.append(f"PR #{pr}: GitHub listed {len(entries)} of its {p.get('changedFiles')} changed files, so the delegate cannot see them all")
+    touched = [f for f in names if f.startswith(PROTECTED_IN_PR) or f in PROTECTED_IN_PR]
     if not touched:
-        maybe = [f for f in files if f not in DELEGATED_IN_PR and engine_checks.may_be_owner_only(f)]
+        maybe = [f for f in names if f not in DELEGATED_IN_PR and engine_checks.may_be_owner_only(f)]
         touched = [f for f in maybe if pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f)]
     if touched:
         why.append(f"PR #{pr} changes {', '.join(touched[:4])}, which only the owner merges")

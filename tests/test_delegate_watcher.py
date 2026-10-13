@@ -56,7 +56,7 @@ FAKE_GH = textwrap.dedent('''\
             sys.stderr.write("gh: Not Found (HTTP 404)\\n"); sys.exit(1)
         print(base64.b64encode(r.stdout).decode())
     elif a[:1] == ["api"] and a[1].endswith("/files"):
-        print("\\n".join(f["path"] for f in pr.get("files") or []))
+        print("\\n".join(f["path"] + "\\t" + f.get("previous_filename", "") for f in pr.get("files") or []))
     elif a[:2] == ["pr", "view"] and "mergeCommit" in a:
         print("c" * 40)
     elif a[:2] == ["pr", "view"]:
@@ -457,7 +457,9 @@ class Watcher(unittest.TestCase):
                  "not the main line trunk": ({}, {}, {"FAKE_GH_DEFAULT": "trunk"}),
                  "no check that succeeded": ({"statusCheckRollup": [{"name": "ci", "conclusion": "SKIPPED"}]}, {}, {}),
                  "listed 1 of its 150 changed files": ({"changedFiles": 150}, {}, {}),
-                 "which only the owner merges": ({"files": [{"path": ".claude/commands/deploy.md"}]}, {}, {})}
+                 "which only the owner merges": ({"files": [{"path": ".claude/commands/deploy.md"}]}, {}, {}),
+                 "changes charter/config.json, which only the owner merges": (   # a rename away from it (/reviewPR of #17)
+                     {"files": [{"path": "app/config.json", "previous_filename": "charter/config.json"}]}, {}, {})}
         for why, (pr, record, env) in cases.items():
             with self.subTest(why):
                 self.ghlog.unlink(missing_ok=True)
