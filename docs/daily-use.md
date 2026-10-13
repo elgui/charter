@@ -138,7 +138,7 @@ Don't work in the same clone while a chain runs: both sessions would share one a
 
 ## What only the owner does
 
-The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:28-38`):
+The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:28-38`). Where the project's delegate level allows it, the owner's delegate takes the first rows instead and hands back what it will not take, with its reason, by the waiting session and a Telegram message; a daily digest lists what it did, each with a revert line (`docs/design/owner-delegate.md`):
 
 | When | What | How |
 |---|---|---|
@@ -148,7 +148,8 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 | A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |
 | The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`); `python3 .charter/bin/charter rail <id> done` closes one in one commit |
-| A pull request is ready | Push, open, merge | The agent never pushes, opens or merges (`docs/install.md` § Rules for the agent) |
+| A pull request is ready | Push, open, merge | The agent never pushes, opens or merges (`docs/install.md` § Rules for the agent); at delegate level `open`, the delegate merges the owner's own green PR that `/reviewPR` marked (`docs/design/owner-delegate.md` § Merges) |
+| A project should ask the owner less | Lower its delegate level | `CHARTER_OWNER=1 python3 <charter>/bin/charter-pkg fleet --levels <project>=routine|answers|open`, or `charter delegate level <name>` in the project, as the owner; `strict` takes everything back (`docs/design/owner-delegate.md` § Levels) |
 
 ## The owner's weekly look
 

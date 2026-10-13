@@ -35,9 +35,18 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - Opening or widening a `kind: split` unit.
 - Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain ok` when a chain waits on it.
 - Running a waiting chain's acts: `charter owner run` is the owner's command (the hook denies it to an agent). Give the owner the command, never run it.
-- Committing an owner-only change. Leave it staged and run `python3 .charter/bin/charter handover`: it records the handover and prints the owner's one line, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`. Give the owner that line verbatim (as `! <line>` for a Claude Code prompt); never run it (the hook denies it to an agent).
+- Committing an owner-only change. Leave it staged and run `python3 .charter/bin/charter handover`: it records the handover and prints the owner's one line, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`. Where it says the owner's delegate takes it, run `python3 .charter/bin/charter handover --wait` (a Bash timeout over 300 s) and relay the line only if the delegate hands it back or does not answer. Give the owner that line verbatim (as `! <line>` for a Claude Code prompt); never run it (the hook denies it to an agent).
 - Setting `CHARTER_OWNER` anywhere (the hook denies a Bash command that names it).
 - Resuming a chain: `charter chain resume` refuses; the owner types `/resume-chain`.
+
+## The owner's delegate
+
+Where `charter/config.json` on the default branch sets `delegate.level` (`charter delegate level` prints it), a watcher outside Claude Code takes some owner acts for the owner, after rules and an independent model judge them: at `routine`, closing `— owner: check` lines whose probe passes when it reruns them, and upgrade commits exactly as the installer wrote them; at `answers`, also the owner's own answers (`rule`, `approve`, `rail`), transcribed; at `open`, also edits of `charter/rails.md` and `charter/scope.md`, and merges. `strict`, the default, delegates nothing. No level delegates a config, settings or `.charter/` change, a `— owner: do` or `decide` line, or the level itself.
+
+- The edit gate lets through an edit the level delegates, with a note; the commit is still the delegate's, through `charter handover`.
+- The owner's answer to transcribe: `python3 .charter/bin/charter handover --ask rule <decision> active --quote "<the owner's words, as typed>"` (also `approve <change> approved|rejected`, `rail <id> <status>`). The quote must be words the owner typed in this session; never an answer you infer.
+- A merge into the default branch, at `open`: run `/reviewPR` (it marks the PR reviewed at its head), then `python3 .charter/bin/charter handover --merge <n> --wait`. Never `gh pr merge` yourself.
+- Never run `charter delegate commit|perform|settle`, `charter delegate level <name>` or `charter-delegate run`, and never write the delegate's records under the git directory (the hook denies the commands).
 
 The owner edits these by hand or in a Claude Code session started with `CHARTER_OWNER=1`. A ruling is one owner command: `charter rule <decision> active|rejected|superseded`, `charter approve <change> [--reject]` or `charter rail <id> <status>` writes it and commits it as the owner. An agent never runs these; it proposes, and `charter owner` shows the owner what waits.
 
@@ -45,7 +54,7 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
 
 - A design decision that other code depends on goes in `charter/decisions/<slug>.md` (template in `charter/templates/decision.md`), with the case that justified it and when it stops applying. Do not put it in `CLAUDE.md`.
 - A lesson that should bind this project is a decision with `kind: lesson`. Personal auto-memory is for your own habits, never for project rules.
-- Commitments are the owner's alone. A commitment is anything that changes an external obligation: what is sold, price, dates, deployment, production data or schema, purchase or budget, public release, another person's work, widening a permission, merging into main. Propose it and wait for the owner's word; an instruction from the owner in this session is that word. For what is sold, price or dates, the proposal is a change request in `charter/changes/`.
+- Commitments are the owner's alone. A commitment is anything that changes an external obligation: what is sold, price, dates, deployment, production data or schema, purchase or budget, public release, another person's work, widening a permission, merging into main. Propose it and wait for the owner's word; an instruction from the owner in this session is that word. At delegate level `open`, a merge of the owner's own reviewed PR is asked of the delegate (above) instead. For what is sold, price or dates, the proposal is a change request in `charter/changes/`.
 
 ## Subagents
 
@@ -66,3 +75,4 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
     python3 .charter/bin/charter next             # the road, the next units, what waits on the owner; writes nothing
     python3 .charter/bin/charter chain status     # a continuous chain of sessions (`/charter-chain`); in a chain session, .charter/chain-rules.md also binds
     python3 .charter/bin/charter owner [--json]   # what waits on the owner, with the command for each; writes nothing
+    python3 .charter/bin/charter delegate plan    # what waits on the owner's delegate here, and the level; writes nothing

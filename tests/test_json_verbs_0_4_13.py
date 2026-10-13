@@ -12,6 +12,8 @@ from helpers import PKG, charter, cleanup, git, make_project
 from test_next_0_4_4 import put, section, state_files, unit
 from test_review_regressions import commit_all
 
+VERSION = (PKG / "VERSION").read_text().strip()   # the release under test, not the one that wrote this file
+
 sys.path.insert(0, str(PKG / ".charter"))
 
 RAILS = """# Rails
@@ -76,12 +78,12 @@ class JsonVerbs(unittest.TestCase):
     # ------------------------------------------------------------ unit show --json [--session]
 
     def test_the_active_unit_and_where_it_came_from(self):
-        self.assertEqual(self.json("unit", "show"), {"schema": 1, "charter": "0.4.13", "active": None, "source": None})
+        self.assertEqual(self.json("unit", "show"), {"schema": 1, "charter": VERSION, "active": None, "source": None})
         charter(self.root, "unit", "start", "acc", env={"CLAUDE_CODE_SESSION_ID": "s1"})
         charter(self.root, "unit", "start", "dw", env={"CLAUDE_CODE_SESSION_ID": "s2"})   # the checkout's last choice: dw
         self.assertEqual(self.json("unit", "show", "--session", "s1")["active"], "acc")
         self.assertEqual(self.json("unit", "show", "--session", "s1")["source"], "session")
-        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": "0.4.13", "active": "dw", "source": "checkout"})
+        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": VERSION, "active": "dw", "source": "checkout"})
         self.assertEqual(self.json("unit", "show", env={"CLAUDE_CODE_SESSION_ID": "s1"})["active"], "acc")
         env = self.json("unit", "show", "--session", "s1", env={"CHARTER_UNIT": "off"})
         self.assertEqual((env["active"], env["source"]), ("off", "env"))   # as the gates read it: an engine's export wins
@@ -125,7 +127,7 @@ class JsonVerbs(unittest.TestCase):
     def test_one_unit_as_the_gates_read_it(self):
         u = self.json("unit", "show", "acc")
         self.assertEqual(set(u), UNIT_KEYS)
-        self.assertEqual((u["schema"], u["charter"], u["id"], u["status"], u["path"]), (1, "0.4.13", "acc", "in-progress", ".taskets/acc.md"))
+        self.assertEqual((u["schema"], u["charter"], u["id"], u["status"], u["path"]), (1, VERSION, "acc", "in-progress", ".taskets/acc.md"))
         self.assertEqual((u["rail"], u["kind"], u["gate"], u["acceptance_heading"]), ("r1", "work", "human", "Acceptance"))
         self.assertEqual((u["perimeter"], u["decisions"]), (["app/health.py", "tests/**"], ["retry-limit"]))
         rows = u["acceptance"]
@@ -216,7 +218,7 @@ class JsonVerbs(unittest.TestCase):
         charter(self.root, "unit", "start", "acc", env={"CLAUDE_CODE_SESSION_ID": "s1"})
         n = self.json("next")
         self.assertEqual(set(n), NEXT_KEYS)
-        self.assertEqual((n["schema"], n["charter"], n["active"]), (1, "0.4.13", "acc"))
+        self.assertEqual((n["schema"], n["charter"], n["active"]), (1, VERSION, "acc"))
         self.assertIsNone(n["open"])   # with a road, `rails` and `off_road` hold the open units
         self.assertEqual([(r["id"], r["status"], r["order"]) for r in n["rails"]],
                          [("r0", "done", 5), ("r1", "in-progress", 10), ("r2", "next", 20), ("r3", "todo", 30)])

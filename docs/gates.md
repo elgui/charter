@@ -4,7 +4,7 @@ Every gate lives in `package/.charter/checks.py` and is called from three places
 
 Hook contract facts this design rests on (https://code.claude.com/docs/en/hooks, fetched 2026-09-11): `PreToolUse` denies through `hookSpecificOutput.permissionDecision: "deny"` and the reason reaches Claude; `PostToolUse` cannot block, but exit 2 puts stderr in front of Claude; `Stop` blocks with `decision: "block"`, and `hookSpecificOutput.additionalContext` on `Stop` is "non-error feedback" that continues the conversation; both receive `stop_hook_active` and Claude Code ends the turn after eight consecutive continuations; a `systemMessage` is shown to the user, not to Claude; a hook process inherits Claude Code's environment; `-p` runs treat the folder as trusted so committed project hooks run; `${CLAUDE_PROJECT_DIR}` stays at the session's start directory when Claude enters a worktree while `cwd` in the hook input follows it; hook stdout is capped at 10,000 characters. A saved change to a settings file's `env` block is applied to the running session (https://code.claude.com/docs/en/settings-reference, section `env`, "When Claude Code applies `env` values"). Claude Code sets `CLAUDECODE=1` in the subprocesses it spawns, its Bash tool included, and IDE extensions set it in their integrated terminals (https://code.claude.com/docs/en/env-vars).
 
-## Claude Code hooks (`package/.claude/settings.json`)
+## Claude Code hooks (`package/.charter/settings-fragment.json`)
 
 | Event | Matcher | Script | What it checks | Can block | Timeout |
 |---|---|---|---|---|---|
@@ -47,6 +47,13 @@ Where each layer enforces it:
 - a handover overtaken by a commit that touched its paths, which it then drops (`handover_stale` in `package/.charter/lib.py`).
 
 Otherwise it names the paths changed since the handover and those staged but not handed over, then runs `git commit -m <message> -- <paths>`. The pre-commit gate runs as for any commit: the switch, which comes from the owner's line and which the verb never sets, lifts the owner-only check and nothing else. `charter owner` and `charter next` show the line under the staged change once a handover covers it. `charter-pkg fleet --upgrade` records each waiting project's handover (`by: fleet`) and ends with one line, `CHARTER_OWNER=1 python3 <charter>/bin/charter-pkg fleet --commit`, which runs each one's `owner commit`. It names any other handover it finds instead of committing it (`do_fleet_commit` in `bin/charter-pkg`).
+
+**The owner's delegate** (0.4.14; `docs/design/owner-delegate.md`; `tests/test_delegate_0_4_14.py`). Where the config committed on the default branch sets `delegate.level` below `strict`, a watcher outside Claude Code commits some owner acts for the owner after rules and a model judge them (`LEVEL_KINDS` in `package/.charter/lib.py`). Each owner-only change has kinds (`owner_act_kinds` in `package/.charter/checks.py`): `owner-check` and `upgrade` at `routine`, `ruling` at `answers`, `rails`, `scope` and `merge` at `open`, and `structural`, which no level delegates. The layers change as follows:
+
+- **PreToolUse** lets through, with a note, an edit whose kinds the level delegates, read from the committed config, never the tree; an edit whose result cannot be computed is denied at every level (`package/.charter/hooks/pre_tool_gate.py`).
+- **Pre-commit** is unchanged: inside Claude Code the agent's commit is refused, so it hands over; the delegate commits outside Claude Code, where the gate warns, as the owner's own terminal does (`check_owner_only_staged` in `package/.charter/checks.py`).
+- **CI** is unchanged: the delegate's commit keeps the owner as author and names itself as committer with a `Charter-Delegate:` trailer (`commit` in `package/.charter/delegate.py`).
+- **The hook** denies `charter delegate commit|perform|settle|level <name>` and `charter-delegate run` to every agent session (`DELEGATE_ACT_RE` in `package/.charter/hooks/chain_gate.py`).
 
 What this cannot do, stated in `docs/review/2026-09-11-weakness-evaluation.md`: a Bash command is not an Edit or a Write, the agent commits under the owner's git identity on the owner's machine, and a pull request can edit the workflow that checks it. The locks are outside the repository: GitHub branch protection with required review, and code owners for the files above (https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
 
@@ -187,5 +194,7 @@ A gate that crashes in CI fails open as it does at commit: the step passes, so a
 - A file that is not JSON, or not a JSON object, leaves every setting at its default, track `client`.
 
 Each of these is a `charter/config block [charter/config.json]` finding in `charter check`, so the commit that introduces it is refused at the git hook and in CI, with the override "the owner corrects charter/config.json". The config is judged as staged, like the rest of `charter/`. The SessionStart banner prints each problem with "Commits and CI are refused until the owner corrects it"; the session hooks keep running on the values that were applied. `python3 .charter/bin/charter config` prints what the gates read, `track <track>, opt-ins: <list or none>`, then one `problem:` line per problem, and exits 1 when there is one.
+
+`delegate.level` is `strict`, `routine`, `answers` or `open`; another value is a problem and reads as `strict`. The gates never read it from the working tree: `delegate_level` reads the config committed on the default branch, and a branch's own committed level only when it is stricter (`package/.charter/lib.py`).
 
 The opt-ins are `rails.required`, `probes.at_commit`, `probes.in_ci`, `probes.base_must_fail` and `review.required` (`OPT_INS` in `package/.charter/lib.py`). The ones that are on appear in the banner and at the end of every `charter check` summary line, `[staged, track client, opt-ins: review.required]`, so a CI log shows what it enforced.

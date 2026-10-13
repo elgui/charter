@@ -39,7 +39,16 @@ def main() -> int:
             # an Edit whose result cannot be computed still counts as a change to an owner-only path
             why = checks.owner_only_changes(rp, old_text, new_text if new_text is not None else old_text + "\n(unknown edit)", "edit",
                                             lib.as_list(cfg.get("done_statuses")))
-            if why:
+            # 0.4.14: an owner act the project's delegate takes at its level (read from the committed config, never the tree)
+            # is let through with a note; the commit is still refused to the agent, which hands it over
+            kinds = checks.owner_act_kinds(rp, old_text, new_text, "edit", lib.as_list(cfg.get("done_statuses"))) \
+                if why and inside and new_text is not None else []
+            lv = lib.delegate_level(root)["level"] if kinds else "strict"
+            if why and lib.delegable(kinds, lv):
+                rep.add(checks.Finding("protected", "warn", f"{rp}: the owner's act ({', '.join(kinds)}), which this project's "
+                                       f"delegate takes at level {lv}: leave it staged, run `python3 .charter/bin/charter handover` "
+                                       "and then `--wait`; the delegate commits it or hands it back to the owner", path=rp))
+            elif why:
                 rep.add(checks.Finding("protected", "block", "; ".join(why), path=rp, override=checks.OWNER_OVERRIDE))
         if not inside:
             if rep.blocks:

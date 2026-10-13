@@ -182,10 +182,19 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
         # 0.4.12: once `charter handover` recorded it, the owner's line commits it; until then, that is the next step
         rec = lib.load_handover(root)
         handed = bool(rec) and not lib.handover_stale(root, rec) and set(mine) <= set(rec["paths"])
+        with_delegate = handed and rec.get("delegable") and not _verdict(root, rec.get("id"))
         items.append(_item(key="staged", kind="do", file=mine[0], line=1,
-                           title=f"staged, for the owner to commit: {', '.join(mine[:6])}" + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""),
+                           title=("handed to the owner's delegate, which commits it or hands it back: " if with_delegate else
+                                  "staged, for the owner to commit: ") + ', '.join(mine[:6]) + (f" and {len(mine) - 6} more" if len(mine) > 6 else ""),
                            run=[lib.owner_line(root)] if handed else [],
                            perform=["env", f"{OWNER_SWITCH}=1", "python3", str(root / CHARTER_BIN), "owner", "commit"] if handed else None))
+    import delegate
+    for m in delegate.pending(root):
+        v = _verdict(root, m.get("id"))
+        if m["type"] == "merge" and v and v.get("result") in ("escalated", "failed"):
+            items.append(_item(key=f"merge:{m['pr']}", kind="do", file=lib.CHARTER_DIR, line=1,
+                               title=f"merge PR #{m['pr']}: the delegate handed it back", ask=str(v.get("reason") or ""),
+                               run=[delegate.fallback(root, m)]))
     closed = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
     legacy = legacy_re(root, cfg)
     for uid, u in units.items():
@@ -197,6 +206,11 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                                line=_line_of(_read(root, u["_path"]), r"^gate_reason:"), ask=reason))
         items += owner_lines(root, uid, u, legacy)
     return items
+
+
+def _verdict(root: Path, item_id) -> dict | None:
+    import delegate
+    return delegate.load_verdict(root, item_id) if item_id else None
 
 
 def next_line(it: dict) -> str:
@@ -244,14 +258,21 @@ def handover_message(root: Path, staged: list[str], mine: list[str]) -> str:
 
 
 def report(root: Path, cfg: dict, items: list[dict]) -> dict:
+    """The queue as a tool reads it; `delegate` (0.4.14) is the delegate's level, as `charter delegate level` prints it."""
     ver = root / lib.CHARTER_DIR / "VERSION"
+    lv = lib.delegate_level(root)
     return {"project": str(root), "charter": ver.read_text().strip() if ver.exists() else None,
-            "owner": ", ".join(lib.as_list(cfg.get("owner"))) or None, "items": items}
+            "owner": ", ".join(lib.as_list(cfg.get("owner"))) or None,
+            "delegate": {"level": lv["level"], "from": lv["from"], "problems": lv["problems"], "levels": list(lib.DELEGATE_LEVELS),
+                         "set": perform_argv(root, "delegate", "level", "{answer}")},
+            "items": items}
 
 
 def human(rep: dict) -> str:
     """The queue grouped by kind, each with the command that performs it."""
     L = [f"Waiting on the owner in {rep['project']} (charter {rep['charter']}): {len(rep['items'])} item(s)"]
+    if rep.get("delegate") and rep["delegate"]["level"] != "strict":
+        L.append(f"The owner's delegate works at level {rep['delegate']['level']} (from {rep['delegate']['from']}).")
     titles = {"decide": "Decide", "do": "Do", "check": "Check"}
     for kind in KINDS:
         its = [i for i in rep["items"] if i["kind"] == kind]
@@ -350,8 +371,9 @@ def _committed_decisions(root: Path, override: tuple[str, str]) -> dict[str, dic
     return out
 
 
-def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | None, dry_run: bool) -> int:
-    """Write the files, stage them and commit exactly them as the owner; roll back when the commit is refused."""
+def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | None, dry_run: bool, delegate: bool = False) -> int:
+    """Write the files, stage them and commit exactly them as the owner; roll back when the commit is refused. For the
+    owner's delegate (0.4.14, delegate.perform) the committer is the delegate and the owner switch is not set."""
     if trailer and not TRAILER_RE.match(trailer):
         raise Refused(f"--trailer {trailer!r} is not a `Key: value` git trailer")
     old = {rp: ((root / rp).read_text(encoding="utf-8") if (root / rp).exists() else None) for rp in writes}
@@ -359,7 +381,8 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
     if dry_run:
         for rp, new in writes.items():
             sys.stdout.writelines(difflib.unified_diff((old[rp] or "").splitlines(True), new.splitlines(True), f"a/{rp}", f"b/{rp}"))
-        print(f"\nwould commit, as the owner (the owner switch set for this one commit only):\n  {shlex.join(args)}")
+        print(f"\nwould commit, " + ("as the owner's delegate (committer the delegate, no owner switch)" if delegate
+              else "as the owner (the owner switch set for this one commit only)") + f":\n  {shlex.join(args)}")
         return 0
     before = set(lib.git(root, "diff", "--cached", "--name-only", "--", *writes).stdout.split())
     staged = [l.split(None, 3) for l in lib.git(root, "ls-files", "-s", "--", *before).stdout.splitlines()] if before else []
@@ -367,7 +390,7 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
         (root / rp).parent.mkdir(parents=True, exist_ok=True)
         (root / rp).write_text(new, encoding="utf-8")
     lib.git(root, "add", "--", *writes, check=True)
-    env = dict(os.environ, **{OWNER_SWITCH: "1"})
+    env = lib.delegate_env() if delegate else dict(os.environ, **{OWNER_SWITCH: "1"})
     r = subprocess.run(args, env=env, capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         for rp, text in old.items():
@@ -382,7 +405,7 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
             lib.git(root, "update-index", "--cacheinfo", f"{mode},{blob},{rp}")
         raise Refused("the commit was refused, so nothing changed:\n" + (r.stdout + r.stderr).strip())
     sha = lib.git(root, "rev-parse", "--short", "HEAD").stdout.strip()
-    print(f"committed {sha} as the owner: {message} ({', '.join(writes)}); not pushed")
+    print(f"committed {sha} as the owner{chr(39) + 's delegate' if delegate else ''}: {message} ({', '.join(writes)}); not pushed")
     return 0
 
 
@@ -398,7 +421,7 @@ def _run_check(root: Path, cfg: dict, did: str, cmd: str) -> None:
 
 
 def rule(root: Path, cfg: dict, did: str, status: str, by: str | None = None, note: str | None = None,
-         trailer: str | None = None, dry_run: bool = False) -> int:
+         trailer: str | None = None, dry_run: bool = False, delegate: bool = False) -> int:
     decs = lib.decisions(root)
     d = decs.get(did)
     if d is None:
@@ -429,7 +452,7 @@ def rule(root: Path, cfg: dict, did: str, status: str, by: str | None = None, no
     text = add_ruling(text, f"- {dt.date.today().isoformat()} {status}" + (f" (by {by})" if by else "") + f" by {who}" + (f": {note}" if note else ""))
     index = lib.decision_index_text(_committed_decisions(root, (rp, text)))
     ip = f"{lib.CHARTER_DIR}/decisions/INDEX.md"
-    rc = _commit(root, {rp: text, ip: index}, f"decision {did}: {status}", trailer, dry_run)
+    rc = _commit(root, {rp: text, ip: index}, f"decision {did}: {status}", trailer, dry_run, delegate)
     if not dry_run:
         live = lib.decision_index_text(lib.decisions(root))
         if live != index:   # another session's uncommitted decisions go back into its working copy of the index
@@ -438,7 +461,7 @@ def rule(root: Path, cfg: dict, did: str, status: str, by: str | None = None, no
 
 
 def approve(root: Path, cfg: dict, cid: str, status: str = "approved", note: str | None = None,
-            trailer: str | None = None, dry_run: bool = False) -> int:
+            trailer: str | None = None, dry_run: bool = False, delegate: bool = False) -> int:
     c = lib.change_requests(root).get(cid)
     if c is None:
         raise Refused(f"no change request {cid} in {lib.CHARTER_DIR}/changes/")
@@ -453,11 +476,11 @@ def approve(root: Path, cfg: dict, cid: str, status: str = "approved", note: str
     for k, v in (("status", status), ("approved_by", who), ("approved_on", day)):
         text = set_field(text, k, v)
     text = add_ruling(text, f"- {day} {status} by {who}" + (f": {note}" if note else ""))
-    return _commit(root, {rp: text}, f"change {cid}: {status}", trailer, dry_run)
+    return _commit(root, {rp: text}, f"change {cid}: {status}", trailer, dry_run, delegate)
 
 
 def rail(root: Path, cfg: dict, rid: str, status: str, note: str | None = None, trailer: str | None = None,
-         dry_run: bool = False) -> int:
+         dry_run: bool = False, delegate: bool = False) -> int:
     rid, status = rid.strip().lower(), status.strip().lower()
     loaded = rails.load(root, cfg)
     if loaded is None:
@@ -478,7 +501,7 @@ def rail(root: Path, cfg: dict, rid: str, status: str, note: str | None = None, 
     cells[col] = f" {status} "
     lines[n] = "|".join(cells)
     msg = f"rail {rid}: {status}" + (f"\n\n{note}" if note else "")   # rails.md has no Ruling section: the note is in the commit
-    return _commit(root, {rails.FILE: "\n".join(lines)}, msg, trailer, dry_run)
+    return _commit(root, {rails.FILE: "\n".join(lines)}, msg, trailer, dry_run, delegate)
 
 
 def dumps(rep: dict) -> str:

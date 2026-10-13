@@ -992,18 +992,105 @@ def cmd_config(a) -> int:
 def cmd_handover(a) -> int:
     """Who commits what is staged: the same block the installer prints. With an owner-only change among it, the
     handover is recorded in the git directory and the block ends with the owner's line (0.4.12). The index and the
-    tree are left as they are."""
+    tree are left as they are. Since 0.4.14: where the project's level lets the owner's delegate take it, the block says
+    so; `--ask` records the owner's own answer for the delegate to transcribe, `--merge` asks it to merge a pull request,
+    and `--wait` waits for its verdict."""
+    import delegate
     root = lib.repo_root(a.root)
     cfg = lib.load_config(root)
+    try:
+        if a.ask:
+            rec = delegate.record_ask(root, cfg, a.ask[0], a.ask[1], a.ask[2], a.quote or "",
+                                      a.session or os.environ.get("CLAUDE_CODE_SESSION_ID", ""), a.by, a.note)
+            print(f"Asked the owner's delegate to transcribe the owner's answer: charter {rec['verb']} {rec['target']} {rec['status']} ({rec['id']}).")
+            print(f"  the owner's words: \"{rec['quote']}\"; it finds them in a message the owner typed, or hands the ruling back")
+            return delegate.wait(root, dict(rec, type="ask"), a.timeout) if a.wait else 0
+        if a.merge is not None:
+            rec = delegate.record_merge(root, a.merge, a.method)
+            print(f"Asked the owner's delegate to merge PR #{rec['pr']} into {rec['base']} ({rec['id']}): it merges once the PR is "
+                  "the owner's, CLEAN, green and marked reviewed at its head, or hands it back with its reason.")
+            return delegate.wait(root, dict(rec, type="merge"), a.timeout) if a.wait else 0
+    except delegate.Refused as e:
+        print(f"charter handover: {e}", file=sys.stderr)
+        return 1
     staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
     if not staged:
+        rec = lib.load_handover(root)
+        if a.wait and rec and rec.get("id") and not lib.handover_stale(root, rec):
+            return _wait_handover(root, rec, a.timeout)
         lib.clear_handover(root)
         print("nothing staged")
         return 0
-    mine = list(checks.owner_only_staged(root, cfg, staged))
-    msg = a.message or ownerq.handover_message(root, staged, mine)
+    mine = checks.owner_kinds_staged(root, cfg, staged)
+    msg = a.message or ownerq.handover_message(root, staged, list(mine))
     print("\n".join(lib.handover(root, staged, msg, mine)))
+    rec = lib.load_handover(root)
+    if a.wait and mine and rec and rec.get("id"):
+        print()
+        return _wait_handover(root, rec, a.timeout)
     return 0
+
+
+def _wait_handover(root: Path, rec: dict, timeout: int) -> int:
+    import delegate
+    if not rec.get("delegable"):
+        print(f"level {rec.get('level', 'strict')} keeps this handover for the owner; nothing to wait for. The owner's line:")
+        print(lib.owner_line(root))
+        return 3
+    return delegate.wait(root, dict(rec, type="commit"), timeout)
+
+
+def cmd_delegate(a) -> int:
+    """The owner's delegate (0.4.14): `plan` shows what waits on it here and what the level allows (read-only); `level`
+    prints the level, or with a name sets it, as the owner. `commit`, `perform` and `settle` are the watcher's calls,
+    refused inside Claude Code."""
+    import delegate
+    root = lib.repo_root(a.root)
+    cfg = lib.load_config(root)
+    try:
+        if a.action == "plan":
+            rep = delegate.plan(root, cfg)
+            if a.json:
+                print(json.dumps(rep, indent=2, ensure_ascii=False))
+                return 0
+            print(f"level {rep['level']} (from {rep['level_from']})" + "".join(f"; problem: {p}" for p in rep["problems"]))
+            for it in rep["items"]:
+                state = (it["verdict"] or {}).get("result") or ("delegable" if it["delegable"] else f"for the owner: {it['why_not']}")
+                print(f"  {it['id']} {it['type']}: {state}")
+            if not rep["items"]:
+                print("  nothing waits on the delegate here")
+            return 0
+        if a.action == "level":
+            if not a.name:
+                lv = lib.delegate_level(root)
+                print(f"level {lv['level']} (from {lv['from']})" + "".join(f"; problem: {p}" for p in lv["problems"]))
+                return 0
+            sha = delegate.set_level(root, a.name, a.trailer)
+            print(f"committed {sha[:10]}: delegate level {a.name} on {lib.default_branch(root)}; not pushed" if sha
+                  else f"delegate level is already {a.name}")
+            return 0
+        if not a.id:
+            print(f"charter delegate {a.action}: --id names the item (`charter delegate plan`)", file=sys.stderr)
+            return 2
+        if a.action == "commit":
+            v = delegate.commit(root, cfg, a.id, a.judge, a.reason or "")
+        elif a.action == "perform":
+            v = delegate.perform(root, cfg, a.id, a.judge, a.reason or "")
+        else:
+            if not a.result:
+                print("charter delegate settle: --result is required", file=sys.stderr)
+                return 2
+            v = delegate.settle(root, a.id, a.result, a.judge, a.reason or "", sha=a.sha)
+            if a.result in delegate.DONE:
+                delegate.drop_merge(root, a.id)
+        print(json.dumps(v, ensure_ascii=False))
+        return 0 if v.get("result") in delegate.DONE + ("escalated",) else 1
+    except delegate.Busy as e:
+        print(f"charter delegate {a.action}: busy, try again: {e}", file=sys.stderr)
+        return 75
+    except delegate.Refused as e:
+        print(f"charter delegate {a.action}: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_chain(a) -> int:
@@ -1214,7 +1301,26 @@ def main(argv=None) -> int:
     nx.set_defaults(fn=cmd_next)
     ho = sub.add_parser("handover", help="who commits what is staged; for an owner-only change, record the handover and print the owner's line")
     ho.add_argument("-m", "--message", default=None, help="the commit message (default: `charter <version>` for an install or upgrade)")
+    ho.add_argument("--ask", nargs=3, metavar=("VERB", "TARGET", "STATUS"), default=None,
+                    help="the owner's own answer for the delegate to transcribe: `rule <decision> <status>`, `approve <change> approved|rejected`, `rail <id> <status>`")
+    ho.add_argument("--quote", default=None, help="with --ask: the owner's words, exactly as typed in this session")
+    ho.add_argument("--session", default=None, help="with --ask: the session they were typed in (default: CLAUDE_CODE_SESSION_ID)")
+    ho.add_argument("--by", default=None, help="with --ask rule ... superseded: the successor decision")
+    ho.add_argument("--note", default=None, help="with --ask: a note for the ruling line")
+    ho.add_argument("--merge", type=int, default=None, metavar="PR", help="ask the delegate to merge this pull request (level open)")
+    ho.add_argument("--method", default=None, choices=["merge", "squash", "rebase"], help="with --merge: the merge method (default: the repository's)")
+    ho.add_argument("--wait", action="store_true", help="wait for the delegate's verdict; the owner's line if it hands back or does not answer")
+    ho.add_argument("--timeout", type=int, default=300, help="with --wait: seconds (default 300)")
     ho.set_defaults(fn=cmd_handover)
+    dg = sub.add_parser("delegate", help="the owner's delegate: `plan` (what waits on it, read-only), `level [name]` (print, or set as the owner); "
+                        "`commit`, `perform`, `settle` are the watcher's and refused inside Claude Code")
+    dg.add_argument("action", choices=["plan", "level", "commit", "perform", "settle"])
+    dg.add_argument("name", nargs="?", default=None, help="with level: strict, routine, answers or open")
+    dg.add_argument("--json", action="store_true"); dg.add_argument("--id", default=None)
+    dg.add_argument("--judge", default="rules", help="who judged: rules, or the judge model"); dg.add_argument("--reason", default=None)
+    dg.add_argument("--result", default=None, choices=["committed", "performed", "merged", "escalated", "failed"]); dg.add_argument("--sha", default=None)
+    dg.add_argument("--trailer", default=None, help="with level: a git trailer for the commit")
+    dg.set_defaults(fn=cmd_delegate)
     ch = sub.add_parser("chain", help="a continuous chain of sessions over the road (`charter chain --help`)", add_help=False)
     ch.add_argument("rest", nargs=argparse.REMAINDER); ch.set_defaults(fn=cmd_chain)
     ow = sub.add_parser("owner", help="what waits on the owner, with the command for each; read-only. `owner run`: the owner runs a waiting chain's acts. "

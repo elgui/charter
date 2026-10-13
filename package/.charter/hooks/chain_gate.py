@@ -7,8 +7,9 @@ the marker line `charter-chain: <id> session <n>`; from then on the hook measure
 when to hand over, refuses everything but the handoff past the cap, and keeps it from ending its turn before
 `charter chain next` closed it. In any session, the owner's `/resume-chain` prompt resumes a paused chain here, and
 the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER, or runs `charter owner run` or
-`charter owner commit`, is denied, since an agent never sets the one or runs the others (0.4.11, 0.4.12). Fails open on
-its own errors, as every charter gate does."""
+`charter owner commit`, is denied, since an agent never sets the one or runs the others (0.4.11, 0.4.12); so is one that
+runs the owner's delegate (`charter delegate commit|perform|settle|level <name>`, `charter-delegate run`; 0.4.14). Fails
+open on its own errors, as every charter gate does."""
 import json
 import os
 import re
@@ -22,6 +23,10 @@ from pathlib import Path
 # run`; cross-review of 2026-10-05). Quotes are dropped first, so a quoted path matches; a commit message or a grep that
 # spells the command is denied too
 OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|]*?\s(run|commit)\b", re.M)
+# the owner's delegate (0.4.14): its acts (`charter delegate commit|perform|settle`), setting a level
+# (`charter delegate level <name>`) and the watcher's run (`charter-delegate run`) are never an agent's
+DELEGATE_ACT_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sdelegate\b[^\n;&|]*?\s(commit|perform|settle|level\s+(?:strict|routine|answers|open))\b", re.M)
+WATCHER_RUN_RE = re.compile(r"charter-delegate\b[^\n;&|]*?\s(run)\b", re.M)
 
 
 def common_git_dir(start: Path):
@@ -75,7 +80,15 @@ def gate() -> int:
                           "charter: an agent never sets CHARTER_OWNER; it switches the owner-only checks off. Leave the change staged "
                           "and run `python3 .charter/bin/charter handover`: it prints the line the owner runs."}}))
         return 0
-    m = OWNER_RUN_RE.search(command.replace("'", "").replace('"', "")) if ev == "PreToolUse" else None
+    bare = command.replace("'", "").replace('"', "")
+    if ev == "PreToolUse" and (DELEGATE_ACT_RE.search(bare) or WATCHER_RUN_RE.search(bare)):
+        # the delegate acts from cron, outside any session; an agent that ran it would clear its own owner act
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
+                          "charter: the owner's delegate runs outside Claude Code, from cron, and only the owner sets its level. "
+                          "Hand over with `python3 .charter/bin/charter handover` (`--ask`, `--merge`) and wait with `--wait`; "
+                          "never run the delegate's acts or the watcher yourself."}}))
+        return 0
+    m = OWNER_RUN_RE.search(bare) if ev == "PreToolUse" else None
     if m and m.group(1) == "commit":
         # the owner's commit of a handover (0.4.12): the owner types it with the switch; without it the gate refuses anyway
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":

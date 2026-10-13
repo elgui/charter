@@ -38,7 +38,7 @@ OWNED = [
     ".charter/lib.py", ".charter/checks.py", ".charter/rails.py", ".charter/owner.py", ".charter/chain.py", ".charter/chain_groups.py", ".charter/owner_acts.py", ".charter/chain-rules.md", ".charter/bin/charter",
     ".charter/hooks/_common.py", ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py",
     ".charter/hooks/stop_gate.py", ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py",
-    ".charter/githooks/pre-commit", ".charter/githooks/README.md",
+    ".charter/githooks/pre-commit", ".charter/githooks/README.md", ".charter/delegate.py", ".charter/settings-fragment.json",
     ".claude/rules/charter.md",
     ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md", ".claude/skills/charter-progress/SKILL.md",
     ".claude/skills/charter-chain/SKILL.md", ".claude/commands/resume-chain.md",
@@ -53,7 +53,6 @@ SEEDED = ["charter/config.json"]
 EXECUTABLE = {".charter/bin/charter", ".charter/githooks/pre-commit",
               ".charter/hooks/pre_tool_gate.py", ".charter/hooks/post_tool_gate.py", ".charter/hooks/stop_gate.py",
               ".charter/hooks/session_start.py", ".charter/hooks/session_end.py", ".charter/hooks/chain_gate.py"}
-HOOK_TAG = "/.charter/hooks/"
 AGENTS_BEGIN, AGENTS_END = "<!-- charter-section:begin -->", "<!-- charter-section:end -->"
 GITIGNORE_LINE = ".charter/state/"
 LEGACY = "charter/legacy-taskets.txt"
@@ -121,8 +120,10 @@ def stage(project: Path, rels: list[str], message: str, show: bool = True) -> li
     return staged
 
 
-def owner_paths(project: Path, staged: list[str]) -> list[str]:
-    return list(charter_checks.owner_only_staged(project, charter_lib.load_config(project), staged))
+def owner_paths(project: Path, staged: list[str]) -> dict[str, list[str]]:
+    """The staged paths that are the owner's change, each with its kinds of owner act (0.4.14): an upgrade's settings
+    change exactly as the installer wrote it is `upgrade`, which the owner's delegate may take at level routine."""
+    return charter_checks.owner_kinds_staged(project, charter_lib.load_config(project), staged)
 
 
 def load_manifest(project: Path) -> dict:
@@ -136,32 +137,13 @@ def load_manifest(project: Path) -> dict:
 
 
 def merge_settings(existing: dict, fragment: dict, project: Path) -> dict:
-    """Add the charter hook entries to a settings object, replacing any earlier charter entries."""
-    out = json.loads(json.dumps(existing))
-    hooks = out.setdefault("hooks", {})
-    for event, groups in fragment["hooks"].items():
-        cur = _without_charter(hooks.get(event, []))
-        cur.extend(groups)
-        hooks[event] = cur
-    return out
-
-
-def _is_charter(h: dict) -> bool:
-    return HOOK_TAG in " ".join([h.get("command", "")] + h.get("args", []))
+    """Add the charter hook entries to a settings object, replacing any earlier charter entries. The package's own
+    function (lib.merge_settings), so that a project's engine recognises the installer's settings change (0.4.14)."""
+    return charter_lib.merge_settings(existing, fragment)
 
 
 def _without_charter(groups: list) -> list:
-    """The hook groups of one event with charter's hooks taken out: a project's hook that shares a group with one of
-    charter's stays, and a group left empty goes (cross-review, 2026-10-04: the whole group went)."""
-    out = []
-    for g in groups:
-        hs = g.get("hooks", [])
-        keep = [h for h in hs if not _is_charter(h)]
-        if len(keep) == len(hs):
-            out.append(g)
-        elif keep:
-            out.append(dict(g, hooks=keep))
-    return out
+    return charter_lib.without_charter_hooks(groups)
 
 
 def strip_settings(existing: dict) -> dict:
@@ -252,7 +234,7 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
                 (p / ".gitkeep").touch()
     # settings.json merge
     sp = project / ".claude" / "settings.json"
-    frag = json.loads((PKG / ".claude" / "settings.json").read_text())
+    frag = json.loads((PKG / ".charter" / "settings-fragment.json").read_text())
     existing = json.loads(sp.read_text()) if sp.exists() else {}
     merged = merge_settings(existing, frag, project)
     if merged != existing:
@@ -442,6 +424,8 @@ def do_fleet(root: Path, a) -> int:
     projects = sorted(p for p in root.iterdir() if (p / "charter" / "VERSION").is_file() and (p / ".git").exists())
     if a.commit:
         return do_fleet_commit(projects)
+    if a.levels is not None:
+        return do_fleet_levels(projects, a)
     rows, pending, notes = [], [], []
     for p in projects:
         installed = (p / "charter" / "VERSION").read_text().strip()
@@ -475,7 +459,7 @@ def do_fleet(root: Path, a) -> int:
                     notes.append(f"{p.name}: commit refused: {tail[0]}")
                     state = f"{head} -> {installed}, {len(waiting)} file(s) staged; the commit was refused"
             else:
-                state = f"{head} -> {installed}, {len(waiting)} file(s) wait on the owner ({', '.join(owner[:3])})"
+                state = f"{head} -> {installed}, {len(waiting)} file(s) wait on the owner ({', '.join(list(owner)[:3])})"
         rows.append((p.name, installed, branch, state))
         if waiting:
             pending.append((p, waiting, f"charter {installed}"))
@@ -492,7 +476,7 @@ def do_fleet(root: Path, a) -> int:
         print("\nre-run with --upgrade to upgrade, commit what an agent may, and get one command for the rest")
         return 0
     for p, paths, msg in pending:
-        charter_lib.record_handover(p, paths, msg, by="fleet")
+        charter_lib.record_handover(p, paths, msg, by="fleet", kinds=owner_paths(p, paths))
     line = f"CHARTER_OWNER=1 python3 {shlex.quote(str(Path(__file__).resolve()))} fleet --commit"
     if root != Path(FLEET_ROOT).resolve():
         line += f" --root {shlex.quote(str(root))}"
@@ -523,6 +507,86 @@ def do_fleet_commit(projects: list[Path]) -> int:
         print("nothing handed over by fleet")
     elif failed:
         print(f"not committed: {', '.join(failed)} (each one's output is above; its handover is kept)")
+    return 1 if failed else 0
+
+
+def _version_tuple(v: str | None) -> tuple:
+    try:
+        return tuple(int(x) for x in (v or "").split("."))
+    except ValueError:
+        return ()
+
+
+def do_fleet_levels(projects: list[Path], a) -> int:
+    """`fleet --levels`, the owner's line (0.4.14): each named project's `delegate.level`, and with `--owner` its `owner`,
+    committed to charter/config.json on its default branch as the owner (delegate.set_config). One row per repository:
+    a worktree's row is its repository's. Every name is checked before anything is written; a project whose default
+    branch is not yet on 0.4.14 is refused, since an older engine reads the new key as a config problem."""
+    import delegate as charter_delegate
+    repos: dict[str, Path] = {}
+    for p in projects:
+        common = subprocess.run(["git", "-C", str(p), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True).stdout.strip()
+        main = Path(common).parent if common.endswith("/.git") else p
+        repos.setdefault(main.name, main if (main / "charter" / "VERSION").is_file() else p)
+    want: dict[str, dict] = {}
+    try:
+        for part in [x for x in a.levels.replace(" ", "").split(",") if x]:
+            name, _, lv = part.partition("=")
+            if lv not in charter_lib.DELEGATE_LEVELS:
+                raise ValueError(f"{part}: a level is one of {', '.join(charter_lib.DELEGATE_LEVELS)}")
+            want.setdefault(name, {})["level"] = lv
+        for part in a.owner:
+            name, _, val = part.partition("=")
+            if not val.strip():
+                raise ValueError(f"--owner {part}: the value is the git author name or email CI accepts")
+            want.setdefault(name, {})["owner"] = val.strip()
+        unknown = [n for n in want if n not in repos]
+        if unknown:
+            raise ValueError(f"no charter project named {', '.join(unknown)} under the fleet root (known: {', '.join(sorted(repos))})")
+    except ValueError as e:
+        print(f"fleet --levels: {e}", file=sys.stderr)
+        return 2
+    if not want:
+        print("fleet --levels: name at least one project, as NAME=LEVEL")
+        return 2
+    if charter_lib.in_claude_code() and not charter_lib.owner_session() and not a.dry_run:
+        print("fleet --levels: refused: setting a delegate level is the owner's act, and an agent never runs it. The owner runs this "
+              "line with the owner switch, from their own prompt (`!`) or a terminal. `--dry-run` shows what it would change.", file=sys.stderr)
+        return 1
+    failed = []
+    for name, ch in want.items():
+        p = repos[name]
+        base = charter_lib.default_branch(p)
+        cur = charter_lib.committed_level(p, f"refs/heads/{base}")[0] if base else None
+        r = subprocess.run(["git", "-C", str(p), "show", f"refs/heads/{base}:charter/VERSION"], capture_output=True, text=True) if base else None
+        ver = r.stdout.strip() if r and r.returncode == 0 else None
+        what = ", ".join(([f"delegate level {cur or 'strict (no key)'} -> {ch['level']}"] if "level" in ch else [])
+                         + ([f"owner -> {ch['owner']!r}"] if "owner" in ch else []))
+        if _version_tuple(ver) < (0, 4, 14):
+            print(f"{name}: refused: {base or 'its default branch'} is on charter {ver or 'nothing'}; upgrade it to 0.4.14 there first ({what})")
+            failed.append(name)
+            continue
+        if a.dry_run:
+            print(f"{name}: would commit on {base}: {what}")
+            continue
+        try:
+            upd = {}
+            if "owner" in ch:
+                upd["owner"] = ch["owner"]
+            if "level" in ch:
+                obj = json.loads(subprocess.run(["git", "-C", str(p), "show", f"refs/heads/{base}:charter/config.json"],
+                                                capture_output=True, text=True).stdout or "{}")
+                d = dict(obj.get("delegate") or {}) if isinstance(obj.get("delegate"), dict) else {}
+                d["level"] = ch["level"]
+                upd["delegate"] = d
+            sha = charter_delegate.set_config(p, upd, f"charter: {what}")
+            print(f"{name}: " + (f"committed {sha[:10]} on {base}: {what}" if sha else f"already so on {base}"))
+        except charter_delegate.Refused as e:
+            print(f"{name}: refused: {e}")
+            failed.append(name)
+    if failed:
+        print(f"not set: {', '.join(failed)}")
     return 1 if failed else 0
 
 
@@ -600,6 +664,11 @@ def main(argv=None) -> int:
     mode = fl.add_mutually_exclusive_group()
     mode.add_argument("--upgrade", action="store_true")
     mode.add_argument("--commit", action="store_true", help="the owner's line: commit, as the owner, the upgrades `--upgrade` handed over")
+    mode.add_argument("--levels", default=None, metavar="NAME=LEVEL,...",
+                      help="the owner's line: set each named project's delegate level on its default branch (0.4.14); a project left out is unchanged")
+    fl.add_argument("--owner", action="append", default=[], metavar="NAME=VALUE",
+                    help="with --levels: also set a project's `owner` (the git author name or email CI accepts), in the same line")
+    fl.add_argument("--dry-run", action="store_true", help="with --levels: print what would change and commit nothing")
     sv = sub.add_parser("survey", help="measure a project before a migration; read-only on the project")
     sv.add_argument("project")
     sv.add_argument("--track", choices=["client", "prototype"], required=True, help="the track the rehearsal installs and the plan assumes")
