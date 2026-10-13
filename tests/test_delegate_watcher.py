@@ -48,8 +48,13 @@ FAKE_GH = textwrap.dedent('''\
         if not body:
             sys.stderr.write("gh: Not Found (HTTP 404)\\n"); sys.exit(1)
         print(base64.b64encode(body).decode())
-    elif a[:1] == ["api"] and "/contents/" in a[1]:
-        sys.stderr.write("gh: Not Found (HTTP 404)\\n"); sys.exit(1)
+    elif a[:1] == ["api"] and "/contents/" in a[1]:   # a file of the PR at its base or head, from the test's repository
+        from urllib.parse import unquote
+        path, _, ref = a[1].split("/contents/", 1)[1].partition("?ref=")
+        r = subprocess.run(["git", "-C", os.environ["FAKE_REPO"], "show", f"{ref}:{unquote(path)}"], capture_output=True)
+        if r.returncode != 0:
+            sys.stderr.write("gh: Not Found (HTTP 404)\\n"); sys.exit(1)
+        print(base64.b64encode(r.stdout).decode())
     elif a[:1] == ["api"] and a[1].endswith("/files"):
         print("\\n".join(f["path"] for f in pr.get("files") or []))
     elif a[:2] == ["pr", "view"] and "mergeCommit" in a:
@@ -476,6 +481,34 @@ class Watcher(unittest.TestCase):
         self.prfile.write_text(json.dumps(a_pr()))
         mid = self.merge()
         self.assertIn("no GitHub repository", self.verdict(mid)["reason"])
+
+
+    def test_a_pr_is_read_for_owner_only_changes_at_its_base_and_head(self):
+        """item 8: a unit the PR changes is judged by the engine's own rule, read from GitHub at both ends."""
+        base = git(self.root, "rev-parse", "HEAD").stdout.strip()
+        def pr_head(edit, name):
+            git(self.root, "switch", "-q", "-c", name, base)
+            u = self.root / ".taskets" / "u2.md"
+            u.write_text(edit(u.read_text()))
+            git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "pr")
+            head = git(self.root, "rev-parse", "HEAD").stdout.strip()
+            git(self.root, "switch", "-q", "main")
+            return head
+        agents = pr_head(lambda t: t.replace("## Evidence\n", "## Evidence\n\n- tests: 3 passed\n"), "pr-agent")
+        owners = pr_head(lambda t: tick(t, "AC-2"), "pr-owner")   # an `— owner: do` line, ticked
+        for head, want in ((agents, "merged"), (owners, "escalated")):
+            with self.subTest(want):
+                for f in (self.root / ".git" / "charter" / "delegate").glob("*.json"):
+                    f.unlink()
+                self.ghlog.unlink(missing_ok=True)
+                mid = self.merge(baseRefOid=base, headRefOid=head, files=[{"path": ".taskets/u2.md"}],
+                                 comments=[{"author": {"login": "owner-login"}, "body": f"<!-- charter-review: pass sha={head} -->"}])
+                merged = [c for c in self.gh_calls() if c[:2] == ["pr", "merge"]]
+                if want == "merged":   # the request is dropped once merged
+                    self.assertEqual(len(merged), 1, self.verdict(mid) if mid else "")
+                else:
+                    self.assertFalse(merged)
+                    self.assertIn(".taskets/u2.md, which only the owner merges", self.verdict(mid)["reason"])
 
 
 if __name__ == "__main__":
