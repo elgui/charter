@@ -510,6 +510,11 @@ def do_fleet_commit(projects: list[Path]) -> int:
     return 1 if failed else 0
 
 
+# the first release that ships the delegate: built as 0.4.14, never released alone, merged with 0.4.15 as 0.4.16; a
+# 0.4.15 engine reads `delegate` as an unknown config key, which blocks (CONFIG_SCHEMA in package/.charter/lib.py)
+DELEGATE_SINCE = (0, 4, 16)
+
+
 def _version_tuple(v: str | None) -> tuple:
     try:
         return tuple(int(x) for x in (v or "").split("."))
@@ -521,7 +526,7 @@ def do_fleet_levels(projects: list[Path], a) -> int:
     """`fleet --levels`, the owner's line (0.4.14): each named project's `delegate.level`, and with `--owner` its `owner`,
     committed to charter/config.json on its default branch as the owner (delegate.set_config). One row per repository:
     a worktree's row is its repository's. Every name is checked before anything is written; a project whose default
-    branch is not yet on 0.4.14 is refused, since an older engine reads the new key as a config problem."""
+    branch is not yet on `DELEGATE_SINCE` is refused, since an older engine reads the new key as a config problem."""
     import delegate as charter_delegate
     repos: dict[str, Path] = {}
     for p in projects:
@@ -563,8 +568,8 @@ def do_fleet_levels(projects: list[Path], a) -> int:
         ver = r.stdout.strip() if r and r.returncode == 0 else None
         what = ", ".join(([f"delegate level {cur or 'strict (no key)'} -> {ch['level']}"] if "level" in ch else [])
                          + ([f"owner -> {ch['owner']!r}"] if "owner" in ch else []))
-        if _version_tuple(ver) < (0, 4, 14):
-            print(f"{name}: refused: {base or 'its default branch'} is on charter {ver or 'nothing'}; upgrade it to 0.4.14 there first ({what})")
+        if _version_tuple(ver) < DELEGATE_SINCE:
+            print(f"{name}: refused: {base or 'its default branch'} is on charter {ver or 'nothing'}; upgrade it to {'.'.join(map(str, DELEGATE_SINCE))} there first ({what})")
             failed.append(name)
             continue
         if a.dry_run:

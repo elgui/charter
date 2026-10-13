@@ -514,13 +514,15 @@ class FleetLevels(unittest.TestCase):
         self.assertEqual(git(self.pb, "branch", "--show-current").stdout.strip(), "feature")
         self.assertEqual(git(self.pb, "status", "--porcelain").stdout.strip(), "")
 
-    def test_a_main_line_not_on_0_4_14_is_refused(self):
-        (self.pb / "charter" / "VERSION").write_text("0.4.13\n")
-        git(self.pb, "add", "charter/VERSION")
-        owner_commit(self.pb)
-        r = self.fleet_levels("beta=open", CHARTER_OWNER="1")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("main is on charter 0.4.13; upgrade it to 0.4.14 there first", r.stdout)
+    def test_a_main_line_before_the_delegate_is_refused(self):
+        """0.4.14 was never released: the delegate ships in 0.4.16, and 0.4.15 reads its key as unknown, which blocks."""
+        for old in ("0.4.13", "0.4.15"):
+            (self.pb / "charter" / "VERSION").write_text(old + "\n")
+            git(self.pb, "add", "charter/VERSION")
+            owner_commit(self.pb)
+            r = self.fleet_levels("beta=open", CHARTER_OWNER="1")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn(f"main is on charter {old}; upgrade it to 0.4.16 there first", r.stdout)
 
     def test_an_unknown_name_writes_nothing(self):
         r = self.fleet_levels("alpha=open,gamma=open", CHARTER_OWNER="1")
