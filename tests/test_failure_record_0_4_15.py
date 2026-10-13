@@ -154,6 +154,20 @@ class ChangedSinceBase(Project):
         out = charter(self.root, "probe", "cb").stdout
         self.assertIn(f"changed since {base[:10]}, the unit's base: 1 path(s) inside the perimeter, 2 outside: app/billing.py, app/new.py", out)
 
+    def test_a_directory_named_like_an_exempt_one_is_counted(self):
+        """`charter/` and `.taskets/` are exempt as directories; `charter_app/` only starts with the same letters."""
+        put(self.root, "cx", probe_unit("cx", ["false"]))
+        commit_all(self.root, "the unit")
+        for d in ("charter_app", ".taskets_old"):
+            (self.root / d).mkdir()
+            (self.root / d / "main.py").write_text("x = 1\n")
+        d = json.loads(charter(self.root, "probe", "cx", "--json").stdout)
+        self.assertEqual(d["changed"]["outside"], [".taskets_old/main.py", "charter_app/main.py"])
+        charter(self.root, "unit", "start", "cx")
+        git(self.root, "add", "charter_app")
+        r = charter(self.root, "check", "--staged")
+        self.assertIn("charter_app/main.py is outside the perimeter of unit cx", r.stdout)
+
     def test_no_perimeter_puts_every_path_inside(self):
         put(self.root, "np", probe_unit("np", ["false"]).replace("perimeter: [app/health.py, tests/**]\n", ""))
         commit_all(self.root, "the unit")

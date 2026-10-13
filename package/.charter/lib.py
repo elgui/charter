@@ -23,7 +23,7 @@ TOOL_DIR = ".charter"
 STATE_DIR = ".charter/state"      # the 0.1.0 location; `charter setup` moves what it finds there
 TASKETS_DIR = ".taskets"
 # paths the perimeter gate never judges at commit, and the perimeter fit and the probe record leave out (0.4.15)
-PERIMETER_EXEMPT = (TASKETS_DIR, CHARTER_DIR, TOOL_DIR, ".claude/", ".github/")
+PERIMETER_EXEMPT = (TASKETS_DIR + "/", CHARTER_DIR + "/", TOOL_DIR + "/", ".claude/", ".github/")   # directories: `charter_app/` is judged
 LEGACY_FILE = "charter/legacy-taskets.txt"
 
 # Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).
