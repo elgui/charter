@@ -356,6 +356,20 @@ class SessionUnit(Project):
         self.assertNotIn("internal error", r.stdout + r.stderr)
         self.assertIn("app/billing.py is outside the perimeter of unit u1", r.stdout)
 
+    def test_an_unreadable_record_of_who_chose_is_not_inherited(self):
+        """`active.by` that cannot be read made the commit gate raise, and `charter check` fails open on a raise."""
+        charter(self.root, "unit", "start", "u1")
+        by = self.root / ".git" / "charter" / "active.by"
+        by.unlink()
+        by.mkdir()   # unreadable as a file, whoever runs the test
+        p = self.root / "app" / "billing.py"
+        p.write_text(p.read_text() + "# edit\n")
+        git(self.root, "add", "app")
+        r = charter(self.root, "check", "--staged", env={"CLAUDE_CODE_SESSION_ID": "sess-b"})
+        self.assertNotIn("internal error", r.stdout + r.stderr)
+        self.assertIn("no active unit", r.stdout)
+        self.assertEqual(self.show().stdout.strip(), "u1")   # (guard) outside a session the record is not read
+
     def test_unit_stop_clears_the_record_of_who_chose(self):
         charter(self.root, "unit", "start", "u1", env={"CLAUDE_CODE_SESSION_ID": "sess-a"})
         self.assertEqual((self.root / ".git" / "charter" / "active.by").read_text().strip(), "sess-a")

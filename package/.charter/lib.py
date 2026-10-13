@@ -725,7 +725,10 @@ def checkout_chooser(root: Path) -> str | None:
     """The session that made the checkout's last choice: '' when it was made outside any session (the owner's
     terminal, an engine), None when nothing recorded it (a choice made before 0.4.15)."""
     p = local_state_dir(root) / ACTIVE_BY
-    return p.read_text().strip() if p.exists() else None
+    try:
+        return p.read_text().strip() if p.exists() else None
+    except (OSError, ValueError):   # unreadable: as unrecorded, so no session inherits; a raise fails the gates open
+        return None
 
 
 def inherits_checkout(root: Path, session: str | None = None) -> bool:
