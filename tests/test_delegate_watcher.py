@@ -257,6 +257,14 @@ class Watcher(unittest.TestCase):
                 self.assertIn(why, v["reason"])
                 self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
 
+    def test_a_merge_whose_checks_still_run_waits_for_the_next_run(self):
+        mid = self.merge(statusCheckRollup=[{"name": "ci", "status": "IN_PROGRESS", "conclusion": ""}])
+        self.assertIsNone(self.verdict(mid))
+        self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
+        self.prfile.write_text(json.dumps(a_pr()))   # CI finished green
+        self.watch()
+        self.assertEqual(self.verdict(mid)["result"], "merged")
+
     def test_the_digest_lists_revert_lines(self):
         self.hand_over_check()
         self.watch()

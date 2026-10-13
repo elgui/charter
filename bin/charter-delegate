@@ -48,6 +48,7 @@ RELAY_MARKERS = ("auto-routed", "BRAIN_ANSWER_", "BRAIN_ESCALATE_", "PERM_ALLOW_
                  "<task-notification>", "<agent-message", "[SYSTEM NOTIFICATION", "<system-reminder>", "<command-name>",
                  "<local-command-stdout>", "charter-chain:")
 PASTE_RE = re.compile(r"<pasted_content[^>]*>(.*?)</pasted_content[^>]*>", re.S)
+PENDING_GRACE_S = 1800   # a merge whose checks still run is looked at again each run, and handed back after this
 
 SYSTEM = """You are the owner's delegate in the charter method: an independent reviewer that decides whether one owner act may be
 taken without the owner, Guillaume. The rules already allowed it; you are the second check. Commit only when the act is
@@ -241,16 +242,22 @@ def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
                           env=clean_env(GH_PROMPT_DISABLED="1"), timeout=120)
 
 
-def check_pr(wt: Path, item: dict) -> tuple[list[str], dict]:
-    """(why the rules refuse it, what the judge reads) for a merge request."""
+def check_pr(wt: Path, item: dict) -> tuple[list[str], dict, str]:
+    """(why the rules refuse it, what the judge reads, why to look again later) for a merge request: checks that still
+    run, or a merge state GitHub has not computed yet, are not a refusal while the request is young."""
     pr = str(item["pr"])
     me = gh("api", "user", "--jq", ".login", cwd=wt).stdout.strip()
     r = gh("pr", "view", pr, "--json", "number,author,state,isDraft,baseRefName,headRefOid,mergeStateStatus,statusCheckRollup,"
            "files,title,body,url,comments", cwd=wt)
     if r.returncode != 0 or not me:
-        return [f"gh could not read PR #{pr}: {(r.stderr or 'no login')[-300:]}"], {}
+        return [f"gh could not read PR #{pr}: {(r.stderr or 'no login')[-300:]}"], {}, ""
     p = json.loads(r.stdout)
     why = []
+    checks = p.get("statusCheckRollup") or []
+    running = [c.get("name") or c.get("context") for c in checks
+               if (c.get("status") not in (None, "COMPLETED")) or c.get("state") in ("PENDING", "EXPECTED")]
+    if running or p.get("mergeStateStatus") == "UNKNOWN":
+        return [], {}, (f"checks still run: {', '.join(str(x) for x in running[:4])}" if running else "GitHub has not computed the merge state yet")
     if p.get("state") != "OPEN" or p.get("isDraft"):
         why.append(f"PR #{pr} is {'a draft' if p.get('isDraft') else p.get('state')}")
     if (p.get("author") or {}).get("login") != me:
@@ -259,7 +266,6 @@ def check_pr(wt: Path, item: dict) -> tuple[list[str], dict]:
         why.append(f"PR #{pr} targets {p.get('baseRefName')}, not the main line {item.get('base')}")
     if p.get("mergeStateStatus") != "CLEAN":
         why.append(f"PR #{pr} is {p.get('mergeStateStatus')}, not CLEAN (the delegate never updates a branch or bypasses a rule)")
-    checks = p.get("statusCheckRollup") or []
     bad = [c.get("name") or c.get("context") for c in checks
            if (c.get("conclusion") or c.get("state")) not in ("SUCCESS", "NEUTRAL", "SKIPPED")]
     if not checks:
@@ -278,7 +284,7 @@ def check_pr(wt: Path, item: dict) -> tuple[list[str], dict]:
     data = {"pr": p.get("number"), "title": p.get("title"), "body": (p.get("body") or "")[:8000], "url": p.get("url"),
             "head": head, "files": [f["path"] for f in p.get("files") or []][:200], "review": (marks[-1]["body"][:4000] if marks else ""),
             "diff": diff[:120_000]}
-    return why, data
+    return why, data, ""
 
 
 def merge_method(wt: Path, item: dict) -> str:
@@ -439,7 +445,16 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool) -> None
             return acted(wt, plan, item, "performed", v, res["sha"])
         return hand_back(wt, plan, item, (res or {}).get("reason") or r.stderr.strip()[-800:], "rules", dry)
     # a merge
-    why, data = check_pr(wt, item)
+    why, data, later = check_pr(wt, item)
+    if later:
+        try:
+            age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(str(item.get("at")))).total_seconds()
+        except ValueError:
+            age = PENDING_GRACE_S
+        if age < PENDING_GRACE_S:
+            log(f"{wt}: {item['id']} PR #{item['pr']} not ready, next run: {later}")
+            return
+        why = [f"PR #{item['pr']} was still not ready after {PENDING_GRACE_S // 60} minutes: {later}"]
     if why:
         return hand_back(wt, plan, item, "; ".join(why), "rules", dry)
     v = judge("merge", data, use_judge)

@@ -63,6 +63,8 @@ A merge is delegated at `open` only, and only when all of these hold (`check_pr`
 - a comment from the owner's account carries `<!-- charter-review: pass sha=<head> -->` for the PR's current head, which `/reviewPR` posts; a push after the review voids it (`MARK_RE` in `bin/charter-delegate`);
 - the judge agrees.
 
+A request whose checks still run, or whose merge state GitHub has not computed yet, is looked at again on each run and handed back only after 30 minutes (`PENDING_GRACE_S`, `bin/charter-delegate:245`).
+
 ## Infrastructure
 
 OVH, Cloudflare, Dokku server administration, server work on the five machines and GitHub repository settings are not commits, so charter never sees them. They stay the owner's at every level through each skill's own rules and one `autoMode.soft_deny` rule in `~/.claude/settings.json` (operator report, 2026-10-13).
