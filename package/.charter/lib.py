@@ -22,6 +22,8 @@ CHARTER_DIR = "charter"
 TOOL_DIR = ".charter"
 STATE_DIR = ".charter/state"      # the 0.1.0 location; `charter setup` moves what it finds there
 TASKETS_DIR = ".taskets"
+# paths the perimeter gate never judges at commit, and the perimeter fit and the probe record leave out (0.4.15)
+PERIMETER_EXEMPT = (TASKETS_DIR, CHARTER_DIR, TOOL_DIR, ".claude/", ".github/")
 LEGACY_FILE = "charter/legacy-taskets.txt"
 
 # Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).
@@ -30,7 +32,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.13",
+    "version": "0.4.15",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -707,10 +709,29 @@ def unit_is_open(root: Path, uid: str) -> bool:
 def active_unit(root: Path, session: str | None = None) -> str | None:
     """The unit a session works on. CHARTER_UNIT from the environment (engines export it) wins;
     then the unit this session chose with `charter unit start`; then the checkout's last choice,
-    but only while that unit is open. The checkout's `active` file is shared by every session in
-    the tree: read on its own, it charged 29 of 61 sessions in tele-claude's main checkout to a
-    unit that was already done (2026-09-29), and their Stop gate asked them for its Log line."""
+    but only while that unit is open, and, for a session, only when no session chose it (0.4.15).
+    The checkout's `active` file is shared by every session in the tree: read on its own, it
+    charged 29 of 61 sessions in tele-claude's main checkout to a unit that was already done
+    (2026-09-29), and their Stop gate asked them for its Log line; inherited from another session,
+    it charged four sessions of 2026-10-08 to one unit, and a commit tagged for one unit to another
+    (docs/bugs/2026-10-02-concurrent-sessions-in-one-clone-share-one-active-unit.md)."""
     return active_unit_source(root, session)[0]
+
+
+ACTIVE_BY = "active.by"   # beside `active`: the session that made the checkout's choice, empty for none (0.4.15)
+
+
+def checkout_chooser(root: Path) -> str | None:
+    """The session that made the checkout's last choice: '' when it was made outside any session (the owner's
+    terminal, an engine), None when nothing recorded it (a choice made before 0.4.15)."""
+    p = local_state_dir(root) / ACTIVE_BY
+    return p.read_text().strip() if p.exists() else None
+
+
+def inherits_checkout(root: Path, session: str | None = None) -> bool:
+    """Whether the checkout's choice is this caller's when it has none of its own: always outside a session; for a
+    session, only a choice no session made, since another session's choice is that session's work."""
+    return not session_id(session) or checkout_chooser(root) == ""
 
 
 def active_unit_source(root: Path, session: str | None = None) -> tuple[str | None, str | None]:
@@ -725,7 +746,7 @@ def active_unit_source(root: Path, session: str | None = None) -> tuple[str | No
     p = local_state_dir(root) / "active"
     if p.exists():
         aid = p.read_text().strip() or None
-        if aid and unit_is_open(root, aid):
+        if aid and unit_is_open(root, aid) and inherits_checkout(root, session):
             return aid, "checkout"
     return None, None
 

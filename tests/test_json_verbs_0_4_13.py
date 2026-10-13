@@ -12,6 +12,8 @@ from helpers import PKG, charter, cleanup, git, make_project
 from test_next_0_4_4 import put, section, state_files, unit
 from test_review_regressions import commit_all
 
+VERSION = (PKG / "VERSION").read_text().strip()   # the release under test, not the one that wrote this file
+
 sys.path.insert(0, str(PKG / ".charter"))
 
 RAILS = """# Rails
@@ -25,7 +27,7 @@ RAILS = """# Rails
 """
 
 UNIT_KEYS = {"schema", "charter", "id", "title", "status", "path", "rail", "kind", "perimeter", "decisions", "gate",
-             "acceptance_heading", "acceptance", "evidence", "log", "done_blockers"}
+             "acceptance_heading", "acceptance", "evidence", "log", "done_blockers", "perimeter_fit"}   # perimeter_fit: 0.4.15
 ROW_KEYS = {"line", "label", "text", "checked", "probe", "owner"}
 NEXT_KEYS = {"schema", "charter", "active", "rails", "open", "off_road", "done_without_acceptance", "owner_waiting"}
 RAIL_KEYS = {"id", "title", "status", "order", "units"}
@@ -76,12 +78,13 @@ class JsonVerbs(unittest.TestCase):
     # ------------------------------------------------------------ unit show --json [--session]
 
     def test_the_active_unit_and_where_it_came_from(self):
-        self.assertEqual(self.json("unit", "show"), {"schema": 1, "charter": "0.4.13", "active": None, "source": None})
+        self.assertEqual(self.json("unit", "show"), {"schema": 1, "charter": VERSION, "active": None, "source": None})
         charter(self.root, "unit", "start", "acc", env={"CLAUDE_CODE_SESSION_ID": "s1"})
         charter(self.root, "unit", "start", "dw", env={"CLAUDE_CODE_SESSION_ID": "s2"})   # the checkout's last choice: dw
         self.assertEqual(self.json("unit", "show", "--session", "s1")["active"], "acc")
         self.assertEqual(self.json("unit", "show", "--session", "s1")["source"], "session")
-        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": "0.4.13", "active": "dw", "source": "checkout"})
+        # 0.4.15: a session with no unit of its own no longer inherits one another session chose (s2 chose dw)
+        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": VERSION, "active": None, "source": None})
         self.assertEqual(self.json("unit", "show", env={"CLAUDE_CODE_SESSION_ID": "s1"})["active"], "acc")
         env = self.json("unit", "show", "--session", "s1", env={"CHARTER_UNIT": "off"})
         self.assertEqual((env["active"], env["source"]), ("off", "env"))   # as the gates read it: an engine's export wins
@@ -125,7 +128,7 @@ class JsonVerbs(unittest.TestCase):
     def test_one_unit_as_the_gates_read_it(self):
         u = self.json("unit", "show", "acc")
         self.assertEqual(set(u), UNIT_KEYS)
-        self.assertEqual((u["schema"], u["charter"], u["id"], u["status"], u["path"]), (1, "0.4.13", "acc", "in-progress", ".taskets/acc.md"))
+        self.assertEqual((u["schema"], u["charter"], u["id"], u["status"], u["path"]), (1, VERSION, "acc", "in-progress", ".taskets/acc.md"))
         self.assertEqual((u["rail"], u["kind"], u["gate"], u["acceptance_heading"]), ("r1", "work", "human", "Acceptance"))
         self.assertEqual((u["perimeter"], u["decisions"]), (["app/health.py", "tests/**"], ["retry-limit"]))
         rows = u["acceptance"]
@@ -140,7 +143,8 @@ class JsonVerbs(unittest.TestCase):
             self.assertIn(x["text"], lines[x["line"] - 1])
         self.assertEqual(u["evidence"], [f"commit {self.sha}", "`$ python3 -c 'import app.health'` → exit 0"])
         self.assertEqual(u["log"], [f"2026-10-10 0{i}:00 step {i}" for i in range(2, 7)])   # the last five
-        self.assertEqual(u["done_blockers"], ["status is done but 3 acceptance box(es) are unchecked"])
+        # 0.4.15: the done gate names the boxes
+        self.assertEqual(u["done_blockers"], ["status is done but 3 acceptance box(es) are unchecked: AC-2, AC-3, a line without an id"])
 
     def test_line_numbers_past_a_nested_acceptance_heading(self):
         """A nested heading that starts with `Acceptance` again is not in the section's text, so `line` cannot count
@@ -216,7 +220,7 @@ class JsonVerbs(unittest.TestCase):
         charter(self.root, "unit", "start", "acc", env={"CLAUDE_CODE_SESSION_ID": "s1"})
         n = self.json("next")
         self.assertEqual(set(n), NEXT_KEYS)
-        self.assertEqual((n["schema"], n["charter"], n["active"]), (1, "0.4.13", "acc"))
+        self.assertEqual((n["schema"], n["charter"], n["active"]), (1, VERSION, "acc"))
         self.assertIsNone(n["open"])   # with a road, `rails` and `off_road` hold the open units
         self.assertEqual([(r["id"], r["status"], r["order"]) for r in n["rails"]],
                          [("r0", "done", 5), ("r1", "in-progress", 10), ("r2", "next", 20), ("r3", "todo", 30)])
@@ -234,7 +238,7 @@ class JsonVerbs(unittest.TestCase):
         self.assertEqual([d["id"] for d in n["done_without_acceptance"]], ["dnu"])
         self.assertEqual(n["owner_waiting"], len(self.json("owner")["items"]))
         self.assertGreaterEqual(n["owner_waiting"], 2)
-        self.assertEqual(self.json("next", "--session", "s9")["active"], "acc")   # the checkout's choice, still open
+        self.assertIsNone(self.json("next", "--session", "s9")["active"])   # 0.4.15: s1's choice is not s9's (it was until 0.4.14)
 
     def test_no_rails_file(self):
         """Without a road, `open` lists every open unit in the order the text `next` offers them (review of PR #13:
