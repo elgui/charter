@@ -161,7 +161,8 @@ class ActiveUnitPerSession(Project):
     def test_the_session_that_started_a_unit_keeps_it(self):
         charter(self.root, "unit", "start", "u1", env={"CLAUDE_CODE_SESSION_ID": "sess-a"})
         self.assertEqual(self.unit_for("sess-a"), "u1")
-        self.assertEqual(self.unit_for("sess-b"), "u1")   # the checkout's choice, while u1 is open
+        # 0.4.15: sess-a's choice is not sess-b's (tests/test_failure_record_0_4_15.py has the rule); it was until 0.4.14
+        self.assertIn("is another session's", self.unit_for("sess-b"))
         self.mark_done()
         self.assertEqual(self.unit_for("sess-a"), "u1")
         self.assertIn("no active unit", self.unit_for("sess-b"))

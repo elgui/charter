@@ -62,8 +62,10 @@ def cmd_check(a) -> int:
     rep.add(*(checks.Finding("config", "block", f"charter/config.json: {m}", path="charter/config.json",
                              override="the owner corrects charter/config.json (owner-only); `charter config` lists what is read")
               for m in cfg.get(lib.PROBLEMS, [])))
+    sid = lib.session_id()   # a commit made from a session's shell carries its id to the git hook (0.4.15)
     for f in rep.findings:
-        lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all")
+        lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all",
+                      **({"session": sid} if sid else {}))
     for f in rep.findings:
         print(f.line())
     n_b, n_w = len(rep.blocks), len(rep.warns)
@@ -193,7 +195,9 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         else:
             rep.add(*checks.run_decision_checks(root, decs, only_bound_to=None if not a.staged else paths))
     if "perimeter" in gates and a.staged:
-        rep.add(*checks.check_perimeter(root, cfg, unit, [p for p in paths if not p.startswith((lib.TASKETS_DIR, lib.CHARTER_DIR, lib.TOOL_DIR, ".claude/", ".github/"))], at_commit=True))
+        judged = [p for p in paths if not p.startswith(lib.PERIMETER_EXEMPT)]
+        rep.add(*checks.check_perimeter(root, cfg, unit, judged, at_commit=True,
+                                        others=checks.edited_by_other_sessions(root, None, judged) if unit else None))
     if "memory" in gates:
         rep.add(*checks.check_memory(root, cfg, today()))
     if "protected" in gates:
@@ -378,6 +382,15 @@ def cmd_synth(a) -> int:
                 L.append("## Done before charter (never judged by the done gate)")
                 L += [f"- {uid} — {u.get('title', '')} [{u.get('status')}] ({u['_path']})" for uid, u in old]
                 L.append("")
+
+    L.append("## Perimeter fit")   # a report, never a gate (0.4.15)
+    fits, seen = checks.perimeter_fits(root, units)
+    one = lambda n, word: f"{n} {word}s" if n == 1 else f"{n} {word}"
+    L.append(f"- Read from commit subjects that say `unit <id>`: {seen['commits']} commit(s), {one(seen['untagged'], 'name')} no unit, "
+             f"{one(seen['ambiguous'], 'name')} an id two or more units share, {one(seen['several'], 'name')} two or more units; "
+             "work under no tag or another unit's tag is not seen (`perimeter_fits` in .charter/checks.py)")
+    L += [f"- {uid}: {checks.fit_text(f, short=True)} ({units[uid]['_path']})" for uid, f in fits.items() if f["commits"]]
+    L.append("")
 
     L.append("## Open decisions and change requests")
     props = [(k, v) for k, v in decs.items() if str(v.get("status")) == "proposed"]
@@ -792,6 +805,7 @@ def cmd_unit(a) -> int:
             print(why)
             return 1
         (st / "active").write_text(a.id + "\n")
+        (st / lib.ACTIVE_BY).write_text(lib.session_id(a.session) + "\n")   # who chose: another session does not inherit it (0.4.15)
         own = lib.session_unit_file(root, a.session)
         if own is not None:
             own.write_text(a.id + "\n")   # this session's choice; the checkout's file is every session's
@@ -804,7 +818,7 @@ def cmd_unit(a) -> int:
         print(f"active unit: {a.id} — {units[a.id].get('title', '')}")
         return 0
     if a.action == "stop":
-        for p in (st / "active", lib.session_unit_file(root, a.session)):
+        for p in (st / "active", st / lib.ACTIVE_BY, lib.session_unit_file(root, a.session)):
             if p is not None and p.exists():
                 p.unlink()
         print("no active unit")
@@ -813,10 +827,20 @@ def cmd_unit(a) -> int:
         out = _unit_json(root, a.id) if a.id else dict(zip(("active", "source"), lib.active_unit_source(root, a.session)))
         print(json.dumps({**_schema(root), **out}, indent=2, ensure_ascii=False))
         return 1 if "error" in out else 0
+    if a.id:   # one unit, and how its perimeter fit its commits (0.4.15)
+        d = _unit_json(root, a.id)
+        if "error" in d:
+            print(d["error"])
+            return 1
+        print(f"{d['id']} — {d['title']} [{d['status']}] ({d['path']})")
+        print("perimeter fit: " + checks.fit_text(d["perimeter_fit"]))
+        return 0
     aid = lib.active_unit(root, a.session)
     last = (st / "active").read_text().strip() if (st / "active").exists() else ""
-    if not aid and last:
+    if not aid and last and not lib.unit_is_open(root, last):
         print(f"no active unit (the checkout's last choice, {last}, is closed)")
+    elif not aid and last:
+        print(f"no active unit (the checkout's last choice, {last}, is another session's; `charter unit start <id>` to choose)")
     else:
         print(aid or "no active unit")
     return 0
@@ -883,7 +907,7 @@ def _unit_json(root: Path, uid: str) -> dict:
             "perimeter": lib.as_list(u.get("perimeter")), "decisions": lib.as_list(u.get("decisions")),
             "gate": str(u.get("gate") or "") or None, "acceptance_heading": heading, "acceptance": rows,
             "evidence": _lines(lib.section(body, "Evidence")), "log": _lines(lib.section(body, "Log"))[-5:],
-            "done_blockers": done_blockers(root, cfg, u)}
+            "done_blockers": done_blockers(root, cfg, u), "perimeter_fit": checks.perimeter_fits(root, units)[0][uid]}
 
 
 # ---------------------------------------------------------------- decisions index
@@ -969,14 +993,26 @@ def cmd_probe(a) -> int:
     units = lib.taskets(root)
     u = units.get(a.id)
     if u is None:
-        print(f"no tasket with id {a.id} in {lib.TASKETS_DIR}/")
+        msg = f"no tasket with id {a.id} in {lib.TASKETS_DIR}/"
+        print(json.dumps({**_schema(root), "error": msg}, indent=2) if a.json else msg)
         return 1
     text = (root / u["_path"]).read_text(encoding="utf-8")
-    found, lines = checks.run_probes(root, text, u["_path"], a.timeout or int((cfg.get("probes") or {}).get("timeout_s", 120)))
-    print("\n".join(lines))
-    for f in found:
-        print(f.line(), file=sys.stderr)
-    lib.log_event(root, "cli", "probe", "block" if found else "passed", f"{len(lines)} probe(s) of {a.id}", path=u["_path"])
+    found, lines, records = checks.run_probes_recorded(root, text, u["_path"], a.timeout or int((cfg.get("probes") or {}).get("timeout_s", 120)))
+    failed = [r["ac"] for r in records if r["outcome"] != "passed"]
+    changed = checks.changed_since_base(root, u, u["_path"]) if (failed or a.json) else None
+    if a.json:   # the record a tool reads (0.4.15); the text below is unchanged for the tools that parse it
+        print(json.dumps({**_schema(root), "unit": a.id, "path": u["_path"], "probes": records, "failed": failed,
+                          "changed": changed, "findings": [f.message for f in found]}, indent=2, ensure_ascii=False))
+    else:
+        print("\n".join(lines))
+        if failed:
+            print("\n".join(["", *checks.failure_lines(records), *checks.changed_lines(changed)]))
+        for f in found:
+            print(f.line(), file=sys.stderr)
+    sid = lib.session_id()
+    lib.log_event(root, "cli", "probe", "block" if found else "passed",
+                  f"{len(lines)} probe(s) of {a.id}" + (f"; failed: {', '.join(failed)}" if failed else ""), path=u["_path"],
+                  **({"failed": failed} if failed else {}), **({"session": sid} if sid else {}))
     return 1 if found else 0
 
 
@@ -1190,7 +1226,9 @@ def main(argv=None) -> int:
                    help="re-run the acceptance probes of units that close in the change set (default: charter/config.json `probes`)")
     c.add_argument("--no-probe", dest="probe", action="store_false")
     c.set_defaults(fn=cmd_check)
-    pr = sub.add_parser("probe"); pr.add_argument("id"); pr.add_argument("--timeout", type=int, default=None); pr.set_defaults(fn=cmd_probe)
+    pr = sub.add_parser("probe"); pr.add_argument("id"); pr.add_argument("--timeout", type=int, default=None)
+    pr.add_argument("--json", action="store_true", help="each probe's record: exit code, duration, stdout and stderr tails; the paths changed since the unit's base")
+    pr.set_defaults(fn=cmd_probe)
     an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40)
     an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn"); an.set_defaults(fn=cmd_anchors)
     s = sub.add_parser("synth"); s.add_argument("--write", action="store_true"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_synth)

@@ -15,6 +15,7 @@ description: Start, resume or finish a unit of work under the charter method. US
 ## While working
 
 - Stay inside `perimeter:`; note any excursion under `## Outside perimeter` before committing.
+- End each commit subject with `(unit <id>)`, and commit only your own paths (`git commit -m <message> -- <paths>`): `charter unit show <id>` and `charter synth` read the tag to report how the perimeter fit the work, and the checkout's index may hold another session's files.
 - Cite decisions in code with `charter:<id>`; create a decision record when you settle something other code will depend on (`/charter-decision`).
 - Append a dated `## Log` line when something lands. After a turn that committed, the Stop hook reminds you if the unit's log did not move.
 
