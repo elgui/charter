@@ -781,9 +781,11 @@ def edited_by_other_sessions(root: Path, session: str | None, relpaths: list[str
     for f in sorted(d.glob("session-*.json")):
         other = f.name[len("session-"):-len(".json")]
         try:
-            edited = set(json.loads(f.read_text(encoding="utf-8")).get("edited") or [])
+            edited = json.loads(f.read_text(encoding="utf-8")).get("edited") or []
         except (OSError, ValueError, AttributeError):
             continue
+        # a record the hooks did not write is read as listing nothing: a raise here would fail the gate open
+        edited = {p for p in edited if isinstance(p, str)} if isinstance(edited, list) else set()
         if lib.session_id(other) == sid:
             mine = edited
             continue

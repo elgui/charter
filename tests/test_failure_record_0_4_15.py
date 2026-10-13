@@ -343,6 +343,19 @@ class SessionUnit(Project):
                       "a plain `git commit` charges it to unit u1", r.stdout)
         self.assertIn("git commit -m <message> -- <your paths>", r.stdout)
 
+    def test_a_malformed_session_record_does_not_open_the_gate(self):
+        """A record whose `edited` holds a list made the gate raise, and `charter check` fails open on a raise."""
+        charter(self.root, "unit", "start", "u1", env={"CLAUDE_CODE_SESSION_ID": "sess-b"})
+        st = self.root / ".git" / "charter"
+        (st / "session-sess-a.json").write_text(json.dumps({"edited": [["app/billing.py"]], "turn_edited": []}))
+        (st / "session-sess-c.json").write_text(json.dumps({"edited": "app/billing.py"}))
+        p = self.root / "app" / "billing.py"
+        p.write_text(p.read_text() + "# edit\n")
+        git(self.root, "add", "app")
+        r = charter(self.root, "check", "--staged", env={"CLAUDE_CODE_SESSION_ID": "sess-b"})
+        self.assertNotIn("internal error", r.stdout + r.stderr)
+        self.assertIn("app/billing.py is outside the perimeter of unit u1", r.stdout)
+
     def test_unit_stop_clears_the_record_of_who_chose(self):
         charter(self.root, "unit", "start", "u1", env={"CLAUDE_CODE_SESSION_ID": "sess-a"})
         self.assertEqual((self.root / ".git" / "charter" / "active.by").read_text().strip(), "sess-a")
