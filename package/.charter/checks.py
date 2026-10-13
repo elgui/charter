@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -404,7 +405,9 @@ def check_unit_done(root: Path, cfg: dict, unit_text: str, path: str) -> list[Fi
     else:
         unchecked = [b for b in boxes if b[0] == " "]
         if unchecked:
-            out.append(Finding("done", "block", f"status is done but {len(unchecked)} acceptance box(es) are unchecked", path=path,
+            names = [b[1].strip()[:60] for b in unchecked]   # the AC id, else the line's text (0.4.15)
+            named = ", ".join(names[:10]) + (f", +{len(names) - 10} more" if len(names) > 10 else "")
+            out.append(Finding("done", "block", f"status is done but {len(unchecked)} acceptance box(es) are unchecked: {named}", path=path,
                                override="run each probe, check the box, and cite the run under `## Evidence`; or keep the status open"))
     k = classify_anchors(root, lib.section(body, "Evidence"))
     if not k["sha"] and not k["run"]:
@@ -460,22 +463,119 @@ def unit_probes(text: str) -> list[tuple[str, str]]:
 
 def run_probes(root: Path, text: str, path: str, timeout: int) -> tuple[list[Finding], list[str]]:
     """Run a unit's probes from the repository root. Returns findings and evidence lines."""
-    out, lines = [], []
+    return run_probes_recorded(root, text, path, timeout)[:2]
+
+
+# A probe record keeps the end of each stream, at most this many lines and bytes, cut at a line (0.4.15). pytest -q
+# ends with one `FAILED <test> - <error>` line per failing test, then the count; 20 lines hold that for a dozen
+# failures. 2 KiB per stream keeps one probe's record under 4 KiB, half of what a chain handoff may hold (8 KiB,
+# `MAX_BYTES` in .charter/chain.py), so the briefing that carries it stays readable.
+TAIL_LINES, TAIL_BYTES = 20, 2048
+
+
+def _tail(text: str) -> tuple[str, int]:
+    """(the end of a stream within TAIL_LINES and TAIL_BYTES, cut at a line; how many lines the stream had).
+    Blank lines at either end do not count; a single line longer than the cap keeps its end."""
+    lines = text.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    kept, size = [], 0
+    for line in reversed(lines[-TAIL_LINES:]):
+        b = len(line.encode("utf-8")) + (1 if kept else 0)
+        if size + b > TAIL_BYTES:
+            if not kept:
+                kept.append(line.encode("utf-8")[-TAIL_BYTES:].decode("utf-8", "ignore"))
+            break
+        kept.append(line)
+        size += b
+    return "\n".join(reversed(kept)), len(lines)
+
+
+def _stream(v) -> str:
+    """A stream a timeout left behind: bytes on POSIX even when text was asked for."""
+    return v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
+
+
+def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
+    """Run one probe. (its record, the one-line tail the text line has always shown: the last line of stdout and
+    stderr together, cut to 100 characters)."""
+    t0 = time.monotonic()
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+        out, err, code = r.stdout, r.stderr, r.returncode
+        outcome = "passed" if code == 0 else "failed"
+        line = ((out + err).strip().splitlines() or [""])[-1][:100]
+    except subprocess.TimeoutExpired as e:
+        out, err, code, outcome = _stream(e.stdout), _stream(e.stderr), None, "timeout"
+        line = f"timed out after {timeout} s"
+    (out_tail, out_n), (err_tail, err_n) = _tail(out), _tail(err)
+    return {"ac": ac, "command": cmd, "outcome": outcome, "exit": code, "duration_s": round(time.monotonic() - t0, 2),
+            "stdout_tail": out_tail, "stderr_tail": err_tail, "stdout_lines": out_n, "stderr_lines": err_n}, line
+
+
+def run_probes_recorded(root: Path, text: str, path: str, timeout: int) -> tuple[list[Finding], list[str], list[dict]]:
+    """`run_probes` with each probe's record (0.4.15). The evidence lines are the ones 0.4.14 printed, byte for byte:
+    tele-claude's checker parses them (`_PROBE_LINE`, services/checker/core.py:98 in tele-claude)."""
+    out, lines, records = [], [], []
     probes = unit_probes(text)
     if not probes:
         out.append(Finding("probe", "block", f"{path} has no `probe:` command in `## Acceptance`, so nothing can be re-run", path=path,
                            override="name a command for each criterion: `- [ ] AC-1: ... — probe: `<command>``"))
     for ac, cmd in probes:
-        try:
-            r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
-            code, tail = r.returncode, ((r.stdout + r.stderr).strip().splitlines() or [""])[-1][:100]
-        except subprocess.TimeoutExpired:
-            code, tail = None, f"timed out after {timeout} s"
+        rec, tail = probe_record(root, ac, cmd, timeout)
+        records.append(rec)
+        code = rec["exit"]
         lines.append(f"- `$ {cmd}` → " + (f"exit {code}" if code is not None else tail) + (f" ({tail})" if tail and code else ""))
         if code != 0:
             out.append(Finding("probe", "block", f"{ac} probe failed: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
                                override="make the probe pass, or reopen the unit"))
-    return out, lines
+    return out, lines, records
+
+
+def failure_lines(records: list[dict]) -> list[str]:
+    """Each failed probe with its stdout and stderr tails, for a person or the next session. Every tail line starts
+    with `| ` after its indent, so no line of a probe's output reads as a probe line once stripped."""
+    out = []
+    for r in records:
+        if r["outcome"] == "passed":
+            continue
+        how = f"exited {r['exit']}" if r["outcome"] == "failed" else "timed out"
+        out.append(f"{r['ac']} failed: `{r['command']}` {how} after {r['duration_s']} s")
+        for stream in ("stdout", "stderr"):
+            tail, n = r[f"{stream}_tail"], r[f"{stream}_lines"]
+            if not n:
+                out.append(f"  {stream}: empty")
+                continue
+            kept = tail.splitlines()
+            out.append(f"  {stream}, last {len(kept)} of {n} line(s):")
+            out += [f"  | {l}" for l in kept]
+    return out
+
+
+def changed_since_base(root: Path, unit: dict, path: str) -> dict | None:
+    """The paths changed between the unit's base (`unit_base`, the one the probes run at) and the working tree,
+    untracked files included, split by the unit's `perimeter:`; with no perimeter every path is inside. Paths the
+    perimeter gate exempts are left out. None when the unit has no base. In a checkout other sessions commit to,
+    their work since the base is in it too."""
+    base = unit_base(root, path)
+    if not base:
+        return None
+    tracked = lib.git(root, "-c", "core.quotePath=false", "diff", "--name-only", "-z", base).stdout.split("\0")
+    untracked = lib.git(root, "ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
+    paths = sorted({p for p in tracked + untracked if p and not p.startswith(lib.PERIMETER_EXEMPT)})
+    per = lib.as_list(unit.get("perimeter"))
+    inside = [p for p in paths if not per or lib.matches_any(p, per)]
+    return {"base": base, "inside": inside, "outside": [p for p in paths if p not in inside]}
+
+
+def changed_lines(changed: dict | None) -> list[str]:
+    if changed is None:
+        return ["changed since the unit's base: unknown (the commit that added the unit has no parent)"]
+    out = changed["outside"]
+    return [f"changed since {changed['base'][:10]}, the unit's base: {len(changed['inside'])} path(s) inside the perimeter, {len(out)} outside"
+            + (": " + ", ".join(out[:10]) + (f", +{len(out) - 10} more" if len(out) > 10 else "") if out else "")]
 
 
 def unit_base(root: Path, path: str) -> str | None:
@@ -634,7 +734,11 @@ def run_decision_checks(root: Path, decs: dict[str, dict], only_bound_to: list[s
 
 # ---------------------------------------------------------------- perimeter (R4)
 
-def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str], at_commit: bool) -> list[Finding]:
+def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str], at_commit: bool,
+                    others: dict[str, str] | None = None) -> list[Finding]:
+    """`others` maps a staged path to the session that edited it when the committing session did not
+    (`edited_by_other_sessions`): such a path outside the perimeter is named as that session's, not as this unit's."""
+    others = others or {}
     skip = lib.ignored(root, relpaths)   # a file git ignores is local scratch (a tool's journal), not the unit's work
     relpaths = [rp for rp in relpaths if rp not in skip]
     if unit is None:
@@ -653,9 +757,118 @@ def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str
         if rp in notes or os.path.basename(rp) in notes:
             continue
         level = "block" if (at_commit and cfg.get("track") == "client") else "warn"
+        if rp in others:
+            out.append(Finding("perimeter", level, f"{rp} is staged, but session {others[rp]} edited it and this session did not; "
+                               f"a plain `git commit` charges it to unit {unit['_id']}", path=rp,
+                               override="commit only this session's paths, `git commit -m <message> -- <your paths>`, and leave the other "
+                                        f"session's to it; or, if this work is the unit's, add `- {rp}: <why>` under `## Outside perimeter` in {unit['_path']}"))
+            continue
         out.append(Finding("perimeter", level, f"{rp} is outside the perimeter of unit {unit['_id']} and has no note", path=rp,
                            override=f"add `- {rp}: <why>` under `## Outside perimeter` in {unit['_path']}, or widen `perimeter:`"))
     return out
+
+
+def edited_by_other_sessions(root: Path, session: str | None, relpaths: list[str]) -> dict[str, str]:
+    """{path: session id} for each path another live session's record lists as edited and this session's does not.
+    The records are the hooks' `session-<id>.json` in this worktree's git directory, removed at SessionEnd; they list
+    Edit, Write and NotebookEdit, not a file a Bash command changed. Empty outside a session. The index is the
+    checkout's, so a plain `git commit` takes what any session staged (0.4.15)."""
+    sid = lib.session_id(session)
+    d = lib.local_state_dir(root)
+    if not sid or not d.is_dir():
+        return {}
+    mine, theirs, want = set(), {}, set(relpaths)
+    for f in sorted(d.glob("session-*.json")):
+        other = f.name[len("session-"):-len(".json")]
+        try:
+            edited = json.loads(f.read_text(encoding="utf-8")).get("edited") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        # a record the hooks did not write is read as listing nothing: a raise here would fail the gate open
+        edited = {p for p in edited if isinstance(p, str)} if isinstance(edited, list) else set()
+        if lib.session_id(other) == sid:
+            mine = edited
+            continue
+        for rp in sorted(edited & want):
+            theirs.setdefault(rp, other)
+    return {rp: other for rp, other in theirs.items() if rp not in mine}
+
+
+# ---------------------------------------------------------------- perimeter fit (0.4.15)
+
+# a commit subject that says `unit <id>` (`(unit <id>)`, `(#105, unit <id>)`) names that unit; an id, one character or more, ends in a letter or digit
+UNIT_TAG_RE = re.compile(r"\bunit\s+([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?)")
+
+
+def resolve_unit_tag(tag: str, ids) -> tuple[str | None, bool]:
+    """(the unit a commit tag names, whether it was ambiguous). A tag is an id, or the start of exactly one id
+    followed by `-` (tele-claude tags `unit 20261008-1730` for `20261008-1730-activity-ledger-...`)."""
+    if tag in ids:
+        return tag, False
+    cands = [i for i in ids if i.startswith(tag + "-")]
+    return (cands[0], False) if len(cands) == 1 else (None, len(cands) > 1)
+
+
+def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict], dict]:
+    """How each unit's `perimeter:` fit the files its commits touched: ({unit id: fit}, counts over the history).
+    One pass over the commits of HEAD, merges left out. A commit counts for a unit when its subject says `unit <id>`,
+    the tag the charter-unit skill asks for (tele-claude's sessions wrote it before charter did); a subject that names two or more units counts for none, since its
+    files cannot be shared out, and the body is not read, because a squash merge lists every unit it carries there
+    (tele-claude b9f273d: 12 units, 107 files). Work committed under no tag, or under another unit's tag, is not seen.
+    A report, never a gate (0.4.15)."""
+    r = lib.git(root, "-c", "core.quotePath=false", "log", "--no-merges", "--format=%x1e%H%x1f%s%x1f", "--name-only", "HEAD")
+    ids = set(units)
+    paths_of: dict[str, set] = {uid: set() for uid in units}
+    commits = dict.fromkeys(units, 0)
+    seen = {"commits": 0, "untagged": 0, "ambiguous": 0, "several": 0}
+    for rec in r.stdout.split("\x1e")[1:] if r.returncode == 0 else []:
+        parts = rec.split("\x1f")
+        if len(parts) < 3:
+            continue
+        seen["commits"] += 1
+        named, unsure = set(), False
+        for tag in UNIT_TAG_RE.findall(parts[1]):
+            uid, amb = resolve_unit_tag(tag, ids)
+            unsure |= amb
+            if uid:
+                named.add(uid)
+        if len(named) != 1 or unsure:   # a tag two ids share names a second unit, whichever one it meant
+            seen["several" if named else "ambiguous" if unsure else "untagged"] += 1
+            continue
+        uid = named.pop()
+        commits[uid] += 1
+        paths_of[uid] |= {p for p in parts[2].splitlines() if p.strip()}
+    fits = {}
+    for uid, u in units.items():
+        per = lib.as_list(u.get("perimeter"))
+        every = sorted(paths_of[uid])
+        paths = [p for p in every if not p.startswith(lib.PERIMETER_EXEMPT)]   # the unit's own tasket is not its work
+        outside = [p for p in paths if per and not lib.matches_any(p, per)]
+        notes = lib.section(u.get("_body", ""), "Outside perimeter")
+        fits[uid] = {"commits": commits[uid], "touched": paths, "outside": outside,
+                     "outside_noted": [p for p in outside if p in notes or os.path.basename(p) in notes],
+                     "entries": per, "untouched_entries": [e for e in per if not any(lib.matches_any(p, [e]) for p in every)]}
+    return fits, seen
+
+
+def _names(items: list[str], n: int = 10) -> str:
+    return ", ".join(items[:n]) + (f", +{len(items) - n} more" if len(items) > n else "")
+
+
+def fit_text(fit: dict, short: bool = False) -> str:
+    """One unit's fit in words: `charter unit show <id>` (short=False) and a `charter synth` line (short=True)."""
+    if not fit["commits"]:
+        return "no commit message says `unit <id>` for this unit"
+    s = (f"{fit['commits']} commit(s), {len(fit['touched'])} path(s)" if short
+         else f"{fit['commits']} commit(s) name this unit, {len(fit['touched'])} path(s) touched")
+    if not fit["entries"]:
+        return s + "; no `perimeter:` declared"
+    out, noted = fit["outside"], fit["outside_noted"]
+    s += f"; {len(out)} outside the perimeter"
+    if out:
+        s += f" ({len(noted)} noted" + ("" if short else " under `## Outside perimeter`") + f"): {_names(out)}"
+    s += f"; {len(fit['entries']) - len(fit['untouched_entries'])} of {len(fit['entries'])} perimeter entries touched"
+    return s + (f"; untouched: {_names(fit['untouched_entries'])}" if fit["untouched_entries"] else "")
 
 
 # ---------------------------------------------------------------- memory (R8)

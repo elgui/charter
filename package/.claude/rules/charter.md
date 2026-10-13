@@ -65,7 +65,8 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
 ## Commands
 
     python3 .charter/bin/charter check --all      # run every gate on the change set since HEAD~1 (--base REF, --strict)
-    python3 .charter/bin/charter probe <id>       # run a unit's acceptance probes, print evidence lines
+    python3 .charter/bin/charter probe <id>       # run a unit's acceptance probes, print evidence lines; a failure prints its tails (--json: the record)
+    python3 .charter/bin/charter unit show <id>   # a unit, and how its perimeter fit the files its commits touched
     python3 .charter/bin/charter synth            # progress synthesis, anchored
     python3 .charter/bin/charter anchors <file>   # anchoring check on a deliverable
     python3 .charter/bin/charter decisions index  # regenerate the decision index

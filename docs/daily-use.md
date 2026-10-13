@@ -67,7 +67,7 @@ python3 .charter/bin/charter unit start <id>
 python3 .charter/bin/charter probe <id>
 ```
 
-`unit start` attributes the session's edits and cost to the unit; an engine sets `CHARTER_UNIT=<id>` instead (`package/.claude/rules/charter.md:7`). The choice is the session's: another session in the same checkout inherits it only while the unit is open (0.4.7). Before the work, the probe should fail. In the rehearsal:
+`unit start` attributes the session's edits and cost to the unit; an engine sets `CHARTER_UNIT=<id>` instead (`package/.claude/rules/charter.md:7`). The choice is the session's: another session in the same checkout does not inherit it (0.4.15); a choice made outside any session, from a terminal, is inherited by a session with none of its own while the unit is open (`docs/gates.md` § Perimeter). When a probe fails, `charter probe` prints each failed probe's stdout and stderr tails and the paths changed since the unit's base; `--json` gives the same record to a tool. `charter unit show <id>` prints how the unit's perimeter fit the files its commits touched. Before the work, the probe should fail. In the rehearsal:
 
 ```
 charter/probe block [.taskets/20260925-greet.md]: AC-1 probe failed: ... exited 1: ModuleNotFoundError: No module named 'app.greet'

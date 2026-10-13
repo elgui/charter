@@ -27,7 +27,7 @@ RAILS = """# Rails
 """
 
 UNIT_KEYS = {"schema", "charter", "id", "title", "status", "path", "rail", "kind", "perimeter", "decisions", "gate",
-             "acceptance_heading", "acceptance", "evidence", "log", "done_blockers"}
+             "acceptance_heading", "acceptance", "evidence", "log", "done_blockers", "perimeter_fit"}   # perimeter_fit: 0.4.15
 ROW_KEYS = {"line", "label", "text", "checked", "probe", "owner"}
 NEXT_KEYS = {"schema", "charter", "active", "rails", "open", "off_road", "done_without_acceptance", "owner_waiting"}
 RAIL_KEYS = {"id", "title", "status", "order", "units"}
@@ -83,7 +83,8 @@ class JsonVerbs(unittest.TestCase):
         charter(self.root, "unit", "start", "dw", env={"CLAUDE_CODE_SESSION_ID": "s2"})   # the checkout's last choice: dw
         self.assertEqual(self.json("unit", "show", "--session", "s1")["active"], "acc")
         self.assertEqual(self.json("unit", "show", "--session", "s1")["source"], "session")
-        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": VERSION, "active": "dw", "source": "checkout"})
+        # 0.4.15: a session with no unit of its own no longer inherits one another session chose (s2 chose dw)
+        self.assertEqual(self.json("unit", "show", "--session", "s3"), {"schema": 1, "charter": VERSION, "active": None, "source": None})
         self.assertEqual(self.json("unit", "show", env={"CLAUDE_CODE_SESSION_ID": "s1"})["active"], "acc")
         env = self.json("unit", "show", "--session", "s1", env={"CHARTER_UNIT": "off"})
         self.assertEqual((env["active"], env["source"]), ("off", "env"))   # as the gates read it: an engine's export wins
@@ -142,7 +143,8 @@ class JsonVerbs(unittest.TestCase):
             self.assertIn(x["text"], lines[x["line"] - 1])
         self.assertEqual(u["evidence"], [f"commit {self.sha}", "`$ python3 -c 'import app.health'` → exit 0"])
         self.assertEqual(u["log"], [f"2026-10-10 0{i}:00 step {i}" for i in range(2, 7)])   # the last five
-        self.assertEqual(u["done_blockers"], ["status is done but 3 acceptance box(es) are unchecked"])
+        # 0.4.15: the done gate names the boxes
+        self.assertEqual(u["done_blockers"], ["status is done but 3 acceptance box(es) are unchecked: AC-2, AC-3, a line without an id"])
 
     def test_line_numbers_past_a_nested_acceptance_heading(self):
         """A nested heading that starts with `Acceptance` again is not in the section's text, so `line` cannot count
@@ -236,7 +238,7 @@ class JsonVerbs(unittest.TestCase):
         self.assertEqual([d["id"] for d in n["done_without_acceptance"]], ["dnu"])
         self.assertEqual(n["owner_waiting"], len(self.json("owner")["items"]))
         self.assertGreaterEqual(n["owner_waiting"], 2)
-        self.assertEqual(self.json("next", "--session", "s9")["active"], "acc")   # the checkout's choice, still open
+        self.assertIsNone(self.json("next", "--session", "s9")["active"])   # 0.4.15: s1's choice is not s9's (it was until 0.4.14)
 
     def test_no_rails_file(self):
         """Without a road, `open` lists every open unit in the order the text `next` offers them (review of PR #13:

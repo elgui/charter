@@ -516,10 +516,13 @@ def facts(root: Path, chain: dict, n: int, rec: dict) -> tuple[str, dict]:
     out += ["Units moved:"] + (moved or ["- none"]) + groups.crossing(root, chain, moved_ids, changed)
     timeout = int((cfg.get("probes") or {}).get("timeout_s", 120))
     for uid, p, text in closed:
-        found, lines = checks.run_probes(root, text, p, timeout)
+        found, lines, records = checks.run_probes_recorded(root, text, p, timeout)
         failed += len(found)
-        out.append(f"Probes of {uid}, closed this session, re-run now: " + ("FAILED" if found else "pass"))
+        ids = [r["ac"] for r in records if r["outcome"] != "passed"]   # every one, though the lines below are cut
+        out.append(f"Probes of {uid}, closed this session, re-run now: " + ("FAILED" if found else "pass")
+                   + (f" ({', '.join(ids)})" if ids else ""))
         out += [f"  {l}" for l in lines[:10]]
+        out += [f"  {l}" for l in checks.failure_lines(records)[:48]]   # the tails the next session fixes from (0.4.15)
     chk = subprocess.run([sys.executable, "-B", str(root / ".charter" / "bin" / "charter"), "--root", str(root), "check", "--all", "--base", start or "HEAD~1"],
                          capture_output=True, text=True, cwd=str(root), timeout=600) if start else None
     if chk is not None:
