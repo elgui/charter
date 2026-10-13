@@ -511,5 +511,17 @@ class Watcher(unittest.TestCase):
                     self.assertIn(".taskets/u2.md, which only the owner merges", self.verdict(mid)["reason"])
 
 
+    # ---------------------------------------------------------------- /reviewPR of #17 (codex gpt-6-sol), 2026-10-13
+
+    def test_a_dry_run_keeps_no_verdict_for_the_real_run(self):
+        """A session may run `--dry-run`, with a judge of its own: nothing it judged is reused."""
+        hid = self.hand_over_check()
+        self.watch("run", "--dry-run", CLAUDECODE="1")
+        self.assertFalse((self.state / "judged").exists())
+        self.watch(FAKE_VERDICT='{"decision": "escalate", "reason": "the real judge says no", "probes_safe": false, "concerns": []}')
+        self.assertEqual(len(self.judged()), 2)
+        self.assertEqual(self.verdict(hid)["reason"], "the real judge says no")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -294,11 +294,11 @@ def neutral() -> Path:
     return d
 
 
-def judge(kind: str, payload: dict, use_judge: bool = True, item_id: str = "") -> dict:
+def judge(kind: str, payload: dict, use_judge: bool = True, item_id: str = "", dry: bool = False) -> dict:
     """Claude Sonnet's verdict on one act: no tools, no settings, no CLAUDE.md (`--safe-mode`), a budget cap, from a
     neutral directory. Any failure is an escalation, never a commit; so is a payload over JUDGE_CAP, which is never cut
     (review of 2026-10-13, item 6). A verdict is kept per item and payload, so an act that must wait for its next run
-    does not ask again."""
+    does not ask again; a dry run keeps none, since a session may run one, with a judge of its own choosing."""
     if not use_judge:
         return {"decision": "escalate", "reason": "the judge was not asked (--no-judge)", "probes_safe": False, "concerns": [], "by": "rules"}
     body = json.dumps(payload, ensure_ascii=False, indent=1)
@@ -326,7 +326,7 @@ def judge(kind: str, payload: dict, use_judge: bool = True, item_id: str = "") -
                 "concerns": [], "by": "rules"}
     model = next(iter(out.get("modelUsage") or {}), MODEL)
     v = dict(so, by=model, cost_usd=out.get("total_cost_usd"))
-    if item_id:
+    if item_id and not dry:
         memo.parent.mkdir(parents=True, exist_ok=True)
         memo.write_text(json.dumps({"digest": digest, "verdict": dict(v, cost_usd=0)}))
     return v
@@ -618,7 +618,7 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
         kinds = sorted({k for v in (item.get("kinds") or {}).values() for k in v})
         # what the judge must not miss first: a long diff comes last (review of 2026-10-13, item 6)
         payload = {k: item.get(k) for k in ("level", "level_from", "kinds", "probes", "branch", "message", "paths", "units", "diff")}
-        v = judge("/".join(kinds), payload, use_judge, item["id"])
+        v = judge("/".join(kinds), payload, use_judge, item["id"], dry)
         if v["decision"] != "commit":
             return hand_back(wt, plan, item, v["reason"], v["by"], dry)
         if item.get("probes"):
@@ -653,7 +653,7 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
         payload = {k: item.get(k) for k in ("level", "verb", "target", "status", "quote", "note")}
         payload["where_the_owner_said_it"] = json.loads(context)
         payload.update({k: item.get(k) for k in ("context", "diff")})
-        v = judge("ruling", payload, use_judge, item["id"])
+        v = judge("ruling", payload, use_judge, item["id"], dry)
         if v["decision"] != "commit":
             return hand_back(wt, plan, item, v["reason"], v["by"], dry)
         if dry:
@@ -678,7 +678,7 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
         why = [f"the merge method {item.get('method')!r} is not merge, squash or rebase"]
     if why:
         return hand_back(wt, plan, item, "; ".join(why), "rules", dry)
-    v = judge("merge", data, use_judge, item["id"])
+    v = judge("merge", data, use_judge, item["id"], dry)
     if v["decision"] != "commit":
         return hand_back(wt, plan, item, v["reason"], v["by"], dry)
     if dry:
