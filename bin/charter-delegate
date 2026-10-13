@@ -419,18 +419,26 @@ def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
                           env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH), timeout=120)
 
 
-def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str) -> list[str]:
+def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str) -> list[str] | None:
     """Why changing `path` from the PR's base to its head is an owner-only change (the engine's own rule), read from
-    GitHub at both commits."""
-    def at(sha):
-        r = gh_api(f"repos/{slug}/contents/{urllib.parse.quote(path)}?ref={sha}", "--jq", ".content")
+    GitHub at both commits; None when either cannot be read, which is never taken for "no change": a request that
+    failed, or a file over 1 MB, which the contents API serves without its content (/reviewPR of #17, 2026-10-13;
+    https://docs.github.com/en/rest/repos/contents#get-repository-content)."""
+    def at(sha):   # (read, text): text None for a file absent at that commit
+        r = gh_api(f"repos/{slug}/contents/{urllib.parse.quote(path)}?ref={sha}", "--jq", '.encoding + "\\t" + (.content // "")')
         if r.returncode != 0:
-            return None
+            return ("404" in r.stderr), None
+        enc, _, content = r.stdout.strip().partition("\t")
+        if enc != "base64":
+            return False, None
         try:
-            return base64.b64decode(r.stdout.strip() or "").decode("utf-8", "replace")
+            return True, base64.b64decode(content).decode("utf-8", "replace")
         except ValueError:
-            return None
-    return engine_checks.owner_only_changes(path, at(base_sha), at(head_sha), "commit")
+            return False, None
+    (ok_old, old), (ok_new, new) = at(base_sha), at(head_sha)
+    if not (ok_old and ok_new):
+        return None
+    return engine_checks.owner_only_changes(path, old, new, "commit")
 
 
 def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None) -> tuple[list[str], dict, str]:
@@ -481,7 +489,12 @@ def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None)
     touched = [f for f in names if f.startswith(PROTECTED_IN_PR) or f in PROTECTED_IN_PR]
     if not touched:
         maybe = [f for f in names if f not in DELEGATED_IN_PR and engine_checks.may_be_owner_only(f)]
-        touched = [f for f in maybe if pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f)]
+        read = {f: pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f) for f in maybe}
+        touched = [f for f, why_owner in read.items() if why_owner]
+        unread = [f for f, why_owner in read.items() if why_owner is None]
+        if unread:
+            why.append(f"PR #{pr}: GitHub would not give {', '.join(unread[:4])} at the PR's base and head, so the delegate cannot "
+                       "tell whether it is an owner-only change")
     if touched:
         why.append(f"PR #{pr} changes {', '.join(touched[:4])}, which only the owner merges")
     head = p.get("headRefOid", "")

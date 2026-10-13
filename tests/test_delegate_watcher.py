@@ -51,10 +51,15 @@ FAKE_GH = textwrap.dedent('''\
     elif a[:1] == ["api"] and "/contents/" in a[1]:   # a file of the PR at its base or head, from the test's repository
         from urllib.parse import unquote
         path, _, ref = a[1].split("/contents/", 1)[1].partition("?ref=")
+        if os.environ.get("FAKE_GH_CONTENTS") == "down":
+            sys.stderr.write("gh: Server Error (HTTP 502)\\n"); sys.exit(1)
         r = subprocess.run(["git", "-C", os.environ["FAKE_REPO"], "show", f"{ref}:{unquote(path)}"], capture_output=True)
         if r.returncode != 0:
             sys.stderr.write("gh: Not Found (HTTP 404)\\n"); sys.exit(1)
-        print(base64.b64encode(r.stdout).decode())
+        if os.environ.get("FAKE_GH_CONTENTS") == "large":   # over 1 MB: no content (encoding none)
+            print("none\\t")
+        else:
+            print("base64\\t" + base64.b64encode(r.stdout).decode())
     elif a[:1] == ["api"] and a[1].endswith("/files"):
         print("\\n".join(f["path"] + "\\t" + f.get("previous_filename", "") for f in pr.get("files") or []))
     elif a[:2] == ["pr", "view"] and "mergeCommit" in a:
@@ -250,13 +255,13 @@ class Watcher(unittest.TestCase):
         self.assertIn("not a line of a message the owner typed", v["reason"])
         self.assertEqual(self.judged(), [])
 
-    def merge(self, **pr):
+    def merge(self, env=None, **pr):
         self.prfile.write_text(json.dumps(a_pr(**pr)))
         set_config(self.root, delegate={"level": "open"})
         r = subprocess.run([sys.executable, str(self.root / ".charter" / "bin" / "charter"), "--root", str(self.root), "handover",
                             "--merge", "7"], capture_output=True, text=True, env=clean_env())
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.watch()
+        self.watch(**(env or {}))
         return json.loads((self.root / ".git" / "charter" / "merges" / "7.json").read_text())["id"] \
             if (self.root / ".git" / "charter" / "merges" / "7.json").exists() else None
 
@@ -498,19 +503,21 @@ class Watcher(unittest.TestCase):
             return head
         agents = pr_head(lambda t: t.replace("## Evidence\n", "## Evidence\n\n- tests: 3 passed\n"), "pr-agent")
         owners = pr_head(lambda t: tick(t, "AC-2"), "pr-owner")   # an `— owner: do` line, ticked
-        for head, want in ((agents, "merged"), (owners, "escalated")):
-            with self.subTest(want):
+        for head, want, env in ((agents, "merged", {}), (owners, "escalated", {}),
+                                (owners, "unread", {"FAKE_GH_CONTENTS": "down"}), (owners, "unread", {"FAKE_GH_CONTENTS": "large"})):
+            with self.subTest(want, **env):
                 for f in (self.root / ".git" / "charter" / "delegate").glob("*.json"):
                     f.unlink()
                 self.ghlog.unlink(missing_ok=True)
-                mid = self.merge(baseRefOid=base, headRefOid=head, files=[{"path": ".taskets/u2.md"}],
+                mid = self.merge(baseRefOid=base, headRefOid=head, files=[{"path": ".taskets/u2.md"}], env=env,
                                  comments=[{"author": {"login": "owner-login"}, "body": f"<!-- charter-review: pass sha={head} -->"}])
                 merged = [c for c in self.gh_calls() if c[:2] == ["pr", "merge"]]
                 if want == "merged":   # the request is dropped once merged
                     self.assertEqual(len(merged), 1, self.verdict(mid) if mid else "")
                 else:
                     self.assertFalse(merged)
-                    self.assertIn(".taskets/u2.md, which only the owner merges", self.verdict(mid)["reason"])
+                    self.assertIn(".taskets/u2.md, which only the owner merges" if want == "escalated"
+                                  else "GitHub would not give .taskets/u2.md", self.verdict(mid)["reason"])
 
 
     # ---------------------------------------------------------------- /reviewPR of #17 (codex gpt-6-sol), 2026-10-13
