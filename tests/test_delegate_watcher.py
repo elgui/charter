@@ -67,7 +67,12 @@ FAKE_GH = textwrap.dedent('''\
     elif a[:2] == ["pr", "view"]:
         print(json.dumps(pr))
     elif a[:2] == ["pr", "diff"]:
-        print("diff --git a/x b/x")
+        if os.environ.get("FAKE_GH_DIFF") == "fail":
+            sys.stderr.write("could not find pull request diff: HTTP 406: the diff exceeded the maximum number of lines\\n"); sys.exit(1)
+        files = [f["path"] for f in pr.get("files") or []]
+        if os.environ.get("FAKE_GH_DIFF") == "short":
+            files = files[:-1]
+        print("\\n".join(f"diff --git a/{f} b/{f}" for f in files))
     elif a[:2] == ["repo", "view"]:
         print("SQUASH")
     elif a[:2] == ["pr", "merge"]:
@@ -464,7 +469,9 @@ class Watcher(unittest.TestCase):
                  "listed 1 of its 150 changed files": ({"changedFiles": 150}, {}, {}),
                  "which only the owner merges": ({"files": [{"path": ".claude/commands/deploy.md"}]}, {}, {}),
                  "changes charter/config.json, which only the owner merges": (   # a rename away from it (/reviewPR of #17)
-                     {"files": [{"path": "app/config.json", "previous_filename": "charter/config.json"}]}, {}, {})}
+                     {"files": [{"path": "app/config.json", "previous_filename": "charter/config.json"}]}, {}, {}),
+                 "gave a diff of 0 of its 1 files (could not find pull request diff": ({}, {}, {"FAKE_GH_DIFF": "fail"}),
+                 "gave a diff of 1 of its 2 files": ({"files": [{"path": "app/a.py"}, {"path": "app/b.py"}]}, {}, {"FAKE_GH_DIFF": "short"})}
         for why, (pr, record, env) in cases.items():
             with self.subTest(why):
                 self.ghlog.unlink(missing_ok=True)

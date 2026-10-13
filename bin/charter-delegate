@@ -502,8 +502,15 @@ def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None)
              and any(m == head for m in re.findall(MARK_RE, c.get("body") or ""))]
     if not marks:
         why.append(f"PR #{pr} has no /reviewPR mark on its head {head[:10]} (a push after the review voids it)")
-    diff = gh("pr", "diff", pr, "-R", slug, cwd=neutral()).stdout
-    if len(diff) > 120_000 or len(p.get("body") or "") > 8000:
+    # the judge reads the whole diff or the owner does: a failed fetch, or one that leaves out files (GitHub cuts a very
+    # large diff), is never a short diff (/reviewPR of #17, 2026-10-13)
+    dr = gh("pr", "diff", pr, "-R", slug, cwd=neutral())
+    diff = dr.stdout if dr.returncode == 0 else ""
+    covered = sum(1 for l in diff.splitlines() if l.startswith("diff --git "))
+    if dr.returncode != 0 or covered != len(entries):
+        why.append(f"PR #{pr}: GitHub gave a diff of {covered} of its {len(entries)} files"
+                   + (f" ({(dr.stderr or '').strip()[-200:]})" if dr.returncode != 0 else "") + ", so the judge cannot read it whole")
+    elif len(diff) > 120_000 or len(p.get("body") or "") > 8000:
         why.append(f"PR #{pr} is too long for the judge to read whole (diff {len(diff)} characters)")
     data = {"pr": p.get("number"), "title": p.get("title"), "head": head, "files": files[:400], "body": (p.get("body") or "")[:8000],
             "url": p.get("url"), "review": (marks[-1]["body"][:4000] if marks else ""), "diff": diff[:120_000]}
