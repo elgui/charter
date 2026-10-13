@@ -269,8 +269,19 @@ def _ruling_note(rec: dict) -> str:
     return f"{rec['note']}; {words}" if rec.get("note") else words
 
 
+def _check_of(root: Path, rec: dict) -> str:
+    """The command a `rule <decision> active` runs before it rules: the decision's `check:`, written by whoever proposed
+    it. The delegate never runs it (/reviewPR of #17, 2026-10-13): it runs as the owner, unjudged, so the owner rules it."""
+    if rec.get("verb") != "rule" or rec.get("status") != "active":
+        return ""
+    return str((lib.decisions(root).get(rec.get("target")) or {}).get("check") or "")
+
+
 def _plan_ask(root: Path, cfg: dict, rec: dict, lv: dict) -> dict:
     why = []
+    check = _check_of(root, rec)
+    if check:
+        why.append(f"decision {rec['target']} runs its check `{check}` as it becomes active: the owner rules it")
     stale = lib.handover_stale(root, rec)
     if stale:
         why.append(f"stale: {stale}")
@@ -342,6 +353,10 @@ def record_ask(root: Path, cfg: dict, verb: str, target: str, status: str, quote
            "branch": lib.git(root, "branch", "--show-current").stdout.strip(),
            "head": lib.git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip() or None, "paths": paths}
     rec["id"] = _id("a", rec["at"], verb, target, status, quote, rec["head"])
+    check = _check_of(root, rec)
+    if check:
+        raise Refused(f"decision {target} runs its check `{check}` as it becomes active, which the delegate never runs: the owner "
+                      f"runs `python3 .charter/bin/charter rule {target} active` themselves")
     diff, refused = _verb_diff(root, cfg, dict(rec))
     if refused:
         raise Refused(f"`charter {verb} {target} {status}` refuses it now: {refused}")

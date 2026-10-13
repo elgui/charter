@@ -746,5 +746,45 @@ class Review20261013(Base):
             self.assertIn("never run the delegate's acts", bash(no), no)
 
 
+class ReviewPR17(Base):
+    """/reviewPR of #17 (codex gpt-6-sol, 2026-10-13)."""
+
+    def test_a_ruling_that_would_run_a_decisions_check_is_the_owners(self):
+        mark = self.root.parent / f"{self.root.name}-checked"
+        self.addCleanup(lambda: mark.unlink(missing_ok=True))
+        p = self.root / "charter" / "decisions" / "cache-ttl.md"
+        p.write_text(PROPOSED.replace("kind: design\n", f"kind: design\ncheck: touch {mark}\n"))
+        git(self.root, "add", "-A")
+        owner_commit(self.root, "a proposal with a check")
+        set_config(self.root, delegate={"level": "answers"})
+        r = charter(self.root, "handover", "--ask", "rule", "cache-ttl", "active", "--quote", "yes, make cache-ttl active")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("runs its check", r.stderr)
+        # a record that got there anyway (written by hand, or before the check was added) is not performed either
+        asks = self.root / ".git" / "charter" / "asks"
+        asks.mkdir(parents=True, exist_ok=True)
+        rec = {"id": "a0123456789ab", "at": "2026-10-13T10:00:00+00:00", "verb": "rule", "target": "cache-ttl", "status": "active",
+               "quote": "yes, make cache-ttl active", "session": "s", "branch": "main", "head": self.head(),
+               "paths": ["charter/decisions/cache-ttl.md", "charter/decisions/INDEX.md"]}
+        (asks / "a0123456789ab.json").write_text(json.dumps(rec))
+        r = charter(self.root, "delegate", "perform", "--id", "a0123456789ab", "--judge", "stub")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("runs its check", r.stderr)
+        self.assertFalse(mark.exists())
+
+    def test_a_ruled_file_with_uncommitted_changes_is_not_ruled(self):
+        """Raised by the review and found already handled: every verb refuses a dirty file (owner._clean)."""
+        set_config(self.root, delegate={"level": "answers"})
+        charter(self.root, "handover", "--ask", "rule", "cache-ttl", "active", "--quote", "yes, make cache-ttl active")
+        aid = json.loads(next((self.root / ".git" / "charter" / "asks").glob("*.json")).read_text())["id"]
+        p = self.root / "charter" / "decisions" / "cache-ttl.md"
+        p.write_text(p.read_text() + "\nan edit nobody judged\n")
+        r = charter(self.root, "delegate", "perform", "--id", aid, "--judge", "stub")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("has uncommitted changes", r.stderr)
+        self.assertIn("an edit nobody judged", p.read_text())
+        self.assertNotIn("an edit nobody judged", git(self.root, "show", "HEAD:charter/decisions/cache-ttl.md").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
