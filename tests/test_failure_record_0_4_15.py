@@ -191,6 +191,22 @@ class ChainBriefingTails(ChainCase):
         self.assertIn("AC-1 failed: ", facts)
         self.assertIn("| AssertionError", facts)
 
+    def test_every_failed_probe_is_named_though_the_tails_are_cut(self):
+        """Three probes that fail loud fill the 48 lines of tails before the third: its id is still in the briefing."""
+        self.start()
+        self.join(1, "s1")
+        loud = "python3 -c \"import sys; [print('line', i, file=f) for i in range(30) for f in (sys.stdout, sys.stderr)]; sys.exit(1)\""
+        u = self.root / ".taskets" / "u1.md"
+        boxes = "\n".join(f"- [x] AC-{i}: loud {i} — probe: `{loud}`" for i in (1, 2, 3))
+        u.write_text(re.sub(r"(?m)^- \[ \] AC-1: .*$", lambda m: boxes, u.read_text()).replace("status: next", "status: done")
+                     .replace("## Evidence\n", "## Evidence\n\n- `$ python3 -c ...` → exit 0\n"))
+        commit_all(self.root, "u1 done")
+        self.write_handoff(1, status="complete", next_unit="none", done="- u1 closed")
+        chain_cli(self.root, "next", sid="s1")
+        facts = (chainlib.link_dir(self.root, self.chain["id"], 1) / "facts.md").read_text()
+        self.assertIn("Probes of u1, closed this session, re-run now: FAILED (AC-1, AC-2, AC-3)", facts)
+        self.assertNotIn("AC-3 failed: ", facts)   # (guard) the tails of the third were cut
+
 
 # ---------------------------------------------------------------- K12: perimeter fit
 
