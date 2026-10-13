@@ -796,8 +796,8 @@ def edited_by_other_sessions(root: Path, session: str | None, relpaths: list[str
 
 # ---------------------------------------------------------------- perimeter fit (0.4.15)
 
-# a commit subject that says `unit <id>` (`(unit <id>)`, `(#105, unit <id>)`) names that unit; an id ends in a letter or digit
-UNIT_TAG_RE = re.compile(r"\bunit\s+([A-Za-z0-9][\w.-]*[A-Za-z0-9])")
+# a commit subject that says `unit <id>` (`(unit <id>)`, `(#105, unit <id>)`) names that unit; an id, one character or more, ends in a letter or digit
+UNIT_TAG_RE = re.compile(r"\bunit\s+([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?)")
 
 
 def resolve_unit_tag(tag: str, ids) -> tuple[str | None, bool]:

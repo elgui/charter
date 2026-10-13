@@ -270,6 +270,15 @@ class PerimeterFit(Project):
         rows = synth_section(charter(self.root, "synth").stdout, "Perimeter fit")
         self.assertIn("1 names an id two or more units share, 2 name two or more units", rows[0])
 
+    def test_a_one_character_id(self):
+        """A tasket's id is its file's stem or its `id:`, so `x` is one; `(unit x).` names it, the dot not included."""
+        put(self.root, "x", probe_unit("x", ["true"], perimeter="[app/health.py]"))
+        commit_all(self.root, "taskets: x")
+        (self.root / "app" / "health.py").write_text("MAX_RETRIES = 3\n# x\n")
+        commit_all(self.root, "health again (unit x).")
+        fit = json.loads(charter(self.root, "unit", "show", "x", "--json").stdout)["perimeter_fit"]
+        self.assertEqual((fit["commits"], fit["touched"]), (1, ["app/health.py"]))
+
     def test_synth_has_one_line_per_unit(self):
         r = charter(self.root, "synth")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
