@@ -13,6 +13,7 @@ open on its own errors, as every charter gate does."""
 import json
 import os
 import re
+import shlex
 import sys
 sys.dont_write_bytecode = True
 from pathlib import Path
@@ -24,9 +25,87 @@ from pathlib import Path
 # spells the command is denied too
 OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|]*?\s(run|commit)\b", re.M)
 # the owner's delegate (0.4.14): its acts (`charter delegate commit|perform|settle`), setting a level
-# (`charter delegate level <name>`) and the watcher's run (`charter-delegate run`) are never an agent's
+# (`charter delegate level <name>`) and the watcher's run (`charter-delegate run`, `--dry-run` aside) are never an
+# agent's. Read word by word (delegate_act), so a commit message or a grep that names them passes (review of 2026-10-13,
+# item 9); the patterns are the fallback for a line the shell lexer cannot read
 DELEGATE_ACT_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sdelegate\b[^\n;&|]*?\s(commit|perform|settle|level\s+(?:strict|routine|answers|open))\b", re.M)
 WATCHER_RUN_RE = re.compile(r"charter-delegate\b[^\n;&|]*?\s(run)\b", re.M)
+LEVELS = ("strict", "routine", "answers", "open")
+SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
+
+
+def _commands(line: str):
+    """Each simple command of a shell line, as its words."""
+    lex = shlex.shlex(line.replace("\n", " ; "), posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    cur = []
+    for tok in list(lex) + [";"]:
+        if tok and set(tok) <= set("();<>|&"):
+            if cur:
+                yield cur
+            cur = []
+        else:
+            cur.append(tok)
+
+
+def _substitutions(line: str) -> list[str]:
+    """The text of each `$(...)` and backtick substitution outside single quotes: the shell runs them, even inside a
+    double-quoted commit message."""
+    out, i, q = [], 0, None
+    while i < len(line):
+        c = line[i]
+        if q == "'":
+            q = None if c == "'" else q
+        elif c == "\\":
+            i += 1
+        elif c == "'" and q is None:
+            q = "'"
+        elif c == '"':
+            q = None if q == '"' else '"'
+        elif c == "`":
+            j = line.find("`", i + 1)
+            j = len(line) if j < 0 else j
+            out.append(line[i + 1:j])
+            i = j
+        elif line.startswith("$(", i):
+            depth, j = 1, i + 2
+            while j < len(line) and depth:
+                depth += {"(": 1, ")": -1}.get(line[j], 0)
+                j += 1
+            out.append(line[i + 2:j - 1])
+            i = j - 1
+        i += 1
+    return out
+
+
+def delegate_act(line: str, depth: int = 0) -> bool:
+    """Whether a Bash line runs one of the delegate's acts or the watcher (DELEGATE_ACT_RE, WATCHER_RUN_RE): the charter
+    CLI by any path, after any wrapper (`env -u X`, `timeout 30`, `python3 -B`), inside `sh -c`, `eval` or a command
+    substitution. A quoted mention, as in a commit message or a grep pattern, is one word and does not count."""
+    if depth > 3:
+        return False
+    if any(delegate_act(sub, depth + 1) for sub in _substitutions(line)):
+        return True
+    try:
+        cmds = list(_commands(line))
+    except ValueError:   # unbalanced quotes: the patterns decide
+        bare = line.replace("'", "").replace('"', "")
+        return bool(DELEGATE_ACT_RE.search(bare) or WATCHER_RUN_RE.search(bare))
+    for words in cmds:
+        for i, w in enumerate(words):
+            name, rest = os.path.basename(w.strip("`")), words[i + 1:]
+            if name in SHELLS and "-c" in rest and rest.index("-c") + 1 < len(rest):
+                if delegate_act(rest[rest.index("-c") + 1], depth + 1):
+                    return True
+            elif name == "eval" and delegate_act(" ".join(rest), depth + 1):
+                return True
+            elif name == "charter" and "delegate" in rest:
+                act = [x for x in rest[rest.index("delegate") + 1:] if not x.startswith("-")]
+                if act and (act[0] in ("commit", "perform", "settle") or (act[0] == "level" and len(act) > 1 and act[1] in LEVELS)):
+                    return True
+            elif name == "charter-delegate" and "run" in rest and "--dry-run" not in rest:
+                return True
+    return False
 
 
 def common_git_dir(start: Path):
@@ -81,7 +160,7 @@ def gate() -> int:
                           "and run `python3 .charter/bin/charter handover`: it prints the line the owner runs."}}))
         return 0
     bare = command.replace("'", "").replace('"', "")
-    if ev == "PreToolUse" and (DELEGATE_ACT_RE.search(bare) or WATCHER_RUN_RE.search(bare)):
+    if ev == "PreToolUse" and command and delegate_act(command):
         # the delegate acts from cron, outside any session; an agent that ran it would clear its own owner act
         print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny", "permissionDecisionReason":
                           "charter: the owner's delegate runs outside Claude Code, from cron, and only the owner sets its level. "

@@ -176,7 +176,7 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                            line=_line_of(_read(root, v["_path"]), r"^status:"), ask=str(v.get("ask") or "") or None,
                            options=_options(root, "approve", k, CHANGE_RULINGS, {}),
                            perform=perform_argv(root, "approve", k, "{answer}")))
-    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
+    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "-z").stdout.split("\0") if x]
     mine = list(checks.owner_only_staged(root, cfg, staged))
     if mine:
         # 0.4.12: once `charter handover` recorded it, the owner's line commits it; until then, that is the next step
@@ -373,24 +373,28 @@ def _committed_decisions(root: Path, override: tuple[str, str]) -> dict[str, dic
 
 def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | None, dry_run: bool, delegate: bool = False) -> int:
     """Write the files, stage them and commit exactly them as the owner; roll back when the commit is refused. For the
-    owner's delegate (0.4.14, delegate.perform) the committer is the delegate and the owner switch is not set."""
+    owner's delegate (0.4.14, delegate.perform) the commit is built from the new texts alone, the committer is the
+    delegate and the owner switch is not set (_delegate_commit)."""
     if trailer and not TRAILER_RE.match(trailer):
         raise Refused(f"--trailer {trailer!r} is not a `Key: value` git trailer")
     old = {rp: ((root / rp).read_text(encoding="utf-8") if (root / rp).exists() else None) for rp in writes}
-    args = ["git", "-C", str(root), "commit", "-q", "-m", message] + (["-m", trailer] if trailer else []) + ["--", *writes]
+    # the paths are literal: a file named like a pattern never sweeps another into the commit (review of 2026-10-13, item 1)
+    args = ["git", "-C", str(root), "--literal-pathspecs", "commit", "-q", "-m", message] + (["-m", trailer] if trailer else []) + ["--", *writes]
     if dry_run:
         for rp, new in writes.items():
             sys.stdout.writelines(difflib.unified_diff((old[rp] or "").splitlines(True), new.splitlines(True), f"a/{rp}", f"b/{rp}"))
-        print(f"\nwould commit, " + ("as the owner's delegate (committer the delegate, no owner switch)" if delegate
+        print(f"\nwould commit, " + ("as the owner's delegate (committer the delegate, no owner switch, exactly these files)" if delegate
               else "as the owner (the owner switch set for this one commit only)") + f":\n  {shlex.join(args)}")
         return 0
-    before = set(lib.git(root, "diff", "--cached", "--name-only", "--", *writes).stdout.split())
-    staged = [l.split(None, 3) for l in lib.git(root, "ls-files", "-s", "--", *before).stdout.splitlines()] if before else []
+    if delegate:
+        return _delegate_commit(root, writes, [message] + ([trailer] if trailer else []))
+    before = set(lib.git(root, "--literal-pathspecs", "diff", "--cached", "--name-only", "-z", "--", *writes).stdout.split("\0")) - {""}
+    staged = [l.split(None, 3) for l in lib.git(root, "--literal-pathspecs", "ls-files", "-s", "--", *before).stdout.splitlines()] if before else []
     for rp, new in writes.items():
         (root / rp).parent.mkdir(parents=True, exist_ok=True)
         (root / rp).write_text(new, encoding="utf-8")
-    lib.git(root, "add", "--", *writes, check=True)
-    env = lib.delegate_env() if delegate else dict(os.environ, **{OWNER_SWITCH: "1"})
+    lib.git(root, "--literal-pathspecs", "add", "--", *writes, check=True)
+    env = dict(os.environ, **{OWNER_SWITCH: "1"})
     r = subprocess.run(args, env=env, capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         for rp, text in old.items():
@@ -400,12 +404,44 @@ def _commit(root: Path, writes: dict[str, str], message: str, trailer: str | Non
                 (root / rp).write_text(text, encoding="utf-8")
         unstage = [rp for rp in writes if rp not in before]
         if unstage:
-            lib.git(root, "reset", "-q", "--", *unstage)
+            lib.git(root, "--literal-pathspecs", "reset", "-q", "--", *unstage)
         for mode, blob, _, rp in staged:   # what another session staged goes back into the index as it was
             lib.git(root, "update-index", "--cacheinfo", f"{mode},{blob},{rp}")
         raise Refused("the commit was refused, so nothing changed:\n" + (r.stdout + r.stderr).strip())
     sha = lib.git(root, "rev-parse", "--short", "HEAD").stdout.strip()
-    print(f"committed {sha} as the owner{chr(39) + 's delegate' if delegate else ''}: {message} ({', '.join(writes)}); not pushed")
+    print(f"committed {sha} as the owner: {message} ({', '.join(writes)}); not pushed")
+    return 0
+
+
+def _delegate_commit(root: Path, writes: dict[str, str], messages: list[str]) -> int:
+    """The delegate's commit of a ruling (delegate.perform): the new texts as blobs, committed through a private index
+    with the gate of this engine, never the project's hook (delegate.write_commit); then the tree and the index take
+    the committed texts, so nothing shows as changed. Raises Refused when it is refused; then nothing changed."""
+    import delegate
+    modes, entries = {}, {}
+    for entry in lib.git(root, "--literal-pathspecs", "ls-tree", "-z", "HEAD", "--", *writes).stdout.split("\0"):
+        if "\t" in entry:
+            meta, rp = entry.split("\t", 1)
+            modes[rp] = meta.split()[0]
+    for rp, new in writes.items():
+        # from stdin, with no path: no filter of the project's config runs
+        h = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=new.encode("utf-8"), capture_output=True)
+        if h.returncode != 0:
+            raise Refused(f"git could not store {rp}: {h.stderr.decode(errors='replace').strip()}")
+        entries[rp] = (modes.get(rp, "100644"), h.stdout.decode().strip())
+    try:
+        sha = delegate.write_commit(root, entries, messages, messages[-1])
+    except delegate.Refused as e:   # delegate.Busy goes up: the watcher tries again on its next run
+        raise Refused(f"the commit was refused, so nothing changed: {e}")
+    for rp, new in writes.items():
+        (root / rp).parent.mkdir(parents=True, exist_ok=True)
+        (root / rp).write_text(new, encoding="utf-8")
+    info = "".join(f"{m} {b}\t{rp}\0" for rp, (m, b) in entries.items())
+    u = subprocess.run(["git", "-C", str(root), "update-index", "-z", "--index-info"], input=info.encode("utf-8"), capture_output=True)
+    if u.returncode != 0:
+        print(f"committed {sha[:7]}, but the index could not take it ({u.stderr.decode(errors='replace').strip()}): "
+              f"`git reset -q -- {' '.join(shlex.quote(p) for p in writes)}` makes it match", file=sys.stderr)
+    print(f"committed {sha[:7]} as the owner's delegate: {messages[0]} ({', '.join(writes)}); not pushed")
     return 0
 
 

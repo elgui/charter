@@ -937,15 +937,20 @@ def owner_act_kinds(rp: str, old: str | None, new: str | None, context: str = "c
     return ["structural"]
 
 
+ENGINE_FRAGMENT = Path(__file__).resolve().parent / "settings-fragment.json"
+
+
 def staged_fragment(root: Path) -> dict | None:
-    """The package's settings fragment as staged, when it is the installer's (its hash is the staged manifest's)."""
-    read = lambda f: blob(root, f":{f}")
-    data = read(lib.SETTINGS_FRAGMENT)
-    if data is None or not release_change(lib.SETTINGS_FRAGMENT, read):
-        return None
+    """The settings fragment an upgrade's settings change is measured against: the one that ships with this engine, and
+    only when the staged copy is that same file. A fragment the staged manifest vouches for is not enough, since an
+    agent can write both (review of 2026-10-13, item 4). In a session the engine is the project's own, so the answer is
+    advisory; the watcher runs the engine of its own charter checkout, which decides."""
     try:
-        frag = json.loads(data)
-    except ValueError:
+        mine = ENGINE_FRAGMENT.read_bytes()
+        frag = json.loads(mine)
+    except (OSError, ValueError):
+        return None
+    if blob(root, f":{lib.SETTINGS_FRAGMENT}") != mine:
         return None
     return frag if isinstance(frag, dict) else None
 

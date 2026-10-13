@@ -112,7 +112,7 @@ def stage(project: Path, rels: list[str], message: str, show: bool = True) -> li
     if not rels:
         return []
     subprocess.run(["git", "-C", str(project), "add", "-A", "--", *rels], check=True)
-    staged = subprocess.run(["git", "-C", str(project), "diff", "--cached", "--name-only", "-z", "--", *rels],
+    staged = subprocess.run(["git", "-C", str(project), "diff", "--cached", "--name-only", "--no-renames", "-z", "--", *rels],
                             capture_output=True, text=True).stdout.split("\0")
     staged = [r for r in staged if r]
     if staged and show:
@@ -585,6 +585,9 @@ def do_fleet_levels(projects: list[Path], a) -> int:
         except charter_delegate.Refused as e:
             print(f"{name}: refused: {e}")
             failed.append(name)
+    if not a.dry_run and len(failed) < len(want):
+        print("the owner's delegate reads each level on the default branch on GitHub too: a lowered level counts once that "
+              "branch is pushed (`charter-delegate pins` shows both readings)")
     if failed:
         print(f"not set: {', '.join(failed)}")
     return 1 if failed else 0

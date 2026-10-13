@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import checks
@@ -30,9 +31,17 @@ import lib
 ASKS, MERGES, VERDICTS = "asks", "merges", "delegate"
 ASK_VERBS = ("rule", "approve", "rail")
 MIN_QUOTE = 12            # the owner's words, as typed: long enough that a stray match is unlikely
-DIFF_CAP = 60_000         # bytes of diff or context a plan carries for the judge
+DIFF_CAP = 60_000         # bytes of diff or context a plan carries for the judge; past it the item goes to the owner
 RESULTS = ("committed", "performed", "merged", "escalated", "failed")
 DONE = ("committed", "performed", "merged")
+FILE_MODES = ("100644", "100755")   # a symlink (120000) or a submodule (160000) is never the delegate's to commit
+# git as the delegate runs it: no hook, no fsmonitor, no signing program of the project's config runs (review of
+# 2026-10-13, item 3); the watcher also sets these for every git command the engine starts (bin/charter-delegate)
+SAFE_GIT = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false")
+ENGINE = Path(__file__).resolve().parent / "bin" / "charter"
+# a probe that only prints is a check the owner makes by hand (`echo "console: status = In production"`): it always
+# passes, so rerunning it proves nothing
+MANUAL_PROBE_RE = re.compile(r"^\s*(?:echo|printf|true|:)(?:\s[^;&|`$()]*)?$")
 
 
 class Refused(Exception):
@@ -70,9 +79,21 @@ def _read(p: Path) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _cap(s: str) -> str:
+def _cap(s: str, cut: list | None = None, name: str = "") -> str:
+    """`s` up to DIFF_CAP bytes; a cut is noted in `cut`, and an item with a cut goes to the owner, since the judge
+    would not have read all of it (review of 2026-10-13, item 6)."""
     b = s.encode("utf-8", "replace")
-    return s if len(b) <= DIFF_CAP else b[:DIFF_CAP].decode("utf-8", "ignore") + "\n[... cut at {} bytes]".format(DIFF_CAP)
+    if len(b) <= DIFF_CAP:
+        return s
+    if cut is not None:
+        cut.append(name or "a field")
+    return b[:DIFF_CAP].decode("utf-8", "ignore") + "\n[... cut at {} bytes]".format(DIFF_CAP)
+
+
+def _git(root: Path, *args: str, env: dict | None = None, input: str | None = None) -> subprocess.CompletedProcess:
+    """git as the delegate runs it (SAFE_GIT), paths literal."""
+    return subprocess.run(["git", *SAFE_GIT, "--literal-pathspecs", "-C", str(root), *args], capture_output=True,
+                          encoding="utf-8", errors="replace", env=env, input=input)
 
 
 def refuse_in_session(what: str) -> None:
@@ -138,10 +159,14 @@ def find(root: Path, item_id: str) -> dict | None:
 
 # ---------------------------------------------------------------- the plan the watcher reads
 
-def _blob_now(root: Path, rp: str) -> str | None:
-    if not (root / rp).exists() and not (root / rp).is_symlink():
-        return None
-    return lib.git(root, "hash-object", "--", rp).stdout.strip() or None
+def _head_modes(root: Path, paths: list[str]) -> dict[str, str]:
+    """Each path's mode in HEAD; absent when HEAD has no such file."""
+    out = {}
+    for entry in _git(root, "ls-tree", "-z", "HEAD", "--", *paths).stdout.split("\0"):
+        if "\t" in entry:
+            meta, rp = entry.split("\t", 1)
+            out[rp] = meta.split()[0]
+    return out
 
 
 def _closed_probes(root: Path, rp: str, kinds_by_key: dict[str, str]) -> list[dict]:
@@ -157,23 +182,43 @@ def _closed_probes(root: Path, rp: str, kinds_by_key: dict[str, str]) -> list[di
     return out
 
 
+def recorded_entries(rec: dict) -> dict[str, tuple[str, str] | None]:
+    """What a handover recorded, path by path: (mode, blob), None for a removal. A record without modes (made before
+    they were kept) gives {}, so nothing is committed from it."""
+    staged, modes = rec.get("staged") or {}, rec.get("modes")
+    if not isinstance(modes, dict) or not isinstance(staged, dict):
+        return {}
+    return {str(p): ((modes.get(p), staged.get(p)) if staged.get(p) else None) for p in rec.get("paths") or []}
+
+
 def _plan_commit(root: Path, cfg: dict, rec: dict, lv: dict) -> dict:
+    """The delegate commits what the handover recorded, blob by blob (`commit`); the index must still hold exactly it,
+    and the tree does not matter, since nothing is read from it."""
     paths = [str(p) for p in rec.get("paths") or []]
-    recorded = rec.get("staged") or {}
-    index = lib.staged_blobs(root, paths)
-    changed = [p for p in paths if index.get(p) != recorded.get(p) or _blob_now(root, p) != recorded.get(p)]
+    recorded = recorded_entries(rec)
+    index = lib.staged_entries(root, paths)
+    why = []
+    if not recorded:
+        why.append("the handover was recorded without file modes; `charter handover` records it again")
+    changed = [p for p in paths if recorded and index.get(p) != recorded.get(p)]
+    odd = [p for p, e in recorded.items() if e and e[0] not in FILE_MODES]
     kinds = checks.owner_kinds_staged(root, cfg, paths)
+    head_modes = _head_modes(root, list(kinds))
+    moded = [p for p in kinds if recorded.get(p) and recorded[p][0] != head_modes.get(p, "100644")]
     union = {k for v in kinds.values() for k in v}
     probes = []
     for rp in kinds:
         if rp.startswith(lib.TASKETS_DIR + "/") and "owner-check" in kinds[rp]:
             probes += _closed_probes(root, rp, checks.owner_line_kinds(checks.head_text(root, rp), checks.staged_text(root, rp)))
     stale = lib.handover_stale(root, rec)
-    why = []
     if stale:
         why.append(f"stale: {stale}")
     if changed:
-        why.append(f"changed since the handover, in the index or the tree: {', '.join(changed[:6])}")
+        why.append(f"the index changed since the handover: {', '.join(changed[:6])}")
+    if odd:
+        why.append(f"a symlink or a submodule is never the delegate's to commit: {', '.join(odd[:6])}")
+    if moded:
+        why.append(f"an owner-only file changes mode: {', '.join(moded[:6])}")
     if not kinds:
         why.append("nothing staged is the owner's any more")
     elif not lib.delegable(union, lv["level"]):
@@ -182,9 +227,16 @@ def _plan_commit(root: Path, cfg: dict, rec: dict, lv: dict) -> dict:
     missing = [f"{p['path']} {p['key']}" for p in probes if not p["probe"]]
     if missing:
         why.append(f"no probe to rerun on {', '.join(missing)}")
-    diff = lib.git(root, "diff", "--cached", "--no-color", "--", *paths).stdout
-    units = {rp: _cap(checks.staged_text(root, rp)) for rp in kinds if rp.startswith(lib.TASKETS_DIR + "/")}
-    return {"paths": paths, "message": rec.get("message"), "kinds": kinds, "probes": probes, "diff": _cap(diff),
+    manual = [f"{p['path']} {p['key']}" for p in probes if p["probe"] and MANUAL_PROBE_RE.match(p["probe"])]
+    if manual:
+        why.append(f"the probe of {', '.join(manual)} only prints: it is a check the owner makes by hand")
+    cut: list[str] = []
+    diff = _git(root, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--", *paths).stdout
+    units = {rp: _cap(checks.staged_text(root, rp), cut, rp) for rp in kinds if rp.startswith(lib.TASKETS_DIR + "/")}
+    diff = _cap(diff, cut, "the diff")
+    if cut:
+        why.append(f"too long for the judge to read whole ({', '.join(cut)} over {DIFF_CAP} bytes)")
+    return {"paths": paths, "message": rec.get("message"), "kinds": kinds, "probes": probes, "diff": diff,
             "units": units, "delegable": not why, "why_not": "; ".join(why)}
 
 
@@ -227,22 +279,29 @@ def _plan_ask(root: Path, cfg: dict, rec: dict, lv: dict) -> dict:
     diff, refused = _verb_diff(root, cfg, rec)
     if refused:
         why.append(f"`charter {rec['verb']}` refuses it now: {refused}")
-    context = {p: _cap(checks.head_text(root, p)) for p in rec.get("paths") or [] if not p.endswith("INDEX.md")}
+    cut: list[str] = []
+    context = {p: _cap(checks.head_text(root, p), cut, p) for p in rec.get("paths") or [] if not p.endswith("INDEX.md")}
+    diff = _cap(diff, cut, "the diff")
+    if cut:
+        why.append(f"too long for the judge to read whole ({', '.join(cut)} over {DIFF_CAP} bytes)")
     return {"verb": rec["verb"], "target": rec["target"], "status": rec["status"], "quote": rec.get("quote"),
-            "session": rec.get("session"), "cwd": rec.get("cwd"), "note": rec.get("note"), "diff": _cap(diff),
+            "session": rec.get("session"), "cwd": rec.get("cwd"), "note": rec.get("note"), "diff": diff,
             "context": context, "delegable": not why, "why_not": "; ".join(why)}
 
 
 def _plan_merge(root: Path, rec: dict, lv: dict) -> dict:
     why = [] if lib.delegable({"merge"}, lv["level"]) else [f"level {lv['level']} (from {lv['from']}) keeps merges for the owner"]
+    if rec.get("method") not in (None, "merge", "squash", "rebase"):
+        why.append(f"the merge method {rec.get('method')!r} is not merge, squash or rebase")
     return {"pr": rec.get("pr"), "method": rec.get("method"), "base": rec.get("base"),
             "delegable": not why, "why_not": "; ".join(why)}
 
 
-def plan(root: Path, cfg: dict) -> dict:
-    """What waits on the delegate in this checkout, with what the level allows and why not: data only, it changes nothing."""
-    lv_branch = lib.delegate_level(root)
-    lv_main = lib.delegate_level(root, branch_too=False)
+def plan(root: Path, cfg: dict, cap: tuple[str, str] | None = None) -> dict:
+    """What waits on the delegate in this checkout, with what the level allows and why not: data only, it changes nothing.
+    `cap` is the watcher's reading of the level on GitHub (lib.delegate_level)."""
+    lv_branch = lib.delegate_level(root, cap=cap)
+    lv_main = lib.delegate_level(root, branch_too=False, cap=cap)
     items = []
     for rec in pending(root):
         lv = lv_main if rec["type"] == "merge" else lv_branch
@@ -315,7 +374,7 @@ def record_merge(root: Path, pr: int, method: str | None = None) -> dict:
     rec = {"at": _now(), "by": "charter handover --merge", "pr": int(pr), "method": method, "base": lib.default_branch(root),
            "branch": lib.git(root, "branch", "--show-current").stdout.strip(),
            "head": lib.git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip() or None}
-    rec["id"] = _id("m", rec["at"], rec["pr"])
+    rec["id"] = _id("m", rec["at"], rec["pr"], time.time_ns())   # a new request is a new item, even within the second
     for old in _merges(root):   # one request per pull request: a new one replaces the old
         if old.get("pr") == rec["pr"]:
             (_sub(root, MERGES) / f"{old['pr']}.json").unlink(missing_ok=True)
@@ -329,9 +388,49 @@ def _trailer(level: str, by: str, item_id: str) -> str:
     return f"{lib.DELEGATE_TRAILER}: level {level}; judged by {by}; {item_id}"
 
 
-def commit(root: Path, cfg: dict, item_id: str, by: str, reason: str) -> dict:
-    """Commit a recorded handover as the delegate: exactly the blobs recorded (in the index and the tree), with the
-    message recorded, the delegate as committer and the owner as author, and a trailer naming the verdict."""
+def write_commit(root: Path, entries: dict[str, tuple[str, str] | None], messages: list[str], label: str) -> str:
+    """Commit exactly `entries` (path -> (mode, blob), None to remove) on top of HEAD as the delegate, and move HEAD
+    (its branch, or a detached HEAD) to it; returns the commit. The commit is built in a private index, so nothing
+    else staged, nothing in the tree and no pathspec can enter it (review of 2026-10-13, item 1); the commit gate runs
+    on that index from this engine, not the project's hook (item 3), without the probes the watcher already reran.
+    Raises Refused when the gate or git refuses, Busy when HEAD moved meanwhile; then nothing changed."""
+    import tempfile
+    head = _git(root, "rev-parse", "--verify", "-q", "HEAD^{commit}").stdout.strip()
+    if not head:
+        raise Refused("this checkout has no commit yet")
+    with tempfile.TemporaryDirectory(prefix="charter-delegate-") as td:
+        env = dict(lib.delegate_env(), GIT_INDEX_FILE=str(Path(td) / "index"))
+        steps = [_git(root, "read-tree", head, env=env)]
+        info = "".join((f"{e[0]} {e[1]}\t{p}" if e else f"0 {'0' * 40}\t{p}") + "\0" for p, e in entries.items())
+        steps.append(_git(root, "update-index", "-z", "--index-info", env=env, input=info))
+        bad = [s for s in steps if s.returncode != 0]
+        if bad:
+            raise Refused("git could not build the commit: " + " ".join(s.stderr.strip() for s in bad)[-800:])
+        gate = subprocess.run([sys.executable, "-B", str(ENGINE), "--root", str(root), "check", "--staged", "--no-probe"],
+                              env=env, capture_output=True, encoding="utf-8", errors="replace", cwd=str(root))
+        if gate.returncode != 0:
+            raise Refused("the commit gate refuses it:\n" + (gate.stdout + gate.stderr).strip()[-1500:])
+        tree = _git(root, "write-tree", env=env)
+        if tree.returncode != 0:
+            raise Refused("git could not write the tree: " + tree.stderr.strip()[-400:])
+        touched = {p for p in _git(root, "diff-tree", "-r", "-z", "--no-renames", "--name-only", head, tree.stdout.strip()).stdout.split("\0") if p}
+        if not touched <= set(entries):
+            raise Refused(f"the commit would change files that were not handed over: {', '.join(sorted(touched - set(entries))[:6])}")
+        c = _git(root, "commit-tree", "--no-gpg-sign", tree.stdout.strip(), "-p", head,
+                 *[x for m in messages for x in ("-m", m)], env=env)
+        if c.returncode != 0:
+            raise Refused("git could not write the commit: " + c.stderr.strip()[-400:])
+    sha = c.stdout.strip()
+    u = _git(root, "update-ref", "-m", f"charter delegate: {label}", "HEAD", sha, head)
+    if u.returncode != 0:
+        raise Busy(f"HEAD moved while the commit was made, so nothing changed: {u.stderr.strip()[-300:]}")
+    return sha
+
+
+def commit(root: Path, cfg: dict, item_id: str, by: str, reason: str, cap: tuple[str, str] | None = None) -> dict:
+    """Commit a recorded handover as the delegate: exactly the blobs and modes recorded, which the index must still
+    hold, with the message recorded, the delegate as committer and the owner as author, and a trailer naming the
+    verdict (write_commit). The tree is left as it is."""
     refuse_in_session("charter delegate commit")
     rec = lib.load_handover(root)
     if not rec or rec.get("id") != item_id:
@@ -339,33 +438,27 @@ def commit(root: Path, cfg: dict, item_id: str, by: str, reason: str) -> dict:
     v = load_verdict(root, item_id)
     if v and v.get("result") in DONE:
         raise Refused(f"handover {item_id} is already {v['result']}")
-    lv = lib.delegate_level(root)
+    lv = lib.delegate_level(root, cap=cap)
     p = _plan_commit(root, cfg, rec, lv)
     if not p["delegable"]:
         raise Refused(f"handover {item_id}: {p['why_not']}")
-    if (lib.git_dir(root) / "index.lock").exists():
-        raise Busy("another git process holds the index")
-    paths, msg = p["paths"], str(rec.get("message") or "Staged changes")
-    r = subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", msg, "-m", _trailer(lv["level"], by, item_id), "--", *paths],
-                       env=lib.delegate_env(), capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        out = (r.stdout + r.stderr).strip()
-        if "index.lock" in out:
-            raise Busy(out)
-        return settle(root, item_id, "failed", by, f"git refused the commit: {out[-1500:]}")
-    sha = lib.git(root, "rev-parse", "HEAD").stdout.strip()
+    msg = str(rec.get("message") or "Staged changes")
+    try:
+        sha = write_commit(root, recorded_entries(rec), [msg, _trailer(lv["level"], by, item_id)], item_id)
+    except Refused as e:
+        return settle(root, item_id, "failed", by, str(e)[-1500:])
     lib.clear_handover(root)
-    return settle(root, item_id, "committed", by, reason, sha=sha, level=lv["level"], paths=paths, kinds=p["kinds"])
+    return settle(root, item_id, "committed", by, reason, sha=sha, level=lv["level"], paths=p["paths"], kinds=p["kinds"])
 
 
-def perform(root: Path, cfg: dict, item_id: str, by: str, reason: str) -> dict:
+def perform(root: Path, cfg: dict, item_id: str, by: str, reason: str, cap: tuple[str, str] | None = None) -> dict:
     """Write and commit a recorded ask as the delegate (`charter rule|approve|rail`, owner switch never set)."""
     import owner
     refuse_in_session("charter delegate perform")
     rec = next((r for r in _asks(root) if r.get("id") == item_id), None)
     if not rec:
         raise Refused(f"no ask {item_id} waits in {root}")
-    lv = lib.delegate_level(root)
+    lv = lib.delegate_level(root, cap=cap)
     p = _plan_ask(root, cfg, rec, lv)
     if not p["delegable"]:
         raise Refused(f"ask {item_id}: {p['why_not']}")
@@ -403,7 +496,6 @@ def fallback(root: Path, item: dict) -> str:
 def wait(root: Path, item: dict, timeout: int, poll: float = 3.0, out=None) -> int:
     """Wait for the delegate's verdict on `item`: 0 when it acted, 3 when it handed the item back, 4 when it did not
     answer in time. Each but 0 ends with the owner's fallback, alone on the last line."""
-    import time
     out = out or sys.stdout
     deadline = time.monotonic() + max(0, timeout)
     while True:

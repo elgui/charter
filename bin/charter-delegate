@@ -5,19 +5,27 @@
     charter-delegate digest [--since HOURS] [--push]                what the delegate did, each act with its revert line
     charter-delegate status                                          the cron lines, the last run, what waits
 
+    charter-delegate pins [--record]                                 the GitHub repository each project's level is read from
+
 A session hands an owner act over (`charter handover`, `--ask`, `--merge`). Each run finds the records in the git
-directory of every worktree of every charter project under the roots, asks each checkout's own engine for its plan
-(`charter delegate plan --json`), and for each item the project's level delegates: checks the rules, asks the judge (Claude
-Sonnet, no tools, no settings, no CLAUDE.md, a budget cap), reruns the probes of an `— owner: check` close, checks a pull
-request on GitHub, then acts through the engine (`charter delegate commit|perform|settle`) or `gh pr merge`, or hands the
-item back with its reason and pushes the owner one message. Items at a level that delegates nothing are left alone.
+directory of every worktree under the roots of every charter project there, reads the project's level on its GitHub
+default branch, asks this checkout's own engine for its plan (`charter delegate plan --json --cap <that level>`), and for
+each item the level delegates: checks the rules, asks the judge (Claude Sonnet, no tools, no settings, no CLAUDE.md, a
+budget cap), reruns the probes of an `— owner: check` close, checks a pull request on GitHub, then acts through that
+engine (`charter delegate commit|perform|settle`) or `gh pr merge`, or hands the item back with its reason and pushes the
+owner one message. Items at a level that delegates nothing are left alone.
+
+Nothing it runs comes from the project: the engine is this checkout's, git runs with no hook, filter, textconv or
+fsmonitor of the project's config, and git, gh and claude are named by absolute path (review of 2026-10-13, item 3).
 
 It refuses to act inside Claude Code: an agent never runs the delegate (`--dry-run` reads and judges, and writes nothing).
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
+import hashlib
 import fcntl
 import json
 import os
@@ -35,14 +43,33 @@ HOME = Path.home()
 STATE = Path(os.environ.get("CHARTER_DELEGATE_STATE", HOME / ".local" / "state" / "charter-delegate")).expanduser()
 ROOTS = [Path(p).expanduser() for p in os.environ.get("CHARTER_DELEGATE_ROOTS", f"{HOME}/Projects:{HOME}/AI_tooling/PAI").split(":") if p]
 TRANSCRIPTS = Path(os.environ.get("CHARTER_DELEGATE_TRANSCRIPTS", HOME / ".claude" / "projects")).expanduser()
-CLAUDE = os.environ.get("CHARTER_DELEGATE_CLAUDE") or shutil.which("claude") or str(HOME / ".local" / "bin" / "claude")
-GH = os.environ.get("CHARTER_DELEGATE_GH") or shutil.which("gh") or "/usr/bin/gh"
+# the engine is this checkout's, never the project's (review of 2026-10-13, item 3)
+CHARTER_HOME = Path(__file__).resolve().parent.parent
+ENGINE = CHARTER_HOME / "package" / ".charter" / "bin" / "charter"
+sys.path.insert(0, str(ENGINE.parent.parent))
+import checks as engine_checks   # noqa: E402  (the owner-only paths a pull request must not change)
+
+
+def _first(*paths) -> str | None:
+    return next((str(p) for p in paths if p and Path(p).is_file() and os.access(p, os.X_OK)), None)
+
+
+GIT = _first("/usr/bin/git", "/bin/git", "/usr/local/bin/git") or "git"
+GH = os.environ.get("CHARTER_DELEGATE_GH") or _first("/usr/bin/gh", "/usr/local/bin/gh") or "gh"
+CLAUDE = os.environ.get("CHARTER_DELEGATE_CLAUDE") or _first(HOME / ".local" / "bin" / "claude", "/usr/local/bin/claude") or "claude"
+SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"   # what the engine and git find: no directory a session writes to
 MODEL = os.environ.get("CHARTER_DELEGATE_MODEL", "sonnet")
 BUDGET_USD = os.environ.get("CHARTER_DELEGATE_BUDGET_USD", "0.50")
 NOTIFY = os.environ.get("CHARTER_DELEGATE_NOTIFY", "telegram")   # telegram | off | a command template with {text}
 TELEGRAM_ENV_FILES = [HOME / ".claude" / "telegram-service" / ".env", HOME / "tele-claude" / ".env"]
 MARK_RE = r"<!--\s*charter-review:\s*pass\s+sha=([0-9a-f]{40})\s*-->"
-PROTECTED_IN_PR = (".github/workflows/", ".charter/", "charter/config.json", ".claude/settings.json", ".claude/settings.local.json")
+# a pull request the delegate merges changes none of these (any change), nor makes an owner-only change elsewhere
+# (engine_checks.owner_only_changes, read from GitHub at its base and head); rails and scope are delegated at `open`
+PROTECTED_IN_PR = (".github/", ".charter/", ".claude/", "charter/config.json", "charter/legacy-taskets.txt")
+DELEGATED_IN_PR = ("charter/rails.md", "charter/scope.md")
+JUDGE_CAP = 180_000      # characters of payload the judge reads; over it the item goes to the owner, never a cut
+QUOTE_WINDOW_S = 24 * 3600   # the owner's words count when typed in the day before the ask
+GITHUB_RE = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 # a user entry that a relay or a tool wrote, not the owner: its text is never the owner's word
 RELAY_MARKERS = ("auto-routed", "BRAIN_ANSWER_", "BRAIN_ESCALATE_", "PERM_ALLOW_", "PERM_DENY_", "PERM_ESCALATE_", "Keeper:",
                  "<task-notification>", "<agent-message", "[SYSTEM NOTIFICATION", "<system-reminder>", "<command-name>",
@@ -84,27 +111,72 @@ def log(msg: str) -> None:
     print(f"{now()} {msg}", flush=True)
 
 
+BASE_GIT_CONFIG = (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"), ("commit.gpgSign", "false"),
+                   ("core.sshCommand", "false"))
+GIT_LOCAL_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_EXTERNAL_DIFF",
+                 "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_ASKPASS")
+
+
+def git_config_env(wt: Path | None) -> dict:
+    """git's config, set from the environment above the project's own: no hook, fsmonitor or signing program, and every
+    filter and diff driver the project's config names made inert (a filter's `process` emptied, its clean and smudge
+    `cat`; a textconv `cat`; an external diff command empty, which git refuses rather than runs)."""
+    pairs = list(BASE_GIT_CONFIG)
+    if wt is not None:
+        r = subprocess.run([GIT, "-C", str(wt), "config", "--name-only", "--get-regexp", r"^(filter|diff)\.|^diff\.external$"],
+                           capture_output=True, encoding="utf-8", errors="replace", env=clean_env(PATH=SAFE_PATH))
+        for key in r.stdout.split("\n"):
+            head, _, rest = key.partition(".")
+            sub = rest.rpartition(".")[0]
+            if key.lower() == "diff.external":
+                pairs.append(("diff.external", ""))
+            elif head.lower() == "filter" and sub:
+                pairs += [(f"filter.{sub}.process", ""), (f"filter.{sub}.clean", "cat"), (f"filter.{sub}.smudge", "cat"),
+                          (f"filter.{sub}.required", "false")]
+            elif head.lower() == "diff" and sub:
+                pairs += [(f"diff.{sub}.textconv", "cat"), (f"diff.{sub}.command", "")]
+    pairs = list(dict.fromkeys(pairs))
+    env = {"GIT_CONFIG_COUNT": str(len(pairs))}
+    for i, (k, v) in enumerate(pairs):
+        env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = k, v
+    return env
+
+
 def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, encoding="utf-8", errors="replace")
+    return subprocess.run([GIT, "-C", str(cwd), *args], capture_output=True, encoding="utf-8", errors="replace",
+                          env=clean_env(PATH=SAFE_PATH, **git_config_env(None)))
 
 
 def clean_env(**extra) -> dict:
-    """The environment of everything the delegate starts: no agent marker, no owner switch."""
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CHARTER_OWNER", "CLAUDE_CODE_SESSION_ID", "CHARTER_UNIT")}
+    """The environment of everything the delegate starts: no agent marker, no owner switch, no git override."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CLAUDECODE", "CHARTER_OWNER", "CLAUDE_CODE_SESSION_ID", "CHARTER_UNIT") + GIT_LOCAL_ENV
+           and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
     env.update(extra)
     return env
 
 
-def probe_env(root: Path) -> dict:
-    """A scrubbed environment for the probes an agent wrote: no tokens, no git overrides."""
-    keep = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "TMPDIR", "SHELL")
-    return {k: os.environ[k] for k in keep if k in os.environ} | {"CI": "1", "CHARTER_DELEGATE_PROBE": "1"}
+def probe_env(home: Path) -> dict:
+    """A scrubbed environment for the probes an agent wrote: no tokens, no git overrides, and a HOME of their own, so
+    no ~/.ssh, gh token or dotfile of the owner is in reach (review of 2026-10-13, item 7)."""
+    keep = ("PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "SHELL")
+    return {k: os.environ[k] for k in keep if k in os.environ} | {"HOME": str(home), "TMPDIR": str(home), "CI": "1",
+                                                                  "CHARTER_DELEGATE_PROBE": "1"}
 
 
 # ---------------------------------------------------------------- discovery
 
+def under(p: Path, roots: list[Path]) -> bool:
+    try:
+        rp = p.resolve()
+    except OSError:
+        return False
+    return any(rp == r.resolve() or r.resolve() in rp.parents for r in roots)
+
+
 def checkouts(roots: list[Path]) -> list[Path]:
-    """Every worktree of every charter project under the roots, once."""
+    """Every worktree of every charter project under the roots, once; a worktree that lies outside the roots is not
+    looked at (review of 2026-10-13, item 3: an agent can add one anywhere)."""
     seen, out = set(), []
     for r in roots:
         if not r.is_dir():
@@ -115,7 +187,7 @@ def checkouts(roots: list[Path]) -> list[Path]:
             for line in git(p, "worktree", "list", "--porcelain").stdout.splitlines():
                 if line.startswith("worktree "):
                     w = Path(line[9:])
-                    if w not in seen and (w / ".charter" / "delegate.py").is_file():
+                    if w not in seen and under(w, roots) and (w / ".charter" / "delegate.py").is_file():
                         seen.add(w)
                         out.append(w)
     return out
@@ -148,27 +220,103 @@ def read_json(p: Path) -> dict | None:
 
 
 def engine(wt: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-B", str(wt / ".charter" / "bin" / "charter"), "--root", str(wt), *args],
-                          capture_output=True, encoding="utf-8", errors="replace", cwd=str(wt), env=clean_env(), timeout=timeout)
+    """This checkout's engine on worktree `wt`, never the worktree's own (review of 2026-10-13, item 3)."""
+    return subprocess.run([sys.executable, "-B", str(ENGINE), "--root", str(wt), *args], capture_output=True, encoding="utf-8",
+                          errors="replace", cwd=str(wt), env=clean_env(PATH=SAFE_PATH, **git_config_env(wt)), timeout=timeout)
+
+
+def own_checkout_problem() -> str:
+    """Why this checkout should not act, or "": it runs as the owner from cron, so it acts only from the main line as
+    committed (a session that switched it to a branch would otherwise be run by cron)."""
+    if os.environ.get("CHARTER_DELEGATE_ANY_CHECKOUT") == "1":   # the tests, which run it from their own branch
+        return ""
+    branch = git(CHARTER_HOME, "branch", "--show-current").stdout.strip()
+    if branch not in ("main", "master"):
+        return f"its own checkout {CHARTER_HOME} is on {branch or 'a detached HEAD'}, not main"
+    if git(CHARTER_HOME, "status", "--porcelain", "--", "bin", "package").stdout.strip():
+        return f"its own checkout {CHARTER_HOME} has uncommitted changes in bin/ or package/"
+    return ""
+
+
+# ---------------------------------------------------------------- where the level is read
+
+def read_pins() -> dict:
+    return read_json(STATE / "repos.json") or {}
+
+
+def slug_of(wt: Path, pins: dict) -> tuple[str | None, str]:
+    """(the GitHub repository whose default branch holds the level, a note): pinned at first sight, so changing or
+    removing `origin` later moves nothing. None for a repository with no GitHub remote: its level is read locally,
+    which the owner accepted for a project that has none (operator report, 2026-10-13)."""
+    key = git(wt, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    m = GITHUB_RE.search(git(wt, "remote", "get-url", "origin").stdout.strip())
+    cur = f"{m.group(1)}/{m.group(2)}" if m else None
+    if pins.get(key):
+        return pins[key], ("" if cur == pins[key] else f"origin is now {cur or 'gone'}; the level is still read from {pins[key]}")
+    if cur and key:
+        pins[key] = cur
+    return cur, ""
+
+
+def gh_api(*args: str) -> subprocess.CompletedProcess:
+    return gh("api", *args, cwd=neutral())
+
+
+def github_level(slug: str) -> tuple[str | None, str, str | None]:
+    """(level, where, default branch) as committed on the repository's default branch on GitHub; level None when GitHub
+    could not be read. A push is the only way to change it (review of 2026-10-13, item 2, the owner's choice)."""
+    r = gh_api(f"repos/{slug}", "--jq", ".default_branch")
+    base = r.stdout.strip()
+    if r.returncode != 0 or not base:
+        return None, f"GitHub could not be read for {slug}: {(r.stderr or r.stdout).strip()[-200:]}", None
+    where = f"{base} on GitHub ({slug})"
+    c = gh_api(f"repos/{slug}/contents/charter/config.json?ref={urllib.parse.quote(base)}", "--jq", ".content")
+    if c.returncode != 0:
+        if "404" in c.stderr:
+            return "strict", f"{where}, which has no charter/config.json yet: push it", base
+        return None, f"GitHub could not be read for {slug}: {c.stderr.strip()[-200:]}", base
+    try:
+        obj = json.loads(base64.b64decode(c.stdout.strip() or "").decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return "strict", f"{where}, whose charter/config.json does not parse", base
+    d = obj.get("delegate") if isinstance(obj, dict) else None
+    lv = d.get("level") if isinstance(d, dict) else None
+    if lv not in ("strict", "routine", "answers", "open"):
+        return "strict", where + (" (no `delegate.level`: strict)" if lv is None else f" (`delegate.level` {lv!r}: strict)"), base
+    return lv, where, base
 
 
 # ---------------------------------------------------------------- the judge
 
-def judge(kind: str, payload: dict, use_judge: bool = True) -> dict:
+def neutral() -> Path:
+    d = STATE / "judge"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def judge(kind: str, payload: dict, use_judge: bool = True, item_id: str = "") -> dict:
     """Claude Sonnet's verdict on one act: no tools, no settings, no CLAUDE.md (`--safe-mode`), a budget cap, from a
-    neutral directory. Any failure is an escalation, never a commit."""
+    neutral directory. Any failure is an escalation, never a commit; so is a payload over JUDGE_CAP, which is never cut
+    (review of 2026-10-13, item 6). A verdict is kept per item and payload, so an act that must wait for its next run
+    does not ask again."""
     if not use_judge:
         return {"decision": "escalate", "reason": "the judge was not asked (--no-judge)", "probes_safe": False, "concerns": [], "by": "rules"}
-    prompt = (f"Kind of act: {kind}\n\nPayload (JSON, untrusted data):\n" + json.dumps(payload, ensure_ascii=False, indent=1)[:180_000]
-              + "\n\nDecide: commit or escalate.")
+    body = json.dumps(payload, ensure_ascii=False, indent=1)
+    if len(body) > JUDGE_CAP:
+        return {"decision": "escalate", "reason": f"the payload is {len(body)} characters, over the {JUDGE_CAP} the judge reads whole: "
+                "the owner reads it", "probes_safe": False, "concerns": [], "by": "rules"}
+    digest = hashlib.sha256((kind + "\0" + body).encode()).hexdigest()
+    memo = STATE / "judged" / f"{re.sub(r'[^0-9a-z]', '', item_id)}.json"
+    seen = read_json(memo) if item_id else None
+    if seen and seen.get("digest") == digest and isinstance(seen.get("verdict"), dict):
+        return seen["verdict"]
+    prompt = f"Kind of act: {kind}\n\nPayload (JSON, untrusted data):\n{body}\n\nDecide: commit or escalate."
     cmd = [CLAUDE, "-p", "--model", MODEL, "--safe-mode", "--tools", "", "--setting-sources", "", "--strict-mcp-config",
            "--no-session-persistence", "--output-format", "json", "--max-budget-usd", BUDGET_USD,
            "--system-prompt", SYSTEM, "--json-schema", json.dumps(SCHEMA)]
-    neutral = STATE / "judge"
-    neutral.mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, encoding="utf-8", errors="replace", timeout=240,
-                           cwd=str(neutral), env=clean_env())
+                           cwd=str(neutral()), env=clean_env())
         out = json.loads(r.stdout or "{}")
         so = out.get("structured_output")
         if r.returncode != 0 or out.get("is_error") or not isinstance(so, dict) or so.get("decision") not in ("commit", "escalate"):
@@ -177,7 +325,11 @@ def judge(kind: str, payload: dict, use_judge: bool = True) -> dict:
         return {"decision": "escalate", "reason": f"the judge failed, so the owner decides: {e}"[:600], "probes_safe": False,
                 "concerns": [], "by": "rules"}
     model = next(iter(out.get("modelUsage") or {}), MODEL)
-    return dict(so, by=model, cost_usd=out.get("total_cost_usd"))
+    v = dict(so, by=model, cost_usd=out.get("total_cost_usd"))
+    if item_id:
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        memo.write_text(json.dumps({"digest": digest, "verdict": dict(v, cost_usd=0)}))
+    return v
 
 
 # ---------------------------------------------------------------- the owner's words
@@ -187,8 +339,8 @@ def typed_texts(entry: dict) -> list[str]:
     Pasted blocks are someone else's text, except a Crossroads answer block, which is the owner's own clicks."""
     if entry.get("type") != "user" or entry.get("isMeta") or entry.get("isSidechain") or "toolUseResult" in entry:
         return []
-    origin = entry.get("origin")
-    if isinstance(origin, dict) and origin.get("kind") != "human":
+    origin = entry.get("origin")   # Claude Code marks a typed prompt `human`; an entry without it is not the owner's
+    if not isinstance(origin, dict) or origin.get("kind") != "human":
         return []
     content = (entry.get("message") or {}).get("content")
     if isinstance(content, str):
@@ -207,18 +359,38 @@ def typed_texts(entry: dict) -> list[str]:
 
 
 def norm(s: str) -> str:
-    return " ".join(s.split()).casefold()
+    """Spacing, case, list bullets and the punctuation around a line do not count."""
+    return " ".join(s.split()).casefold().strip(" -*>•\"'`.,;:!?")
 
 
-def find_quote(session: str, quote: str) -> tuple[bool, str]:
-    """Whether `quote` is in a message the owner typed in that session, and the assistant's words just before it."""
+def says(text: str, quote: str) -> bool:
+    """Whether the owner's message says `quote` as a whole line, or as the whole message: a phrase picked out of a
+    longer line ("don't rule it active") is not the owner's answer (review of 2026-10-13, item 5)."""
+    q = norm(quote)
+    return bool(q) and (q == norm(text) or any(q == norm(l) for l in text.splitlines()))
+
+
+def _when(e: dict) -> dt.datetime | None:
+    try:
+        return dt.datetime.fromisoformat(str(e.get("timestamp", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def find_quote(session: str, quote: str, asked_at: str = "") -> tuple[bool, str]:
+    """Whether the owner typed `quote` in that session, as a whole line, in the day before the ask was recorded; with the
+    assistant's words just before the latest such message, for the judge."""
     if not session or not re.fullmatch(r"[0-9A-Za-z-]{8,64}", session):
         return False, "the ask names no session"
     files = list(TRANSCRIPTS.glob(f"*/{session}.jsonl"))
     if not files:
         return False, f"no transcript for session {session}"
-    q = norm(quote)
-    last_assistant = ""
+    try:
+        until = dt.datetime.fromisoformat(asked_at)
+    except ValueError:
+        return False, "the ask has no time"
+    since = until - dt.timedelta(seconds=QUOTE_WINDOW_S)
+    last_assistant, found = "", None
     for line in files[0].read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             e = json.loads(line)
@@ -229,32 +401,56 @@ def find_quote(session: str, quote: str) -> tuple[bool, str]:
             txt = "\n".join(b.get("text", "") for b in parts if isinstance(b, dict) and b.get("type") == "text")
             if txt.strip():
                 last_assistant = txt
+        when = _when(e)
+        if when is None or not (since <= when <= until):
+            continue
         for t in typed_texts(e):
-            if q and q in norm(t):
-                return True, json.dumps({"question": last_assistant[-4000:], "answer": t[:4000]}, ensure_ascii=False)
-    return False, f"the quote is not in a message the owner typed in session {session}"
+            if says(t, quote):
+                found = {"question": last_assistant[-4000:], "answer": t[:4000]}
+    if found:
+        return True, json.dumps(found, ensure_ascii=False)
+    return False, f"the quote is not a line of a message the owner typed in session {session} in the day before the ask"
 
 
 # ---------------------------------------------------------------- pull requests
 
 def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run([GH, *args], capture_output=True, encoding="utf-8", errors="replace", cwd=str(cwd),
-                          env=clean_env(GH_PROMPT_DISABLED="1"), timeout=120)
+                          env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH), timeout=120)
 
 
-def check_pr(wt: Path, item: dict) -> tuple[list[str], dict, str]:
+def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str) -> list[str]:
+    """Why changing `path` from the PR's base to its head is an owner-only change (the engine's own rule), read from
+    GitHub at both commits."""
+    def at(sha):
+        r = gh_api(f"repos/{slug}/contents/{urllib.parse.quote(path)}?ref={sha}", "--jq", ".content")
+        if r.returncode != 0:
+            return None
+        try:
+            return base64.b64decode(r.stdout.strip() or "").decode("utf-8", "replace")
+        except ValueError:
+            return None
+    return engine_checks.owner_only_changes(path, at(base_sha), at(head_sha), "commit")
+
+
+def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None) -> tuple[list[str], dict, str]:
     """(why the rules refuse it, what the judge reads, why to look again later) for a merge request: checks that still
     run, or a merge state GitHub has not computed yet, are not a refusal while the request is young."""
     pr = str(item["pr"])
-    me = gh("api", "user", "--jq", ".login", cwd=wt).stdout.strip()
-    r = gh("pr", "view", pr, "--json", "number,author,state,isDraft,baseRefName,headRefOid,mergeStateStatus,statusCheckRollup,"
-           "files,title,body,url,comments", cwd=wt)
+    if not slug or not default_branch:
+        return [f"PR #{pr}: this project has no GitHub repository the delegate reads, so the owner merges it"], {}, ""
+    me = gh_api("user", "--jq", ".login").stdout.strip()
+    r = gh("pr", "view", pr, "-R", slug, "--json", "number,author,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeStateStatus,"
+           "statusCheckRollup,changedFiles,title,body,url,comments", cwd=neutral())
     if r.returncode != 0 or not me:
         return [f"gh could not read PR #{pr}: {(r.stderr or 'no login')[-300:]}"], {}, ""
-    p = json.loads(r.stdout)
+    try:
+        p = json.loads(r.stdout)
+    except ValueError:
+        return [f"gh gave no JSON for PR #{pr}"], {}, ""
     why = []
-    checks = p.get("statusCheckRollup") or []
-    running = [c.get("name") or c.get("context") for c in checks
+    rollup = p.get("statusCheckRollup") or []
+    running = [c.get("name") or c.get("context") for c in rollup
                if (c.get("status") not in (None, "COMPLETED")) or c.get("state") in ("PENDING", "EXPECTED")]
     if running or p.get("mergeStateStatus") == "UNKNOWN":
         return [], {}, (f"checks still run: {', '.join(str(x) for x in running[:4])}" if running else "GitHub has not computed the merge state yet")
@@ -262,17 +458,27 @@ def check_pr(wt: Path, item: dict) -> tuple[list[str], dict, str]:
         why.append(f"PR #{pr} is {'a draft' if p.get('isDraft') else p.get('state')}")
     if (p.get("author") or {}).get("login") != me:
         why.append(f"PR #{pr} was opened by {(p.get('author') or {}).get('login')}, not by the owner ({me}): their approval is the owner's")
-    if p.get("baseRefName") != item.get("base"):
-        why.append(f"PR #{pr} targets {p.get('baseRefName')}, not the main line {item.get('base')}")
+    if p.get("baseRefName") != default_branch:   # GitHub's default branch, not the request's word (review of 2026-10-13, item 8)
+        why.append(f"PR #{pr} targets {p.get('baseRefName')}, not the main line {default_branch}")
     if p.get("mergeStateStatus") != "CLEAN":
         why.append(f"PR #{pr} is {p.get('mergeStateStatus')}, not CLEAN (the delegate never updates a branch or bypasses a rule)")
-    bad = [c.get("name") or c.get("context") for c in checks
-           if (c.get("conclusion") or c.get("state")) not in ("SUCCESS", "NEUTRAL", "SKIPPED")]
-    if not checks:
+    state = lambda c: c.get("conclusion") or c.get("state")
+    bad = [c.get("name") or c.get("context") for c in rollup if state(c) not in ("SUCCESS", "NEUTRAL", "SKIPPED")]
+    if not rollup:
         why.append(f"PR #{pr} has no checks, so it is not green")
     elif bad:
         why.append(f"PR #{pr} is not green: {', '.join(str(b) for b in bad[:5])}")
-    touched = [f["path"] for f in p.get("files") or [] if any(f["path"].startswith(x) or f["path"] == x for x in PROTECTED_IN_PR)]
+    elif not any(state(c) == "SUCCESS" for c in rollup):
+        why.append(f"PR #{pr} has no check that succeeded (all skipped or neutral), so it is not green")
+    # every file, paginated: `gh pr view --json files` stops at 100
+    fr = gh_api(f"repos/{slug}/pulls/{pr}/files", "--paginate", "--jq", ".[].filename")
+    files = [f for f in fr.stdout.splitlines() if f]
+    if fr.returncode != 0 or len(files) != int(p.get("changedFiles") or 0):
+        why.append(f"PR #{pr}: GitHub listed {len(files)} of its {p.get('changedFiles')} changed files, so the delegate cannot see them all")
+    touched = [f for f in files if f.startswith(PROTECTED_IN_PR) or f in PROTECTED_IN_PR]
+    if not touched:
+        maybe = [f for f in files if f not in DELEGATED_IN_PR and engine_checks.may_be_owner_only(f)]
+        touched = [f for f in maybe if pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f)]
     if touched:
         why.append(f"PR #{pr} changes {', '.join(touched[:4])}, which only the owner merges")
     head = p.get("headRefOid", "")
@@ -280,17 +486,21 @@ def check_pr(wt: Path, item: dict) -> tuple[list[str], dict, str]:
              and any(m == head for m in re.findall(MARK_RE, c.get("body") or ""))]
     if not marks:
         why.append(f"PR #{pr} has no /reviewPR mark on its head {head[:10]} (a push after the review voids it)")
-    diff = gh("pr", "diff", pr, cwd=wt).stdout
-    data = {"pr": p.get("number"), "title": p.get("title"), "body": (p.get("body") or "")[:8000], "url": p.get("url"),
-            "head": head, "files": [f["path"] for f in p.get("files") or []][:200], "review": (marks[-1]["body"][:4000] if marks else ""),
-            "diff": diff[:120_000]}
+    diff = gh("pr", "diff", pr, "-R", slug, cwd=neutral()).stdout
+    if len(diff) > 120_000 or len(p.get("body") or "") > 8000:
+        why.append(f"PR #{pr} is too long for the judge to read whole (diff {len(diff)} characters)")
+    data = {"pr": p.get("number"), "title": p.get("title"), "head": head, "files": files[:400], "body": (p.get("body") or "")[:8000],
+            "url": p.get("url"), "review": (marks[-1]["body"][:4000] if marks else ""), "diff": diff[:120_000]}
     return why, data, ""
 
 
-def merge_method(wt: Path, item: dict) -> str:
-    if item.get("method"):
-        return item["method"]
-    r = gh("repo", "view", "--json", "viewerDefaultMergeMethod", "--jq", ".viewerDefaultMergeMethod", cwd=wt)
+def merge_method(item: dict, slug: str) -> str | None:
+    """The request's method when it is one, else the repository's default; None for anything else (the record is a
+    file a session can write: review of 2026-10-13, item 8)."""
+    m = item.get("method")
+    if m:
+        return m if m in ("merge", "squash", "rebase") else None
+    r = gh("repo", "view", slug, "--json", "viewerDefaultMergeMethod", "--jq", ".viewerDefaultMergeMethod", cwd=neutral())
     return {"SQUASH": "squash", "REBASE": "rebase"}.get(r.stdout.strip(), "merge")
 
 
@@ -378,26 +588,37 @@ def acted(wt: Path, plan: dict, item: dict, result: str, verdict: dict, sha: str
 
 def run_probes(wt: Path, item: dict, timeout: int) -> str:
     """'' when every closed line's probe passes when run again, else why not."""
+    import tempfile
     for p in item.get("probes") or []:
-        try:
-            r = subprocess.run(p["probe"], shell=True, cwd=str(wt), capture_output=True, encoding="utf-8", errors="replace",
-                               timeout=timeout, env=probe_env(wt))
-        except subprocess.TimeoutExpired:
-            return f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}"
+        with tempfile.TemporaryDirectory(prefix="charter-probe-") as home:
+            try:
+                r = subprocess.run(p["probe"], shell=True, cwd=str(wt), capture_output=True, encoding="utf-8", errors="replace",
+                                   timeout=timeout, env=probe_env(Path(home)))
+            except subprocess.TimeoutExpired:
+                return f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}"
         if r.returncode != 0:
             return f"the probe of {p['path']} {p['key']} exits {r.returncode}: {p['probe']}\n{(r.stdout + r.stderr)[-600:]}"
     return ""
 
 
-def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool) -> None:
+def index_busy(wt: Path) -> bool:
+    gd = git(wt, "rev-parse", "--path-format=absolute", "--git-dir").stdout.strip()
+    return bool(gd) and (Path(gd) / "index.lock").exists()
+
+
+def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: list[str]) -> None:
     if item.get("verdict"):
         return   # judged once
     if not item.get("delegable"):
         return hand_back(wt, plan, item, item.get("why_not") or "the rules refuse it", "rules", dry)
+    if item["type"] in ("commit", "ask") and index_busy(wt):
+        log(f"{wt}: {item['id']} another git process holds the index; next run")   # before the judge, so it costs nothing
+        return
     if item["type"] == "commit":
         kinds = sorted({k for v in (item.get("kinds") or {}).values() for k in v})
-        payload = {k: item.get(k) for k in ("message", "paths", "kinds", "diff", "units", "probes", "branch", "level")}
-        v = judge("/".join(kinds), payload, use_judge)
+        # what the judge must not miss first: a long diff comes last (review of 2026-10-13, item 6)
+        payload = {k: item.get(k) for k in ("level", "level_from", "kinds", "probes", "branch", "message", "paths", "units", "diff")}
+        v = judge("/".join(kinds), payload, use_judge, item["id"])
         if v["decision"] != "commit":
             return hand_back(wt, plan, item, v["reason"], v["by"], dry)
         if item.get("probes"):
@@ -412,7 +633,7 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool) -> None
         if dry:
             log(f"{wt}: {item['id']} would commit ({v['by']}): {v['reason']}")
             return
-        r = engine(wt, "delegate", "commit", "--id", item["id"], "--judge", str(v["by"]), "--reason", v["reason"][:1500])
+        r = engine(wt, "delegate", "commit", "--id", item["id"], "--judge", str(v["by"]), "--reason", v["reason"][:1500], *cap)
         if r.returncode == 75:
             log(f"{wt}: {item['id']} busy, next run: {r.stderr.strip()}")
             return
@@ -426,18 +647,19 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool) -> None
         notify(f"charter delegate: {wt.name}, {describe(item)}: the commit failed, handed back to you.\n{reason}\n\nYour line:\n{item.get('fallback')}", dry)
         return
     if item["type"] == "ask":
-        found, context = find_quote(item.get("session") or "", item.get("quote") or "")
+        found, context = find_quote(item.get("session") or "", item.get("quote") or "", str(item.get("at") or ""))
         if not found:
             return hand_back(wt, plan, item, context, "rules", dry)
-        payload = {k: item.get(k) for k in ("verb", "target", "status", "quote", "note", "diff", "context")}
+        payload = {k: item.get(k) for k in ("level", "verb", "target", "status", "quote", "note")}
         payload["where_the_owner_said_it"] = json.loads(context)
-        v = judge("ruling", payload, use_judge)
+        payload.update({k: item.get(k) for k in ("context", "diff")})
+        v = judge("ruling", payload, use_judge, item["id"])
         if v["decision"] != "commit":
             return hand_back(wt, plan, item, v["reason"], v["by"], dry)
         if dry:
             log(f"{wt}: {item['id']} would perform {describe(item)} ({v['by']}): {v['reason']}")
             return
-        r = engine(wt, "delegate", "perform", "--id", item["id"], "--judge", str(v["by"]), "--reason", v["reason"][:1500])
+        r = engine(wt, "delegate", "perform", "--id", item["id"], "--judge", str(v["by"]), "--reason", v["reason"][:1500], *cap)
         if r.returncode == 75:
             return
         res = json.loads(r.stdout) if r.stdout.strip().startswith("{") else None
@@ -445,31 +667,36 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool) -> None
             return acted(wt, plan, item, "performed", v, res["sha"])
         return hand_back(wt, plan, item, (res or {}).get("reason") or r.stderr.strip()[-800:], "rules", dry)
     # a merge
-    why, data, later = check_pr(wt, item)
+    why, data, later = check_pr(wt, item, plan.get("slug"), plan.get("github_base"))
     if later:
-        try:
-            age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(str(item.get("at")))).total_seconds()
-        except ValueError:
-            age = PENDING_GRACE_S
-        if age < PENDING_GRACE_S:
+        if age_s(item) < PENDING_GRACE_S:
             log(f"{wt}: {item['id']} PR #{item['pr']} not ready, next run: {later}")
             return
         why = [f"PR #{item['pr']} was still not ready after {PENDING_GRACE_S // 60} minutes: {later}"]
+    method = merge_method(item, plan.get("slug") or "") if not why else None
+    if not why and method is None:
+        why = [f"the merge method {item.get('method')!r} is not merge, squash or rebase"]
     if why:
         return hand_back(wt, plan, item, "; ".join(why), "rules", dry)
-    v = judge("merge", data, use_judge)
+    v = judge("merge", data, use_judge, item["id"])
     if v["decision"] != "commit":
         return hand_back(wt, plan, item, v["reason"], v["by"], dry)
-    method = merge_method(wt, item)
     if dry:
         log(f"{wt}: {item['id']} would merge PR #{item['pr']} --{method} at {data['head'][:10]} ({v['by']}): {v['reason']}")
         return
-    r = gh("pr", "merge", str(item["pr"]), f"--{method}", "--match-head-commit", data["head"], cwd=wt)
+    r = gh("pr", "merge", str(item["pr"]), "-R", plan["slug"], f"--{method}", "--match-head-commit", data["head"], cwd=neutral())
     if r.returncode != 0:
         return hand_back(wt, plan, item, f"gh refused the merge: {(r.stderr or r.stdout).strip()[-600:]}", "rules", dry)
-    sha = gh("pr", "view", str(item["pr"]), "--json", "mergeCommit", "--jq", ".mergeCommit.oid", cwd=wt).stdout.strip() or data["head"]
+    sha = gh("pr", "view", str(item["pr"]), "-R", plan["slug"], "--json", "mergeCommit", "--jq", ".mergeCommit.oid", cwd=neutral()).stdout.strip() or data["head"]
     settle(wt, item, "merged", str(v["by"]), v["reason"], sha)
     acted(wt, plan, item, "merged", v, sha)
+
+
+def age_s(item: dict) -> float:
+    try:
+        return (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(str(item.get("at")))).total_seconds()
+    except ValueError:
+        return PENDING_GRACE_S
 
 
 # ---------------------------------------------------------------- commands
@@ -480,6 +707,10 @@ def cmd_run(a) -> int:
         print("charter-delegate run: refused: the owner's delegate runs outside Claude Code (from cron); an agent never runs it. "
               "`--dry-run` reads and judges, and writes nothing.", file=sys.stderr)
         return 1
+    problem = own_checkout_problem()
+    if problem and not dry:
+        log(f"acting on nothing: {problem}; a dry run instead")
+        dry = True
     STATE.mkdir(parents=True, exist_ok=True)
     lock = open(STATE / "lock", "w")
     try:
@@ -487,23 +718,57 @@ def cmd_run(a) -> int:
     except OSError:
         return 0   # the previous run is still going
     roots = [Path(r).expanduser() for r in a.root] if a.root else ROOTS
+    pins = read_pins()
+    pinned = dict(pins)
+    levels: dict[str, tuple] = {}
     for wt in checkouts(roots):
         todo = set(unsettled_ids(wt))   # a handover recorded where the level delegated nothing is not among them: the owner's, as before
         if not todo:
             continue
-        r = engine(wt, "delegate", "plan", "--json")
-        if r.returncode != 0:
-            log(f"{wt}: plan failed: {r.stderr.strip()[-300:]}")
+        slug, note = slug_of(wt, pins)
+        if note:
+            log(f"{wt}: {note}")
+        cap, base = [], None
+        if slug:
+            if slug not in levels:
+                levels[slug] = github_level(slug)
+            lv, where, base = levels[slug]
+            if lv is None:   # GitHub could not be read: the items wait, and go to the owner once they are old
+                log(f"{wt}: {where}; next run")
+                lv, where = "strict", where
+                todo = {i for i in todo if age_s(record_of(wt, i)) >= PENDING_GRACE_S}
+                if not todo:
+                    continue
+            cap = ["--cap", lv, "--cap-from", where]
+        r = engine(wt, "delegate", "plan", "--json", *cap)
+        try:
+            plan = json.loads(r.stdout) if r.returncode == 0 else None
+        except ValueError:
+            plan = None
+        if not isinstance(plan, dict) or not isinstance(plan.get("items"), list):   # one broken checkout never stops the others
+            log(f"{wt}: plan failed: {(r.stderr or r.stdout).strip()[-300:]}")
             continue
-        plan = json.loads(r.stdout)
-        for item in [i for i in plan["items"] if i.get("id") in todo]:
+        plan.update(slug=slug, github_base=base)
+        for item in [i for i in plan["items"] if isinstance(i, dict) and i.get("id") in todo]:
             try:
-                handle(wt, plan, item, dry, not a.no_judge)
+                handle(wt, plan, item, dry, not a.no_judge, cap)
             except Exception as e:   # one item never stops the others
                 log(f"{wt}: {item.get('id')}: {type(e).__name__}: {e}")
+    if pins != pinned and not dry:
+        (STATE / "repos.json").write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n")
     if not dry:
         (STATE / "last-run").write_text(now() + "\n")
     return 0
+
+
+def record_of(wt: Path, item_id: str) -> dict:
+    """The record of an item, read directly from the worktree's git directory, for its age."""
+    gd = Path(git(wt, "rev-parse", "--path-format=absolute", "--git-dir").stdout.strip() or "/nonexistent") / "charter"
+    for p in [gd / "handover.json", *(gd / "asks").glob("*.json"), *(gd / "merges").glob("*.json")]:
+        r = read_json(p)
+        if r and r.get("id") == item_id:
+            return r
+    return {}
 
 
 def cmd_digest(a) -> int:
@@ -537,10 +802,43 @@ def cmd_status(a) -> int:
     last = (STATE / "last-run").read_text().strip() if (STATE / "last-run").exists() else "never"
     print(f"cron: {len(lines)} line(s)" + "".join(f"\n  {l}" for l in lines))
     print(f"last run: {last}; state: {STATE}")
+    problem = own_checkout_problem()
+    if problem:
+        print(f"it acts on nothing while {problem}")
     for wt in checkouts(ROOTS):
         ids = unsettled_ids(wt)
         if ids:
             print(f"  {wt}: {len(ids)} item(s) without a verdict: {', '.join(ids)}")
+    return 0
+
+
+def cmd_pins(a) -> int:
+    """Each charter repository under the roots, the GitHub repository its level is read from, and that level; with
+    --record, a repository seen for the first time is pinned (the owner's rollout does it once). With --record it is
+    refused inside Claude Code without the owner switch, which only the owner types."""
+    if a.record and os.environ.get("CLAUDECODE") == "1" and os.environ.get("CHARTER_OWNER") != "1":
+        print("charter-delegate pins --record: refused: the owner pins the repositories, outside Claude Code", file=sys.stderr)
+        return 1
+    pins = read_pins()
+    before = dict(pins)
+    seen = set()
+    for wt in checkouts(ROOTS):
+        key = git(wt, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        slug, note = slug_of(wt, pins)
+        local = engine(wt, "delegate", "level")
+        if slug:
+            lv, where, _ = github_level(slug)
+            line = f"{Path(key).parent.name}: {slug}, level {lv or '?'} ({where}); here: {local.stdout.strip()}"
+        else:
+            line = f"{Path(key).parent.name}: no GitHub repository, so the level is read here: {local.stdout.strip()}"
+        print(line + (f"  [{note}]" if note else "") + ("" if key in before or not slug else "  (new pin)"))
+    if a.record and pins != before:
+        STATE.mkdir(parents=True, exist_ok=True)
+        (STATE / "repos.json").write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n")
+        print(f"pinned {len(pins) - len(before)} repository(ies) in {STATE / 'repos.json'}")
     return 0
 
 
@@ -558,6 +856,9 @@ def main(argv=None) -> int:
     d.set_defaults(fn=cmd_digest)
     s = sub.add_parser("status", help="the cron lines, the last run, what waits")
     s.set_defaults(fn=cmd_status)
+    pn = sub.add_parser("pins", help="the GitHub repository each project's level is read from, and that level")
+    pn.add_argument("--record", action="store_true", help="pin each repository seen for the first time (the owner's rollout)")
+    pn.set_defaults(fn=cmd_pins)
     a = ap.parse_args(argv)
     return a.fn(a)
 

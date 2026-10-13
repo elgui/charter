@@ -266,7 +266,9 @@ def committed_level(root: Path, rev: str) -> tuple[str | None, str]:
     d = obj.get("delegate") if isinstance(obj, dict) else None
     if d is None:
         return None, ""
-    lv = d.get("level") if isinstance(d, dict) else d
+    if not isinstance(d, dict):   # `"delegate": "open"` is not the schema's shape (review of 2026-10-13, item 9)
+        return "strict", f"`delegate` on {rev} is {json.dumps(d)}, not an object with a `level`"
+    lv = d.get("level")
     if lv is None:
         return None, ""
     if lv not in DELEGATE_LEVELS:
@@ -274,11 +276,30 @@ def committed_level(root: Path, rev: str) -> tuple[str | None, str]:
     return lv, ""
 
 
-def delegate_level(root: Path, branch_too: bool = True) -> dict:
+def stricter(a: str, b: str) -> str:
+    return a if DELEGATE_LEVELS.index(a) <= DELEGATE_LEVELS.index(b) else b
+
+
+def delegate_level(root: Path, branch_too: bool = True, cap: tuple[str, str] | None = None) -> dict:
     """The level the delegate works at in this checkout: {"level", "from", "problems"}. Only the owner sets it, so it is
     read from what is committed, never from the working tree: the config on the default branch decides (no key there is
     strict), and the checkout's own branch counts only when its committed config names a level, which can only make
-    it stricter. A branch made before the owner set the level inherits it."""
+    it stricter. A branch made before the owner set the level inherits it.
+
+    Local refs are the agent's to move (`update-ref`, `symbolic-ref`: review of 2026-10-13, item 2), so the watcher
+    passes `cap`, (level, where it was read): the level on the repository's default branch on GitHub, which only a push
+    changes. The level is then the stricter of the two; the session's own reads, without a cap, are advisory."""
+    out = _local_level(root, branch_too)
+    if cap is not None:
+        lv = cap[0] if cap[0] in DELEGATE_LEVELS else "strict"
+        if stricter(lv, out["level"]) != out["level"]:
+            out.update(level=lv, **{"from": f"{cap[1]} (stricter than {out['from']})"})
+        elif lv == out["level"]:
+            out["from"] = f"{out['from']}, and {cap[1]}"
+    return out
+
+
+def _local_level(root: Path, branch_too: bool) -> dict:
     base = default_branch(root)
     if base is None:
         return {"level": "strict", "from": "no main or master branch", "problems": []}
@@ -378,14 +399,20 @@ def handover_path(root: Path) -> Path:
     return local_state_dir(root) / HANDOVER_FILE
 
 
-def staged_blobs(root: Path, paths: list[str]) -> dict[str, str | None]:
-    """Each path's blob in the index, None when it is not there (a removal)."""
+def staged_entries(root: Path, paths: list[str]) -> dict[str, tuple[str, str] | None]:
+    """Each path's (mode, blob) in the index, None when it is not there (a removal). The paths are literal: a file
+    named `charter/config.json*` is that file, never a pattern (review of 2026-10-13, item 1)."""
     staged = {}
-    for entry in git(root, "ls-files", "-s", "-z", "--", *paths).stdout.split("\0"):
+    for entry in git(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *paths).stdout.split("\0"):
         if "\t" in entry:
             meta, rp = entry.split("\t", 1)
-            staged[rp] = meta.split()[1]
+            staged[rp] = (meta.split()[0], meta.split()[1])
     return {p: staged.get(p) for p in paths}
+
+
+def staged_blobs(root: Path, paths: list[str]) -> dict[str, str | None]:
+    """Each path's blob in the index, None when it is not there (a removal)."""
+    return {p: (e[1] if e else None) for p, e in staged_entries(root, paths).items()}
 
 
 def record_handover(root: Path, paths: list[str], message: str, by: str, kinds: dict | None = None) -> dict:
@@ -393,17 +420,19 @@ def record_handover(root: Path, paths: list[str], message: str, by: str, kinds: 
     staged blob (None for a removal). Data only: no command, and no owner switch. Since 0.4.14 it also carries an id,
     the kinds of owner act among the paths, the delegate's level, and whether the delegate may take it."""
     import hashlib
+    entries = staged_entries(root, paths)
     rec = {"at": _dt.datetime.now().astimezone().isoformat(timespec="seconds"), "by": by,
            "branch": git(root, "branch", "--show-current").stdout.strip(),
            "head": git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip() or None,
-           "message": message, "paths": list(paths), "staged": staged_blobs(root, paths)}
+           "message": message, "paths": list(paths), "staged": {p: (e[1] if e else None) for p, e in entries.items()},
+           "modes": {p: (e[0] if e else None) for p, e in entries.items()}}
     lv = delegate_level(root)
     ks = {p: list(k) for p, k in (kinds or {}).items()}
     rec.update(kinds=ks, level=lv["level"], level_from=lv["from"],
                delegable=delegable({k for v in ks.values() for k in v}, lv["level"]))
     rec["id"] = "h" + hashlib.sha256(json.dumps([rec["at"], rec["branch"], rec["head"], rec["staged"]], sort_keys=True).encode()).hexdigest()[:12]
     prev = load_handover(root)
-    if prev and prev.get("id") and all(prev.get(k) == rec[k] for k in ("branch", "head", "message", "paths", "staged")):
+    if prev and prev.get("id") and all(prev.get(k) == rec[k] for k in ("branch", "head", "message", "paths", "staged", "modes")):
         rec.update(id=prev["id"], at=prev.get("at", rec["at"]))   # the same handover, recorded again: the delegate's verdict still applies
     p = handover_path(root)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -550,11 +579,26 @@ def index_view(root: Path):
     global _VIEW
     tmp = Path(tempfile.mkdtemp(prefix="charter-index-"))
     try:
-        # paths pass from one git command to the other as bytes, so no file name is ever decoded
-        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", CHARTER_DIR, TASKETS_DIR], capture_output=True).stdout
-        if listed.strip(b"\0"):
-            subprocess.run(["git", "-C", str(root), "checkout-index", "-f", "-z", "--stdin", f"--prefix={tmp}/"],
-                           input=listed, capture_output=True)
+        # the staged blobs, written as they are: no checkout, so no filter or attribute of the project's git config
+        # runs (the owner's delegate runs this check outside Claude Code: review of 2026-10-13, item 3). Paths stay
+        # bytes from one git command to the other, so no file name is ever decoded
+        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-s", "-z", "--", CHARTER_DIR, TASKETS_DIR], capture_output=True).stdout
+        entries = []
+        for e in listed.split(b"\0"):
+            meta, sep, rp = e.partition(b"\t")
+            if sep and meta.split()[0] in (b"100644", b"100755") and meta.split()[2] == b"0":
+                entries.append((meta.split()[1], rp))
+        if entries:
+            out = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"], input=b"".join(s + b"\n" for s, _ in entries),
+                                 capture_output=True).stdout
+            pos = 0
+            for _, rp in entries:
+                nl = out.index(b"\n", pos)
+                size = int(out[pos:nl].split()[2])
+                dest = Path(os.fsdecode(os.fsencode(tmp) + b"/" + rp))
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(out[nl + 1:nl + 1 + size])
+                pos = nl + 1 + size + 1
         _VIEW = tmp
         yield tmp
     finally:

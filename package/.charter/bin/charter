@@ -1000,8 +1000,9 @@ def cmd_handover(a) -> int:
     cfg = lib.load_config(root)
     try:
         if a.ask:
+            # the session is the one this command runs in, never a flag an agent picks (review of 2026-10-13, item 5)
             rec = delegate.record_ask(root, cfg, a.ask[0], a.ask[1], a.ask[2], a.quote or "",
-                                      a.session or os.environ.get("CLAUDE_CODE_SESSION_ID", ""), a.by, a.note)
+                                      os.environ.get("CLAUDE_CODE_SESSION_ID", ""), a.by, a.note)
             print(f"Asked the owner's delegate to transcribe the owner's answer: charter {rec['verb']} {rec['target']} {rec['status']} ({rec['id']}).")
             print(f"  the owner's words: \"{rec['quote']}\"; it finds them in a message the owner typed, or hands the ruling back")
             return delegate.wait(root, dict(rec, type="ask"), a.timeout) if a.wait else 0
@@ -1013,7 +1014,8 @@ def cmd_handover(a) -> int:
     except delegate.Refused as e:
         print(f"charter handover: {e}", file=sys.stderr)
         return 1
-    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
+    # --no-renames: a rename is its removal and its addition, so the commit carries both (review of 2026-10-13, item 9)
+    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "-z").stdout.split("\0") if x]
     if not staged:
         rec = lib.load_handover(root)
         if a.wait and rec and rec.get("id") and not lib.handover_stale(root, rec):
@@ -1047,9 +1049,10 @@ def cmd_delegate(a) -> int:
     import delegate
     root = lib.repo_root(a.root)
     cfg = lib.load_config(root)
+    cap = (a.cap, a.cap_from or "the watcher's reading") if a.cap else None
     try:
         if a.action == "plan":
-            rep = delegate.plan(root, cfg)
+            rep = delegate.plan(root, cfg, cap)
             if a.json:
                 print(json.dumps(rep, indent=2, ensure_ascii=False))
                 return 0
@@ -1073,9 +1076,9 @@ def cmd_delegate(a) -> int:
             print(f"charter delegate {a.action}: --id names the item (`charter delegate plan`)", file=sys.stderr)
             return 2
         if a.action == "commit":
-            v = delegate.commit(root, cfg, a.id, a.judge, a.reason or "")
+            v = delegate.commit(root, cfg, a.id, a.judge, a.reason or "", cap)
         elif a.action == "perform":
-            v = delegate.perform(root, cfg, a.id, a.judge, a.reason or "")
+            v = delegate.perform(root, cfg, a.id, a.judge, a.reason or "", cap)
         else:
             if not a.result:
                 print("charter delegate settle: --result is required", file=sys.stderr)
@@ -1176,7 +1179,7 @@ def _owner_commit(root: Path) -> int:
         return 1
     branch = lib.git(root, "branch", "--show-current").stdout.strip()
     paths, msg = [str(p) for p in rec["paths"]], str(rec.get("message") or "Staged changes")
-    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "-z").stdout.split("\0") if x]
+    staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "-z").stdout.split("\0") if x]
 
     def now(rp):
         if not (root / rp).exists():
@@ -1192,7 +1195,7 @@ def _owner_commit(root: Path) -> int:
     if left:
         print(f"  staged but not handed over, left out ({len(left)}): " + ", ".join(left[:8]) + (f" and {len(left) - 8} more" if len(left) > 8 else ""))
     sys.stdout.flush()
-    r = subprocess.run(["git", "-C", str(root), "commit", "-m", msg, "--", *paths])
+    r = subprocess.run(["git", "-C", str(root), "--literal-pathspecs", "commit", "-m", msg, "--", *paths])
     if r.returncode != 0:
         print("charter owner commit: the commit failed (above); the handover is kept. Once what git or the gate said is "
               "fixed, run the same line again.", file=sys.stderr)
@@ -1304,7 +1307,6 @@ def main(argv=None) -> int:
     ho.add_argument("--ask", nargs=3, metavar=("VERB", "TARGET", "STATUS"), default=None,
                     help="the owner's own answer for the delegate to transcribe: `rule <decision> <status>`, `approve <change> approved|rejected`, `rail <id> <status>`")
     ho.add_argument("--quote", default=None, help="with --ask: the owner's words, exactly as typed in this session")
-    ho.add_argument("--session", default=None, help="with --ask: the session they were typed in (default: CLAUDE_CODE_SESSION_ID)")
     ho.add_argument("--by", default=None, help="with --ask rule ... superseded: the successor decision")
     ho.add_argument("--note", default=None, help="with --ask: a note for the ruling line")
     ho.add_argument("--merge", type=int, default=None, metavar="PR", help="ask the delegate to merge this pull request (level open)")
@@ -1320,6 +1322,9 @@ def main(argv=None) -> int:
     dg.add_argument("--judge", default="rules", help="who judged: rules, or the judge model"); dg.add_argument("--reason", default=None)
     dg.add_argument("--result", default=None, choices=["committed", "performed", "merged", "escalated", "failed"]); dg.add_argument("--sha", default=None)
     dg.add_argument("--trailer", default=None, help="with level: a git trailer for the commit")
+    dg.add_argument("--cap", default=None, choices=["strict", "routine", "answers", "open"],
+                    help="with plan, commit, perform: the level read on GitHub's default branch, which the level here cannot exceed (the watcher's)")
+    dg.add_argument("--cap-from", default=None, help="with --cap: where it was read")
     dg.set_defaults(fn=cmd_delegate)
     ch = sub.add_parser("chain", help="a continuous chain of sessions over the road (`charter chain --help`)", add_help=False)
     ch.add_argument("rest", nargs=argparse.REMAINDER); ch.set_defaults(fn=cmd_chain)
