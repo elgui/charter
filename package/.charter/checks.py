@@ -832,7 +832,7 @@ def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict],
             unsure |= amb
             if uid:
                 named.add(uid)
-        if len(named) != 1:
+        if len(named) != 1 or unsure:   # a tag two ids share names a second unit, whichever one it meant
             seen["several" if named else "ambiguous" if unsure else "untagged"] += 1
             continue
         uid = named.pop()

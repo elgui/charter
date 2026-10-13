@@ -260,6 +260,16 @@ class PerimeterFit(Project):
                       "(1 noted under `## Outside perimeter`): app/billing.py, app/extra.py; 2 of 3 perimeter entries touched; "
                       "untouched: docs/**", r.stdout)
 
+    def test_a_subject_with_a_shared_short_tag_counts_for_none(self):
+        """`unit <FA>` beside a tag two units share names two units or more, so it counts for neither."""
+        (self.root / "app" / "mixed.py").write_text("m = 1\n")
+        commit_all(self.root, f"mixed (unit {FA}) (unit 20261013-1300)")
+        fit = json.loads(charter(self.root, "unit", "show", FA, "--json").stdout)["perimeter_fit"]
+        self.assertEqual(fit["commits"], 2)
+        self.assertNotIn("app/mixed.py", fit["touched"])
+        rows = synth_section(charter(self.root, "synth").stdout, "Perimeter fit")
+        self.assertIn("1 names an id two or more units share, 2 name two or more units", rows[0])
+
     def test_synth_has_one_line_per_unit(self):
         r = charter(self.root, "synth")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
