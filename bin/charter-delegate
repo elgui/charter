@@ -599,10 +599,23 @@ def describe(item: dict) -> str:
     return f"commit '{item.get('message')}' ({', '.join(sorted({k for v in (item.get('kinds') or {}).values() for k in v}))})"
 
 
-def acted(wt: Path, plan: dict, item: dict, result: str, verdict: dict, sha: str) -> None:
+def revert_line(wt: Path, plan: dict, item: dict, sha: str, method: str | None = None) -> str:
+    """The line that undoes an act. A merge is undone as it was made: a merge commit with `-m 1`, a squashed commit
+    as it is, a rebase (one commit per commit of the PR) by a revert PR (/reviewPR of #17, 2026-10-14)."""
+    g = f"git -C {shlex.quote(str(wt))}"
+    if item["type"] != "merge":
+        return f"{g} revert --no-edit {sha[:12]}"
+    if not sha:
+        return (f"gh pr view {item.get('pr')} -R {plan.get('slug')} --json mergeCommit  # GitHub gave no merge commit; "
+                "revert the one it names, or open a revert PR")
+    if method == "rebase":
+        return f"# PR #{item.get('pr')} was rebased, one commit per commit of the PR: open a revert PR on GitHub"
+    return f"{g} fetch && {g} revert --no-edit {'-m 1 ' if method != 'squash' else ''}{sha[:12]}  # or a revert PR"
+
+
+def acted(wt: Path, plan: dict, item: dict, result: str, verdict: dict, sha: str, method: str | None = None) -> None:
     project = Path(plan["project"]).parent.name if plan.get("project", "").endswith(".git") else wt.name
-    revert = (f"git -C {shlex.quote(str(wt))} revert --no-edit {sha[:12]}" if item["type"] != "merge"
-              else f"git -C {shlex.quote(str(wt))} fetch && git -C {shlex.quote(str(wt))} revert --no-edit -m 1 {sha[:12]}  # or a revert PR")
+    revert = revert_line(wt, plan, item, sha, method)
     log(f"{wt}: {item['id']} {result} {sha[:10]} ({verdict.get('by')}): {verdict.get('reason')}")
     ledger({"at": now(), "project": project, "checkout": str(wt), "id": item["id"], "type": item["type"], "result": result,
             "by": verdict.get("by"), "reason": verdict.get("reason"), "what": describe(item), "level": item.get("level"),
@@ -712,7 +725,7 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
         return hand_back(wt, plan, item, f"gh refused the merge: {(r.stderr or r.stdout).strip()[-600:]}", "rules", dry)
     sha = gh("pr", "view", str(item["pr"]), "-R", plan["slug"], "--json", "mergeCommit", "--jq", ".mergeCommit.oid", cwd=neutral()).stdout.strip() or data["head"]
     settle(wt, item, "merged", str(v["by"]), v["reason"], sha)
-    acted(wt, plan, item, "merged", v, sha)
+    acted(wt, plan, item, "merged", v, sha, method)
 
 
 def age_s(item: dict) -> float:

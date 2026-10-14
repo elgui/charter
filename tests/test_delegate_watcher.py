@@ -74,7 +74,7 @@ FAKE_GH = textwrap.dedent('''\
             files = files[:-1]
         print("\\n".join(f"diff --git a/{f} b/{f}" for f in files))
     elif a[:2] == ["repo", "view"]:
-        print("SQUASH")
+        print(os.environ.get("FAKE_GH_METHOD", "SQUASH"))
     elif a[:2] == ["pr", "merge"]:
         pass
     else:
@@ -537,6 +537,23 @@ class Watcher(unittest.TestCase):
         self.watch(FAKE_VERDICT='{"decision": "escalate", "reason": "the real judge says no", "probes_safe": false, "concerns": []}')
         self.assertEqual(len(self.judged()), 2)
         self.assertEqual(self.verdict(hid)["reason"], "the real judge says no")
+
+
+    # ---------------------------------------------------------------- /reviewPR of #17 (codex gpt-6-sol), 2026-10-14
+
+    def test_a_merges_revert_line_is_the_one_its_method_needs(self):
+        """A squashed commit has one parent, so `-m 1` would fail on it; a rebase is undone by a revert PR."""
+        cases = {"SQUASH": ("revert --no-edit cccccccccccc", "-m 1"), "MERGE": ("revert --no-edit -m 1 cccccccccccc", None),
+                 "REBASE": ("open a revert PR", "git -C")}
+        for method, (want, never) in cases.items():
+            with self.subTest(method):
+                (self.state / "ledger.jsonl").unlink(missing_ok=True)
+                self.merge(env={"FAKE_GH_METHOD": method})
+                row = json.loads((self.state / "ledger.jsonl").read_text().splitlines()[-1])
+                self.assertEqual(row["result"], "merged")
+                self.assertIn(want, row["revert"])
+                if never:
+                    self.assertNotIn(never, row["revert"])
 
 
 if __name__ == "__main__":
