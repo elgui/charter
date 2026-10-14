@@ -574,5 +574,23 @@ class Watcher(unittest.TestCase):
         self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
 
 
+    def test_a_pr_reopening_a_split_unit_reads_the_projects_done_statuses(self):
+        """A project whose units close as `accepted`: a PR moving a split unit out of it reopens it, the owner's act."""
+        set_config(self.root, done_statuses=["accepted"])
+        u = self.root / ".taskets" / "u2.md"
+        u.write_text(u.read_text().replace("status: in-progress", "status: accepted").replace("kind: work", "kind: split"))
+        git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "u2 split, accepted")
+        base = git(self.root, "rev-parse", "HEAD").stdout.strip()
+        git(self.root, "switch", "-q", "-c", "pr-reopen")
+        u.write_text(u.read_text().replace("status: accepted", "status: in-progress"))
+        git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-am", "reopen")
+        head = git(self.root, "rev-parse", "HEAD").stdout.strip()
+        git(self.root, "switch", "-q", "main")
+        mid = self.merge(baseRefOid=base, headRefOid=head, files=[{"path": ".taskets/u2.md"}],
+                         comments=[{"author": {"login": "owner-login"}, "body": f"<!-- charter-review: pass sha={head} -->"}])
+        self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
+        self.assertIn(".taskets/u2.md, which only the owner merges", self.verdict(mid)["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

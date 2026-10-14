@@ -419,7 +419,7 @@ def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
                           env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH), timeout=120)
 
 
-def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str) -> list[str] | None:
+def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str, done: list[str] | None = None) -> list[str] | None:
     """Why changing `path` from the PR's base to its head is an owner-only change (the engine's own rule), read from
     GitHub at both commits; None when either cannot be read, which is never taken for "no change": a request that
     failed, or a file over 1 MB, which the contents API serves without its content (/reviewPR of #17, 2026-10-13;
@@ -438,7 +438,21 @@ def pr_owner_only(slug: str, base_sha: str, head_sha: str, path: str) -> list[st
     (ok_old, old), (ok_new, new) = at(base_sha), at(head_sha)
     if not (ok_old and ok_new):
         return None
-    return engine_checks.owner_only_changes(path, old, new, "commit")
+    return engine_checks.owner_only_changes(path, old, new, "commit", done)
+
+
+def base_done_statuses(slug: str, base_sha: str) -> list[str] | None:
+    """`done` and the done statuses of the project's charter/config.json at the PR's base; None when GitHub will not
+    give it (a config absent there is the default)."""
+    r = gh_api(f"repos/{slug}/contents/charter/config.json?ref={base_sha}", "--jq", ".content")
+    if r.returncode != 0:
+        return ["done"] if "404" in r.stderr else None
+    try:
+        obj = json.loads(base64.b64decode(r.stdout.strip() or "").decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    cfg = engine_checks.lib.config_from(obj if isinstance(obj, dict) else {})
+    return list(dict.fromkeys(["done", *(str(x) for x in engine_checks.lib.as_list(cfg.get("done_statuses")))]))
 
 
 def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None) -> tuple[list[str], dict, str]:
@@ -489,7 +503,11 @@ def check_pr(wt: Path, item: dict, slug: str | None, default_branch: str | None)
     touched = [f for f in names if f.startswith(PROTECTED_IN_PR) or f in PROTECTED_IN_PR]
     if not touched:
         maybe = [f for f in names if f not in DELEGATED_IN_PR and engine_checks.may_be_owner_only(f)]
-        read = {f: pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f) for f in maybe}
+        # a split unit is reopened when it leaves one of the project's done statuses, as its base names them, or
+        # `done` (/reviewPR of #17, 2026-10-14); a base config GitHub will not give reads every unit as unread
+        done = base_done_statuses(slug, p.get("baseRefOid", "")) if any(f.startswith(".taskets/") for f in maybe) else []
+        read = {f: (pr_owner_only(slug, p.get("baseRefOid", ""), p.get("headRefOid", ""), f, done)
+                    if done is not None or not f.startswith(".taskets/") else None) for f in maybe}
         touched = [f for f, why_owner in read.items() if why_owner]
         unread = [f for f, why_owner in read.items() if why_owner is None]
         if unread:
