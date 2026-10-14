@@ -63,7 +63,7 @@ FAKE_GH = textwrap.dedent('''\
     elif a[:1] == ["api"] and a[1].endswith("/files"):
         print("\\n".join(f["path"] + "\\t" + f.get("previous_filename", "") for f in pr.get("files") or []))
     elif a[:2] == ["pr", "view"] and "mergeCommit" in a:
-        print("c" * 40)
+        print("" if os.environ.get("FAKE_GH_NO_MERGE_COMMIT") else "c" * 40)
     elif a[:2] == ["pr", "view"]:
         print(json.dumps(pr))
     elif a[:2] == ["pr", "diff"]:
@@ -554,6 +554,16 @@ class Watcher(unittest.TestCase):
                 self.assertIn(want, row["revert"])
                 if never:
                     self.assertNotIn(never, row["revert"])
+
+
+    def test_a_merge_commit_github_does_not_give_is_never_the_prs_head(self):
+        """The PR's head is not the commit a merge or a squash made: reverting it would undo the wrong thing."""
+        mid = self.merge(env={"FAKE_GH_NO_MERGE_COMMIT": "1"})
+        row = json.loads((self.state / "ledger.jsonl").read_text().splitlines()[-1])
+        self.assertEqual((row["result"], row["sha"]), ("merged", ""))
+        self.assertNotIn(HEAD[:12], row["revert"])
+        self.assertIn("gh pr view 7", row["revert"])
+        self.assertNotIn(HEAD[:10], json.dumps(self.verdict(mid) or {}))
 
 
 if __name__ == "__main__":

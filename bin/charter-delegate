@@ -723,8 +723,11 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
     r = gh("pr", "merge", str(item["pr"]), "-R", plan["slug"], f"--{method}", "--match-head-commit", data["head"], cwd=neutral())
     if r.returncode != 0:
         return hand_back(wt, plan, item, f"gh refused the merge: {(r.stderr or r.stdout).strip()[-600:]}", "rules", dry)
-    sha = gh("pr", "view", str(item["pr"]), "-R", plan["slug"], "--json", "mergeCommit", "--jq", ".mergeCommit.oid", cwd=neutral()).stdout.strip() or data["head"]
-    settle(wt, item, "merged", str(v["by"]), v["reason"], sha)
+    # the commit the merge made, or none: the PR's head is not it for a merge or a squash, so never stands in for it
+    # (/reviewPR of #17, 2026-10-14)
+    mc = gh("pr", "view", str(item["pr"]), "-R", plan["slug"], "--json", "mergeCommit", "--jq", ".mergeCommit.oid", cwd=neutral())
+    sha = mc.stdout.strip() if mc.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", mc.stdout.strip()) else ""
+    settle(wt, item, "merged", str(v["by"]), v["reason"], sha or None)
     acted(wt, plan, item, "merged", v, sha, method)
 
 
