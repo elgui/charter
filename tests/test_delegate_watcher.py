@@ -566,5 +566,13 @@ class Watcher(unittest.TestCase):
         self.assertNotIn(HEAD[:10], json.dumps(self.verdict(mid) or {}))
 
 
+    def test_a_default_merge_method_github_does_not_give_hands_the_merge_back(self):
+        """A failed lookup is not `merge`: a squash-only habit would get a merge commit."""
+        mid = self.merge(env={"FAKE_GH_METHOD": ""})
+        self.assertEqual(self.verdict(mid)["result"], "escalated")
+        self.assertIn("did not give owner-login/proj's default merge method", self.verdict(mid)["reason"])
+        self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
+
+
 if __name__ == "__main__":
     unittest.main()

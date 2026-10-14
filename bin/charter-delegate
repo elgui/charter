@@ -523,8 +523,9 @@ def merge_method(item: dict, slug: str) -> str | None:
     m = item.get("method")
     if m:
         return m if m in ("merge", "squash", "rebase") else None
+    # a failed lookup is no answer, never `merge` (/reviewPR of #17, 2026-10-14)
     r = gh("repo", "view", slug, "--json", "viewerDefaultMergeMethod", "--jq", ".viewerDefaultMergeMethod", cwd=neutral())
-    return {"SQUASH": "squash", "REBASE": "rebase"}.get(r.stdout.strip(), "merge")
+    return {"MERGE": "merge", "SQUASH": "squash", "REBASE": "rebase"}.get(r.stdout.strip()) if r.returncode == 0 else None
 
 
 # ---------------------------------------------------------------- the ledger and the owner's messages
@@ -711,7 +712,8 @@ def handle(wt: Path, plan: dict, item: dict, dry: bool, use_judge: bool, cap: li
         why = [f"PR #{item['pr']} was still not ready after {PENDING_GRACE_S // 60} minutes: {later}"]
     method = merge_method(item, plan.get("slug") or "") if not why else None
     if not why and method is None:
-        why = [f"the merge method {item.get('method')!r} is not merge, squash or rebase"]
+        why = [f"the merge method {item.get('method')!r} is not merge, squash or rebase" if item.get("method")
+               else f"GitHub did not give {plan.get('slug')}'s default merge method"]
     if why:
         return hand_back(wt, plan, item, "; ".join(why), "rules", dry)
     v = judge("merge", data, use_judge, item["id"], dry)
