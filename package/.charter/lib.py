@@ -275,6 +275,10 @@ def committed_level(root: Path, rev: str) -> tuple[str | None, str]:
         return None, ""
     if lv not in DELEGATE_LEVELS:
         return "strict", f"`delegate.level` on {rev} is {json.dumps(lv)}, not one of {', '.join(DELEGATE_LEVELS)}"
+    # a config the gates would block delegates nothing: it fails closed as a whole (/reviewPR of #17, 2026-10-14)
+    problems = config_from(obj).get(PROBLEMS) or []
+    if problems:
+        return "strict", f"{rev}:{CHARTER_DIR}/config.json has a problem the gates block on: {problems[0]}"
     return lv, ""
 
 

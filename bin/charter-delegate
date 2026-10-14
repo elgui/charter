@@ -283,6 +283,10 @@ def github_level(slug: str) -> tuple[str | None, str, str | None]:
     lv = d.get("level") if isinstance(d, dict) else None
     if lv not in ("strict", "routine", "answers", "open"):
         return "strict", where + (" (no `delegate.level`: strict)" if lv is None else f" (`delegate.level` {lv!r}: strict)"), base
+    # a config the gates would block delegates nothing (/reviewPR of #17, 2026-10-14)
+    problems = engine_checks.lib.config_from(obj).get(engine_checks.lib.PROBLEMS) or []
+    if problems:
+        return "strict", f"{where}, whose charter/config.json has a problem the gates block on: {problems[0]}", base
     return lv, where, base
 
 

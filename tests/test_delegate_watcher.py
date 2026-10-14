@@ -592,5 +592,16 @@ class Watcher(unittest.TestCase):
         self.assertIn(".taskets/u2.md, which only the owner merges", self.verdict(mid)["reason"])
 
 
+    def test_a_config_on_github_the_gates_block_on_delegates_no_merge(self):
+        """GitHub's config names `open` but carries a key the gates refuse: the level read there is strict."""
+        blocked = self.tmp / "github-config.json"
+        obj = json.loads((self.root / "charter" / "config.json").read_text())
+        obj.update(delegate={"level": "open"}, bogus_key=1)
+        blocked.write_text(json.dumps(obj))
+        mid = self.merge(env={"FAKE_GH_CONFIG": str(blocked)})
+        self.assertFalse([c for c in self.gh_calls() if c[:2] == ["pr", "merge"]])
+        self.assertIn("unknown key `bogus_key`", self.verdict(mid)["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

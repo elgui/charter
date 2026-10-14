@@ -151,6 +151,12 @@ class Levels(Base):
         self.assertIn("not one of strict, routine, answers, open", r.stdout)
         self.assertIn("read as strict", " ".join(lib.config_from({"delegate": {"level": "loose"}})[lib.PROBLEMS]))
 
+    def test_a_config_the_gates_block_on_delegates_nothing(self):
+        """/reviewPR of #17, 2026-10-14: `charter check` refuses a config with a problem, so its level is strict."""
+        set_config(self.root, delegate={"level": "open"}, bogus_key=1)
+        self.assertEqual(level_of(self.root), "strict")
+        self.assertIn("unknown key `bogus_key`", charter(self.root, "delegate", "level").stdout)
+
     def test_the_default_branch_is_master_where_there_is_no_main(self):
         git(self.root, "branch", "-m", "main", "master")
         set_config(self.root, delegate={"level": "answers"})
