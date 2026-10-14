@@ -32,7 +32,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.15",
+    "version": "0.4.16",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -55,6 +55,9 @@ DEFAULT_CONFIG = {
     },
     # done also needs a `review:` evidence line naming an independent verdict (off by default)
     "review": {"required": False},
+    # how much the owner's delegate may do (0.4.14; docs/design/owner-delegate.md): strict | routine | answers | open.
+    # The gates read it from the config committed on the default branch, never from here: see delegate_level
+    "delegate": {"level": "strict"},
     # the continuous chain (chain.py): the sessions' model and effort, the window the budget is a share of
     # (0: 1M for a [1m] model, else 200k), the hand-over line and the hard cap in percent, the launcher;
     # the review at the end of each group (chain_groups.py): auto (codex if on PATH) | codex | off | a command
@@ -126,6 +129,7 @@ CONFIG_SCHEMA = {
     "done_statuses": list,
     "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
     "review": {"required": bool},
+    "delegate": {"level": str},
     "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str,
               "review": str, "review_effort": str, "review_timeout_s": int, "notify": str, "notify_command": str,
               "owner_review": str, "owner_review_effort": str, "owner_review_timeout_s": int},
@@ -178,6 +182,8 @@ def config_from(user: dict) -> dict:
                     problems.append(f"unknown key `{k}.{sk}`{_near(sk, t)}; ignored")
                 elif not _typed(sv, t[sk]):
                     problems.append(f"`{k}.{sk}` is {json.dumps(sv)}, not a {t[sk].__name__}; left at {json.dumps(cfg[k][sk])}")
+                elif k == "delegate" and sk == "level" and sv not in DELEGATE_LEVELS:
+                    problems.append(f"`delegate.level` is {json.dumps(sv)}, not one of {', '.join(DELEGATE_LEVELS)}{_near(sv, DELEGATE_LEVELS)}; read as strict")
                 else:
                     cfg[k][sk] = sv
         elif not _typed(v, t):
@@ -215,6 +221,159 @@ def in_claude_code() -> bool:
     return os.environ.get("CLAUDECODE", "") == "1"
 
 
+# ---------------------------------------------------------------- the owner's delegate (0.4.14)
+
+# How much the owner's delegate may do, strictest first; each level adds to the one before it
+# (docs/design/owner-delegate.md). strict is the default and delegates nothing: today's behaviour.
+DELEGATE_LEVELS = ("strict", "routine", "answers", "open")
+LEVEL_KINDS = {
+    "strict": frozenset(),
+    "routine": frozenset({"owner-check", "upgrade"}),                       # mechanical: no judgement in them
+    "answers": frozenset({"owner-check", "upgrade", "ruling"}),             # + the owner's own answers, transcribed
+    "open": frozenset({"owner-check", "upgrade", "ruling", "rails", "scope", "merge"}),   # + the agents' judgement
+}
+DELEGATE_COMMITTER = ("charter delegate", "charter-delegate@localhost")
+DELEGATE_TRAILER = "Charter-Delegate"
+
+
+def delegable(kinds, level: str) -> bool:
+    """Whether the delegate may take an act made of these kinds at this level: every kind is one the level names,
+    and there is at least one. `structural` is named by no level."""
+    ks = set(kinds)
+    return bool(ks) and ks <= LEVEL_KINDS.get(level, frozenset())
+
+
+def default_branch(root: Path) -> str | None:
+    """The repository's main line, as a local branch: the one origin/HEAD names, else main, else master; None when
+    there is none."""
+    def local(name):
+        return git(root, "rev-parse", "--verify", "-q", f"refs/heads/{name}").returncode == 0
+    r = git(root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    name = r.stdout.strip().split("/", 1)[-1] if r.returncode == 0 else ""
+    if name and local(name):
+        return name
+    return next((n for n in ("main", "master") if local(n)), None)
+
+
+def committed_level(root: Path, rev: str) -> tuple[str | None, str]:
+    """(level, problem) that `rev:charter/config.json` names; (None, "") when it names none. A value that is not a level,
+    or a config that does not parse, reads as strict: it fails closed."""
+    r = git(root, "show", f"{rev}:{CHARTER_DIR}/config.json")
+    if r.returncode != 0:
+        return None, ""
+    try:
+        obj = json.loads(r.stdout)
+    except ValueError:
+        return "strict", f"{rev}:{CHARTER_DIR}/config.json is not valid JSON"
+    d = obj.get("delegate") if isinstance(obj, dict) else None
+    if d is None:
+        return None, ""
+    if not isinstance(d, dict):   # `"delegate": "open"` is not the schema's shape (review of 2026-10-13, item 9)
+        return "strict", f"`delegate` on {rev} is {json.dumps(d)}, not an object with a `level`"
+    lv = d.get("level")
+    if lv is None:
+        return None, ""
+    if lv not in DELEGATE_LEVELS:
+        return "strict", f"`delegate.level` on {rev} is {json.dumps(lv)}, not one of {', '.join(DELEGATE_LEVELS)}"
+    # a config the gates would block delegates nothing: it fails closed as a whole (/reviewPR of #17, 2026-10-14)
+    problems = config_from(obj).get(PROBLEMS) or []
+    if problems:
+        return "strict", f"{rev}:{CHARTER_DIR}/config.json has a problem the gates block on: {problems[0]}"
+    return lv, ""
+
+
+def stricter(a: str, b: str) -> str:
+    return a if DELEGATE_LEVELS.index(a) <= DELEGATE_LEVELS.index(b) else b
+
+
+def delegate_level(root: Path, branch_too: bool = True, cap: tuple[str, str] | None = None) -> dict:
+    """The level the delegate works at in this checkout: {"level", "from", "problems"}. Only the owner sets it, so it is
+    read from what is committed, never from the working tree: the config on the default branch decides (no key there is
+    strict), and the checkout's own branch counts only when its committed config names a level, which can only make
+    it stricter. A branch made before the owner set the level inherits it.
+
+    Local refs are the agent's to move (`update-ref`, `symbolic-ref`: review of 2026-10-13, item 2), so the watcher
+    passes `cap`, (level, where it was read): the level on the repository's default branch on GitHub, which only a push
+    changes. The level is then the stricter of the two; the session's own reads, without a cap, are advisory."""
+    out = _local_level(root, branch_too)
+    if cap is not None:
+        lv = cap[0] if cap[0] in DELEGATE_LEVELS else "strict"
+        if stricter(lv, out["level"]) != out["level"]:
+            out.update(level=lv, **{"from": f"{cap[1]} (stricter than {out['from']})"})
+        elif lv == out["level"]:
+            out["from"] = f"{out['from']}, and {cap[1]}"
+    return out
+
+
+def _local_level(root: Path, branch_too: bool) -> dict:
+    base = default_branch(root)
+    if base is None:
+        return {"level": "strict", "from": "no main or master branch", "problems": []}
+    lv, prob = committed_level(root, f"refs/heads/{base}")
+    out = {"level": lv or "strict", "from": base if lv else f"{base} (no `delegate.level`: strict)",
+           "problems": [prob] if prob else []}
+    head = git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip()
+    tip = git(root, "rev-parse", "--verify", "-q", f"refs/heads/{base}").stdout.strip()
+    if branch_too and head and head != tip:
+        blv, bprob = committed_level(root, "HEAD")
+        if bprob:
+            out["problems"].append(bprob)
+        if blv is not None and DELEGATE_LEVELS.index(blv) < DELEGATE_LEVELS.index(out["level"]):
+            branch = git(root, "branch", "--show-current").stdout.strip() or "HEAD"
+            out.update(level=blv, **{"from": f"{branch} (stricter than {base})"})
+    return out
+
+
+def delegate_dir(root: Path) -> Path:
+    """Where this worktree's asks, merge requests and the delegate's verdicts live: in its own git directory."""
+    return local_state_dir(root)
+
+
+def delegate_env() -> dict:
+    """The environment of a commit the delegate makes: the committer is the delegate, the author stays git's user (the
+    owner on this machine), and the owner switch is never set (the delegate runs outside Claude Code, where the commit
+    gate does not need it)."""
+    env = {k: v for k, v in os.environ.items() if k != "CHARTER_OWNER"}
+    env.update(GIT_COMMITTER_NAME=DELEGATE_COMMITTER[0], GIT_COMMITTER_EMAIL=DELEGATE_COMMITTER[1])
+    return env
+
+
+# The settings hooks the installer merges into a project's .claude/settings.json; the package ships them as
+# .charter/settings-fragment.json, an owned file whose hash the manifest records, so an upgrade's settings change can be
+# recognised as the installer's own (checks.owner_act_kinds).
+SETTINGS_FRAGMENT = f"{TOOL_DIR}/settings-fragment.json"
+HOOK_TAG = "/.charter/hooks/"
+
+
+def _is_charter_hook(h: dict) -> bool:
+    return HOOK_TAG in " ".join([str(h.get("command", ""))] + [str(a) for a in h.get("args", [])])
+
+
+def without_charter_hooks(groups: list) -> list:
+    """The hook groups of one event with charter's hooks taken out: a project's hook that shares a group with one of
+    charter's stays, and a group left empty goes (cross-review, 2026-10-04: the whole group went)."""
+    out = []
+    for g in groups:
+        hs = g.get("hooks", [])
+        keep = [h for h in hs if not _is_charter_hook(h)]
+        if len(keep) == len(hs):
+            out.append(g)
+        elif keep:
+            out.append(dict(g, hooks=keep))
+    return out
+
+
+def merge_settings(existing: dict, fragment: dict) -> dict:
+    """Add the charter hook entries to a settings object, replacing any earlier charter entries."""
+    out = json.loads(json.dumps(existing))
+    hooks = out.setdefault("hooks", {})
+    for event, groups in fragment["hooks"].items():
+        cur = without_charter_hooks(hooks.get(event, []))
+        cur.extend(groups)
+        hooks[event] = cur
+    return out
+
+
 def git(root: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
     """Output decoded as UTF-8, undecodable bytes replaced: `git show` of a binary file must not raise."""
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8", errors="replace", check=check)
@@ -246,18 +405,41 @@ def handover_path(root: Path) -> Path:
     return local_state_dir(root) / HANDOVER_FILE
 
 
-def record_handover(root: Path, paths: list[str], message: str, by: str) -> dict:
-    """Record what the owner's `charter owner commit` commits: the branch, the message, the paths and each path's
-    staged blob (None for a removal). Data only: no command, and no owner switch."""
+def staged_entries(root: Path, paths: list[str]) -> dict[str, tuple[str, str] | None]:
+    """Each path's (mode, blob) in the index, None when it is not there (a removal). The paths are literal: a file
+    named `charter/config.json*` is that file, never a pattern (review of 2026-10-13, item 1)."""
     staged = {}
-    for entry in git(root, "ls-files", "-s", "-z", "--", *paths).stdout.split("\0"):
+    for entry in git(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *paths).stdout.split("\0"):
         if "\t" in entry:
             meta, rp = entry.split("\t", 1)
-            staged[rp] = meta.split()[1]
+            staged[rp] = (meta.split()[0], meta.split()[1])
+    return {p: staged.get(p) for p in paths}
+
+
+def staged_blobs(root: Path, paths: list[str]) -> dict[str, str | None]:
+    """Each path's blob in the index, None when it is not there (a removal)."""
+    return {p: (e[1] if e else None) for p, e in staged_entries(root, paths).items()}
+
+
+def record_handover(root: Path, paths: list[str], message: str, by: str, kinds: dict | None = None) -> dict:
+    """Record what the owner's `charter owner commit` commits: the branch, the message, the paths and each path's
+    staged blob (None for a removal). Data only: no command, and no owner switch. Since 0.4.14 it also carries an id,
+    the kinds of owner act among the paths, the delegate's level, and whether the delegate may take it."""
+    import hashlib
+    entries = staged_entries(root, paths)
     rec = {"at": _dt.datetime.now().astimezone().isoformat(timespec="seconds"), "by": by,
            "branch": git(root, "branch", "--show-current").stdout.strip(),
            "head": git(root, "rev-parse", "--verify", "-q", "HEAD").stdout.strip() or None,
-           "message": message, "paths": list(paths), "staged": {p: staged.get(p) for p in paths}}
+           "message": message, "paths": list(paths), "staged": {p: (e[1] if e else None) for p, e in entries.items()},
+           "modes": {p: (e[0] if e else None) for p, e in entries.items()}}
+    lv = delegate_level(root)
+    ks = {p: list(k) for p, k in (kinds or {}).items()}
+    rec.update(kinds=ks, level=lv["level"], level_from=lv["from"],
+               delegable=delegable({k for v in ks.values() for k in v}, lv["level"]))
+    rec["id"] = "h" + hashlib.sha256(json.dumps([rec["at"], rec["branch"], rec["head"], rec["staged"]], sort_keys=True).encode()).hexdigest()[:12]
+    prev = load_handover(root)
+    if prev and prev.get("id") and all(prev.get(k) == rec[k] for k in ("branch", "head", "message", "paths", "staged", "modes")):
+        rec.update(id=prev["id"], at=prev.get("at", rec["at"]))   # the same handover, recorded again: the delegate's verdict still applies
     p = handover_path(root)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
@@ -302,27 +484,46 @@ def clear_handover(root: Path) -> None:
         handover_path(root).unlink()
 
 
-def handover(root: Path, paths: list[str], message: str, owner: list[str], by: str = "charter handover") -> list[str]:
-    """Who commits what is staged, and how. `owner` lists the paths among them that are the owner's change
-    (`checks.owner_only_staged`); with none, the agent commits, and the owner is not asked. With some, the handover
-    is recorded and the block ends with the owner's line, alone on the last line so a triple-click copies it whole."""
+def handover(root: Path, paths: list[str], message: str, owner, by: str = "charter handover") -> list[str]:
+    """Who commits what is staged, and how. `owner` names the paths among them that are the owner's change
+    (`checks.owner_kinds_staged`: each path with its kinds of owner act; a plain list counts as structural); with none,
+    the agent commits, and the owner is not asked. With some, the handover is recorded and the block ends with the
+    owner's line, alone on the last line so a triple-click copies it whole. Where the delegate's level covers every
+    kind among them (0.4.14), the block says the delegate takes it, and the owner's line stays as the fallback."""
+    kinds = dict(owner) if isinstance(owner, dict) else {p: ["structural"] for p in owner}
     branch = git(root, "branch", "--show-current").stdout.strip() or "(detached HEAD)"
     cmd = commit_command(root, paths, message)
     note = [f"  note: {branch} is the main line; the change belongs on a branch (`git switch -c <branch>` keeps what is staged)"] \
         if branch in ("main", "master") else []
-    if not owner:
+    if not kinds:
         clear_handover(root)
         return [f"Staged {len(paths)} file(s) on branch {branch}; none is an owner-only change, so an agent commits them:",
                 f"  {cmd}"] + note
+    rec = None
     if (root / CHARTER_BIN).is_file():
-        record_handover(root, paths, message, by)
+        rec = record_handover(root, paths, message, by, kinds)
         line = owner_line(root)
     else:   # an uninstall: the engine has left the tree, so the owner commits with git itself
         clear_handover(root)
         line = f"CHARTER_OWNER=1 {cmd}"
+    mine = list(kinds)
+    listed = ", ".join(mine[:8]) + (f" and {len(mine) - 8} more" if len(mine) > 8 else "")
+    tally: dict[str, int] = {}
+    for p in mine:
+        for k in kinds[p] or ["structural"]:
+            tally[k] = tally.get(k, 0) + 1
+    kinds_line = ["  kinds of owner act: " + ", ".join(f"{k} ({n})" for k, n in sorted(tally.items()))]
+    if rec and rec["delegable"]:
+        return ([f"Handed to the owner's delegate (level {rec['level']}, from {rec['level_from']}): commit {len(paths)} staged file(s) "
+                 f"on branch {branch}. The gate refuses this commit to an agent.",
+                 f"  owner-only among them ({len(mine)}): {listed}"] + kinds_line + [
+                 f"  the delegate commits it within a few minutes, or hands it back with its reason; to wait for its verdict:",
+                 f"    python3 {CHARTER_BIN} handover --wait"]
+                + note + ["  if it hands it back or does not answer, " + OWNER_LINE_LABEL.strip(), line])
+    level = [f"  level {rec['level']} (from {rec['level_from']}) keeps this for the owner"] if rec and rec["level"] != "strict" else []
     return ([f"Waiting on the owner: commit {len(paths)} staged file(s) on branch {branch}. The gate refuses this commit to an agent.",
-             f"  owner-only among them ({len(owner)}): " + ", ".join(owner[:8]) + (f" and {len(owner) - 8} more" if len(owner) > 8 else "")]
-            + note + [OWNER_LINE_LABEL, line])
+             f"  owner-only among them ({len(mine)}): {listed}"]
+            + (kinds_line if rec and rec["level"] != "strict" else []) + level + note + [OWNER_LINE_LABEL, line])
 
 
 def ignored(root: Path, relpaths: list[str]) -> set[str]:
@@ -363,6 +564,11 @@ def local_state_dir(root: Path) -> Path:
     return d / "charter" if d else root / STATE_DIR
 
 
+def git_dir(root: Path) -> Path:
+    """This worktree's own git directory (where index.lock appears while git writes the index)."""
+    return _git_path(root, "--git-dir") or root / ".git"
+
+
 # ---------------------------------------------------------------- the staged view
 
 _VIEW: Path | None = None
@@ -379,11 +585,26 @@ def index_view(root: Path):
     global _VIEW
     tmp = Path(tempfile.mkdtemp(prefix="charter-index-"))
     try:
-        # paths pass from one git command to the other as bytes, so no file name is ever decoded
-        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", CHARTER_DIR, TASKETS_DIR], capture_output=True).stdout
-        if listed.strip(b"\0"):
-            subprocess.run(["git", "-C", str(root), "checkout-index", "-f", "-z", "--stdin", f"--prefix={tmp}/"],
-                           input=listed, capture_output=True)
+        # the staged blobs, written as they are: no checkout, so no filter or attribute of the project's git config
+        # runs (the owner's delegate runs this check outside Claude Code: review of 2026-10-13, item 3). Paths stay
+        # bytes from one git command to the other, so no file name is ever decoded
+        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-s", "-z", "--", CHARTER_DIR, TASKETS_DIR], capture_output=True).stdout
+        entries = []
+        for e in listed.split(b"\0"):
+            meta, sep, rp = e.partition(b"\t")
+            if sep and meta.split()[0] in (b"100644", b"100755") and meta.split()[2] == b"0":
+                entries.append((meta.split()[1], rp))
+        if entries:
+            out = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"], input=b"".join(s + b"\n" for s, _ in entries),
+                                 capture_output=True).stdout
+            pos = 0
+            for _, rp in entries:
+                nl = out.index(b"\n", pos)
+                size = int(out[pos:nl].split()[2])
+                dest = Path(os.fsdecode(os.fsencode(tmp) + b"/" + rp))
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(out[nl + 1:nl + 1 + size])
+                pos = nl + 1 + size + 1
         _VIEW = tmp
         yield tmp
     finally:

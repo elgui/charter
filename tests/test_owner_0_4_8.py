@@ -122,7 +122,7 @@ class OwnerJsonQueue(unittest.TestCase):
 
     def test_owner_json_shape(self):
         rep = self.queue()
-        self.assertEqual(set(rep), {"project", "charter", "owner", "items"})
+        self.assertEqual(set(rep), {"project", "charter", "owner", "delegate", "items"})   # delegate: 0.4.14
         self.assertEqual(rep["project"], str(self.root))
         self.assertEqual(rep["owner"], "Test Owner")
         fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run"}

@@ -1033,6 +1033,7 @@ OWNER_OVERRIDE = ("this is the owner's act: edit the file yourself, or start Cla
                   "for an owner session; as an agent, propose it (a change request, a new decision) and say so")
 # at commit the change is already made: the agent leaves it staged and hands the owner one command, not a new session
 OWNER_COMMIT_OVERRIDE = ("the owner commits it: leave it staged, run `python3 .charter/bin/charter handover` "
+                         "(where it says the owner's delegate takes it, wait with `--wait` first) "
                          "and give the owner the line it prints")
 
 
@@ -1070,6 +1071,109 @@ def owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> dict[str, list
         if why and not release_change(rp, read):
             out[rp] = why
     return out
+
+
+# ---------------------------------------------------------------- the kinds of an owner act (0.4.14)
+
+# the kind word after `— owner:`: owner.OWNER_SEG_RE, repeated here because owner.py imports this module; a bare
+# `owner:` is a check
+OWNER_KIND_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
+SCOPE_FILE = lib.CHARTER_DIR + "/scope.md"
+RAILS_FILE = lib.CHARTER_DIR + "/rails.md"
+SETTINGS_FILE = ".claude/settings.json"
+
+
+def _owner_lines_by_key(text: str) -> dict[str, list[tuple[bool, str, str]]]:
+    """key -> [(checked, the line after its box, kind)] for each line of a unit's acceptance marked `— owner:`."""
+    sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
+    out: dict[str, list[tuple[bool, str, str]]] = {}
+    for l in (sec or "").splitlines():
+        m = BOX_LINE_RE.match(l.rstrip("\n"))
+        mk = OWNER_KIND_RE.search(l) if m else None
+        if not mk:
+            continue
+        ac = re.match(r"(AC-\d+)\b", m.group(2))
+        key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
+        out.setdefault(key, []).append((m.group(1) != " ", m.group(2).rstrip(), (mk.group(1) or "check").lower()))
+    return out
+
+
+def owner_line_kinds(old: str | None, new: str | None) -> dict[str, str]:
+    """For each owner line this change closes (`owner_line_changes`), its kind of act: `owner-check` when it is the one
+    open `— owner: check` line of that key, now ticked, its words and probe unchanged; `structural` for every other
+    close (a `do` or `decide` line, a removed, unmarked or reworded line, one that arrives ticked)."""
+    o, n = _owner_lines_by_key(old or ""), _owner_lines_by_key(new or "")
+    out = {}
+    for k in owner_line_changes(old, new):
+        ol, nl = o.get(k, []), n.get(k, [])
+        ticked = len(ol) == 1 and len(nl) == 1 and not ol[0][0] and nl[0][0] and ol[0][1] == nl[0][1]
+        out[k] = "owner-check" if ticked and ol[0][2] == "check" else "structural"
+    return out
+
+
+def settings_installer_exact(old: str | None, new: str | None, fragment: dict | None) -> bool:
+    """Whether `new` is what the installer makes of `old`: the charter hooks of `fragment` merged in, nothing else."""
+    if not isinstance(fragment, dict) or not isinstance(fragment.get("hooks"), dict):
+        return False
+    try:
+        o = json.loads(old) if (old or "").strip() else {}
+        n = json.loads(new or "")
+    except ValueError:
+        return False
+    return isinstance(o, dict) and lib.merge_settings(o, fragment) == n
+
+
+def owner_act_kinds(rp: str, old: str | None, new: str | None, context: str = "commit",
+                    done_statuses: list[str] | None = None, fragment: dict | None = None) -> list[str]:
+    """The kinds of owner act that changing `rp` from `old` to `new` is, for the delegate's level (lib.LEVEL_KINDS); empty
+    when it is no owner act. `owner-check`: closing `— owner: check` lines; `upgrade`: a settings change exactly as the
+    installer writes it, given the package's settings `fragment`; `rails` and `scope`: an edit of charter/rails.md or
+    charter/scope.md. Everything else the owner-only check names is `structural`, which no level delegates. A ruling
+    (`ruling`) is never an edit: the delegate writes it from a recorded ask (delegate.py)."""
+    why = owner_only_changes(rp, old, new, context, done_statuses)
+    if not why:
+        return []
+    old, new = old or "", new or ""
+    if any("CHARTER_OWNER" in w for w in why):
+        return ["structural"]
+    if rp == SCOPE_FILE:
+        return ["scope"]
+    if rp == RAILS_FILE:
+        return ["rails"]
+    if rp == SETTINGS_FILE:
+        return ["upgrade"] if settings_installer_exact(old, new, fragment) else ["structural"]
+    if rp.startswith(lib.TASKETS_DIR + "/") and rp.endswith(".md"):
+        kinds = set(owner_line_kinds(old, new).values())
+        if any("kind: split" in w for w in why):
+            kinds.add("structural")
+        return sorted(kinds) or ["structural"]
+    return ["structural"]
+
+
+ENGINE_FRAGMENT = Path(__file__).resolve().parent / "settings-fragment.json"
+
+
+def staged_fragment(root: Path) -> dict | None:
+    """The settings fragment an upgrade's settings change is measured against: the one that ships with this engine, and
+    only when the staged copy is that same file. A fragment the staged manifest vouches for is not enough, since an
+    agent can write both (review of 2026-10-13, item 4). In a session the engine is the project's own, so the answer is
+    advisory; the watcher runs the engine of its own charter checkout, which decides."""
+    try:
+        mine = ENGINE_FRAGMENT.read_bytes()
+        frag = json.loads(mine)
+    except (OSError, ValueError):
+        return None
+    if blob(root, f":{lib.SETTINGS_FRAGMENT}") != mine:
+        return None
+    return frag if isinstance(frag, dict) else None
+
+
+def owner_kinds_staged(root: Path, cfg: dict, paths: list[str]) -> dict[str, list[str]]:
+    """The staged paths whose change is the owner's (`owner_only_staged`), each with its kinds of owner act."""
+    frag = staged_fragment(root)
+    done = lib.as_list(cfg.get("done_statuses"))
+    return {rp: owner_act_kinds(rp, head_text(root, rp), staged_text(root, rp), "commit", done, frag) or ["structural"]
+            for rp in owner_only_staged(root, cfg, paths)}
 
 
 def check_owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> list[Finding]:

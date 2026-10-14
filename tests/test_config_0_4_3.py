@@ -155,7 +155,7 @@ class NotebookEdit(unittest.TestCase):
         return {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": str(self.root / rel), "new_source": "x = 1", "cell_id": "a"}}
 
     def test_the_matcher_includes_it(self):
-        s = json.loads((PKG / ".claude" / "settings.json").read_text())
+        s = json.loads((PKG / ".charter" / "settings-fragment.json").read_text())
         for event in ("PreToolUse", "PostToolUse"):
             self.assertIn("NotebookEdit", s["hooks"][event][0]["matcher"].split("|"))
 

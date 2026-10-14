@@ -371,7 +371,7 @@ class Installed(unittest.TestCase):
     def test_the_command_is_the_owners_alone_and_the_hook_sees_it(self):
         text = (PKG / ".claude" / "commands" / "resume-chain.md").read_text()
         self.assertIn("\ndisable-model-invocation: true\n", text.split("\n---\n", 1)[0] + "\n")
-        hooks = json.loads((PKG / ".claude" / "settings.json").read_text())["hooks"]
+        hooks = json.loads((PKG / ".charter" / "settings-fragment.json").read_text())["hooks"]
         for ev in ("UserPromptSubmit", "UserPromptExpansion"):
             h = hooks[ev][0]["hooks"][0]
             self.assertTrue(h["args"][-1].endswith("/.charter/hooks/chain_gate.py"), ev)
