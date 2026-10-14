@@ -443,6 +443,18 @@ class ChainGate(Base):
                     "python3 ~/Projects/charter/bin/charter-delegate run"):
             self.assertIn("never run the delegate's acts", self.bash(cmd), cmd)
 
+    def test_the_fleet_line_that_sets_levels_is_denied(self):
+        """/reviewPR of #17, 2026-10-14: in a session started with the owner switch, `fleet --levels` passes the
+        installer's own refusal, so the hook denies it in every spelling argparse takes; a dry run is allowed."""
+        for cmd in ("python3 ~/Projects/charter/bin/charter-pkg fleet --levels alpha=open",
+                    "python3 -B /x/charter-pkg fleet --root /p --levels=alpha=open",
+                    "python3 bin/charter-pkg fleet --lev alpha=open --owner alpha=me",
+                    "sh -c 'python3 bin/charter-pkg fleet --l alpha=open'"):
+            self.assertIn("never run the delegate's acts", self.bash(cmd), cmd)
+        for cmd in ("python3 bin/charter-pkg fleet --levels alpha=open --dry-run", "python3 bin/charter-pkg fleet --upgrade",
+                    "python3 bin/charter-pkg fleet", "git commit -m 'charter-pkg fleet --levels is the owner line'"):
+            self.assertEqual(self.bash(cmd), "", cmd)
+
     def test_reading_the_plan_and_the_level_is_allowed(self):
         for cmd in ("python3 .charter/bin/charter delegate plan --json", "python3 .charter/bin/charter delegate level",
                     "python3 .charter/bin/charter handover --wait"):

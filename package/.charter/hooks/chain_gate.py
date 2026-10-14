@@ -8,8 +8,9 @@ when to hand over, refuses everything but the handoff past the cap, and keeps it
 `charter chain next` closed it. In any session, the owner's `/resume-chain` prompt resumes a paused chain here, and
 the prompt is blocked from the model (0.4.9); a Bash command that names CHARTER_OWNER, or runs `charter owner run` or
 `charter owner commit`, is denied, since an agent never sets the one or runs the others (0.4.11, 0.4.12); so is one that
-runs the owner's delegate (`charter delegate commit|perform|settle|level <name>`, `charter-delegate run`; 0.4.14). Fails
-open on its own errors, as every charter gate does."""
+runs the owner's delegate (`charter delegate commit|perform|settle|level <name>`, `charter-delegate run`; 0.4.14) or
+sets levels across the fleet (`charter-pkg fleet --levels`; 0.4.16). Fails open on its own errors, as every charter
+gate does."""
 import json
 import os
 import re
@@ -30,6 +31,9 @@ OWNER_RUN_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sowner\b[^\n;&|
 # item 9); the patterns are the fallback for a line the shell lexer cannot read
 DELEGATE_ACT_RE = re.compile(r"(?:^|[\s;&|(`/=])charter\b[^\n;&|]*?\sdelegate\b[^\n;&|]*?\s(commit|perform|settle|level\s+(?:strict|routine|answers|open))\b", re.M)
 WATCHER_RUN_RE = re.compile(r"charter-delegate\b[^\n;&|]*?\s(run)\b", re.M)
+# the owner's fleet line that commits levels (`charter-pkg fleet --levels`, any abbreviation argparse takes): a session
+# started with the owner switch passes the installer's own refusal, so the hook denies it (/reviewPR of #17, 2026-10-14)
+FLEET_LEVELS_RE = re.compile(r"charter-pkg\b[^\n;&|]*?\sfleet\b[^\n;&|]*?\s--l", re.M)
 LEVELS = ("strict", "routine", "answers", "open")
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 
@@ -90,7 +94,7 @@ def delegate_act(line: str, depth: int = 0) -> bool:
         cmds = list(_commands(line))
     except ValueError:   # unbalanced quotes: the patterns decide
         bare = line.replace("'", "").replace('"', "")
-        return bool(DELEGATE_ACT_RE.search(bare) or WATCHER_RUN_RE.search(bare))
+        return bool(DELEGATE_ACT_RE.search(bare) or WATCHER_RUN_RE.search(bare) or FLEET_LEVELS_RE.search(bare))
     for words in cmds:
         for i, w in enumerate(words):
             name, rest = os.path.basename(w.strip("`")), words[i + 1:]
@@ -105,6 +109,9 @@ def delegate_act(line: str, depth: int = 0) -> bool:
                     return True
             elif name == "charter-delegate" and "run" in rest and "--dry-run" not in rest:
                 return True
+            elif name == "charter-pkg" and "fleet" in rest and not any(len(x) >= 3 and "--dry-run".startswith(x) for x in rest):
+                if any(len(x.split("=", 1)[0]) >= 3 and "--levels".startswith(x.split("=", 1)[0]) for x in rest):
+                    return True
     return False
 
 

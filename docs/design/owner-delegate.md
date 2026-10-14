@@ -102,7 +102,7 @@ OVH, Cloudflare, Dokku server administration, server work on the five machines a
 The delegate runs as the same Unix user as the agents, and the agents use the owner's git and GitHub credentials. What keeps an agent from acting as the delegate, or from widening what it may do, is lexical, as for the owner switch (issues #2 and #12, https://github.com/elgui/charter/issues/12):
 
 - the delegate's acts refuse when `CLAUDECODE=1` (`refuse_in_session` in `package/.charter/delegate.py`), and charter's hook denies a command that unsets it;
-- the hook denies `charter delegate commit|perform|settle|level <name>` and `charter-delegate run` (`--dry-run` aside), read word by word, so a commit message or a grep that names them passes and a wrapper, `sh -c`, `eval` or a command substitution does not hide them (`delegate_act` in `package/.charter/hooks/chain_gate.py`);
+- the hook denies `charter delegate commit|perform|settle|level <name>`, `charter-delegate run` and `charter-pkg fleet --levels` in any abbreviation argparse takes (`--dry-run` aside; a session started with the owner switch passes the installer's own refusal, /reviewPR of #17, 2026-10-14), read word by word, so a commit message or a grep that names them passes and a wrapper, `sh -c`, `eval` or a command substitution does not hide them (`delegate_act` in `package/.charter/hooks/chain_gate.py`);
 - an `autoMode.soft_deny` rule names forging a verdict, running the delegate by hand, and writing its records or its state (`~/.claude/settings.json`, rule "Owner Delegate Forgery").
 
 What remains open, by kind:
