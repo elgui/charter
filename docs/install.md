@@ -43,10 +43,12 @@ The full comparison is `docs/method.md` § Two tracks. The survey and the first 
 - **A project that already has code, taskets or documents**: survey it first. The survey reads the project without writing to it and rehearses the install in a throwaway clone (`docs/design/migration-workflow.md`):
 
   ```
-  python3 $M survey $P --track <track> --out <a directory outside the project>
+  python3 $M survey $P --track <track> --out <a directory outside the project> --instructions ~/.claude/CLAUDE.md
   ```
 
   Expected: `wrote <dir>/survey.json, survey.md, plan.md`, exit 0. Read `survey.md` and `plan.md` in full. The plan's steps, each with its check and rollback, take the place of steps 3 to 7 below for this project; steps 0, 8 and 9 and the rules above still apply. With the personal layer installed, the `Migrate` workflow of the `CharterAdmin` skill drives the whole survey, rehearsal and execution (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md`). What comes after the install for each kind of project (taskets, BMAD, ad-hoc documents) is in `docs/migration.md`.
+
+  `--instructions <path>` (repeatable) also reads an instruction file outside the project, and what it imports: pass the user's `~/.claude/CLAUDE.md` and each `~/.claude/rules/*.md`, which load in every session (https://code.claude.com/docs/en/memory). Without it the survey reads only the project, so that it gives the same answer on any machine (`SurveyOnAnotherMachine` in `tests/test_migration.py`). Its section "Instructions the sessions read" lists every line of an instruction file that overlaps a charter rule, with both lines cited, and the plan turns them into an owner decision and a step (`bin/charter_instructions.py`). Claude Code does not rank two instruction files that conflict, and may follow either one (same URL, "User-level rules"), so an overlap left unread decides what a session does as much as charter does. An overlap is often an agreement; read each one.
 
   If the survey changes your view of the track, run it again with the other `--track`. Survey exit codes: 2 for a missing `--track`, a directory that is not a git repository with a commit, an `--out` inside the project or an unknown `--ref`; 3 when a line of its own report fails the anchoring check, which is a bug in `bin/charter_plan.py` to fix with a test, never by editing the output.
 
@@ -82,6 +84,7 @@ Expected: the same lines without `would`, then `<n> change(s); charter <version>
 
 - `python3 $M install $P --track <track>` again prints `charter <version> already installed in <project>; nothing to do` (`bin/charter-pkg:296`). The install is idempotent.
 - `git -C $P config core.hooksPath` prints `.charter/githooks`, unless hooks were kept (`bin/charter-pkg:280`).
+- A line `instructions: <n> line(s) in <k> instruction file(s) overlap a charter rule; read them: ...` means the project's own instruction files say something on a subject charter rules on. Run the command it prints, which adds the user's `~/.claude/CLAUDE.md`, and read each line with the owner (`instruction_note` in `bin/charter-pkg`). The same line follows an upgrade.
 
 ## Step 6: a project that already runs git hooks
 
@@ -175,6 +178,7 @@ A new package version reaches a project only by an upgrade; nothing pulls it. Th
 5. `python3 $M upgrade $P`. It stages what it wrote and ends with a block that says who commits. `Staged <n> file(s) ...; none is an owner-only change, so an agent commits them:` is followed by the command: run it yourself (from 0.4.6, `release_change` in `package/.charter/checks.py`). `Waiting on the owner:` is step 8's block, ending with the owner's line. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
 6. Any step a version's note asks for that writes a file the owner does not own, such as `charter ledger fold` writing `charter/ledger.jsonl`: commit it yourself, apart from the upgrade, since the gate refuses only owner-only changes (`CLI_ONLY_FILES` in `package/.charter/checks.py`). Then commit the upgrade, or hand it over as in step 8 when the block says so. If you committed anything after the installer ran, run `python3 .charter/bin/charter handover` before handing over: it records the handover again from the index and prints the line. The verb refuses a handover that a commit since has overtaken (`handover_stale` in `package/.charter/lib.py`). The report opens with what waits on the owner, if anything, as the owner's line (`! <line>`), then says what the upgrade changed.
 7. Step 9, and the checks the version's note in `docs/package.md` asks for.
+8. Any time, and after the owner edits a global instruction file: `python3 $M instructions $P --instructions ~/.claude/CLAUDE.md` lists the instruction lines that overlap a charter rule, reading only (`do_instructions` in `bin/charter-pkg`).
 
 Several projects: `python3 $M fleet` lists every charter project under `~/Projects` (`--root` for another directory) with its version, branch and what waits on the owner, and reads only. `python3 $M fleet --upgrade` upgrades the ones behind and stages each. It commits a project itself when nothing staged is an owner-only change, through the project's gate (from 0.4.6). For the projects left it records each one's handover and ends with one owner's line for all of them, `CHARTER_OWNER=1 python3 <charter>/bin/charter-pkg fleet --commit`, which runs each project's `charter owner commit` of the handover fleet recorded (`do_fleet` and `do_fleet_commit` in `bin/charter-pkg`, from 0.4.12). It lands each upgrade on the branch the project is on and does not run the checks of step 0, so read the table first. Hand any block over as in step 8.
 

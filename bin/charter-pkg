@@ -302,6 +302,8 @@ def do_install(project: Path, a, upgrade: bool = False) -> int:
         print("Review the kept files against the package and re-run with --force to replace them.")
     if in_git:
         a.staged = stage_and_hand_over(project, plan, f"charter {VERSION}", ignored_rels, show=not getattr(a, "fleet", False))
+        if not a.dry_run:
+            instruction_note(project)
     return 0
 
 
@@ -632,7 +634,7 @@ def do_survey(project: Path, a) -> int:
         print(f"no local branch {a.ref} in {project}")
         return 2
     facts = charter_survey.survey(project, sys.modules[__name__], track=a.track, test_cmd=a.test_cmd, rehearsal=not a.no_rehearse,
-                                  offline=a.offline, keep_clone=a.keep_clone, ref=a.ref)
+                                  offline=a.offline, keep_clone=a.keep_clone, ref=a.ref, instructions=a.instructions)
     docs = {"survey.md": charter_plan.report(facts), "plan.md": charter_plan.plan(facts, a.track)}
     rc = 0
     for name, text in docs.items():
@@ -652,6 +654,42 @@ def do_survey(project: Path, a) -> int:
     else:
         print(docs["plan.md" if a.plan else "survey.md"])
     return rc
+
+
+def instruction_review(project: Path, ref: str, extra: list[str]) -> dict:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import charter_instructions
+    paths = subprocess.run(["git", "-C", str(project), "ls-tree", "-r", "--name-only", ref], capture_output=True, text=True).stdout.splitlines()
+    return charter_instructions.review(project, ref, paths, PKG / ".claude" / "rules" / "charter.md", extra)
+
+
+def do_instructions(project: Path, a) -> int:
+    """The instruction files a session reads in the project and the lines that overlap a charter rule (bin/charter_instructions.py).
+    Read-only; prints the survey's section, which passes the anchoring check."""
+    if subprocess.run(["git", "-C", str(project), "rev-parse", "--verify", "--quiet", f"{a.ref}^{{commit}}"], capture_output=True).returncode != 0:
+        print(f"not a git repository with the commit {a.ref}: {project}")
+        return 2
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import charter_plan
+    ins = instruction_review(project, a.ref, a.instructions)
+    if a.json:
+        print(json.dumps(ins, indent=2))
+    else:
+        print("\n".join(charter_plan.instructions(ins, a.ref)))
+    return 0
+
+
+def instruction_note(project: Path) -> None:
+    """One line at install and upgrade when the project's own instruction files overlap a charter rule. Files outside
+    the project are not read here; the line says how to read them too."""
+    try:
+        ov = instruction_review(project, "HEAD", [])["overlaps"]
+    except Exception as e:   # a note never fails an install
+        print(f"instructions: not reviewed ({type(e).__name__})")
+        return
+    if ov:
+        print(f"instructions: {len(ov)} line(s) in {len({h['path'] for h in ov})} instruction file(s) overlap a charter rule; "
+              f"read them: python3 {Path(__file__).resolve()} instructions {project} --instructions ~/.claude/CLAUDE.md")
 
 
 def main(argv=None) -> int:
@@ -688,6 +726,13 @@ def main(argv=None) -> int:
     sv.add_argument("--offline", action="store_true", help="do not ask GitHub for the repository's visibility")
     sv.add_argument("--keep-clone", action="store_true", help="keep the rehearsal clone and print its path")
     sv.add_argument("--ref", default=None, help="the local branch to survey (default: the main line), e.g. the migration branch")
+    for p_ in (sv, sub.add_parser("instructions", help="the instruction files a session reads in a project, and their lines that overlap a charter rule; read-only")):
+        p_.add_argument("--instructions", action="append", default=[], metavar="PATH",
+                        help="also read this file outside the project, and what it imports (the user's ~/.claude/CLAUDE.md, ~/.claude/rules/*.md)")
+    ins = sub.choices["instructions"]
+    ins.add_argument("project")
+    ins.add_argument("--ref", default="HEAD", help="the commit whose tracked files are read (default HEAD)")
+    ins.add_argument("--json", action="store_true", help="print the overlaps as JSON")
     a = ap.parse_args(argv)
     if a.cmd == "fleet":
         return do_fleet(Path(a.root).expanduser().resolve(), a)
@@ -697,6 +742,8 @@ def main(argv=None) -> int:
         return 2
     if a.cmd == "survey":
         return do_survey(project, a)
+    if a.cmd == "instructions":
+        return do_instructions(project, a)
     if a.cmd == "install":
         return do_install(project, a)
     if a.cmd == "upgrade":

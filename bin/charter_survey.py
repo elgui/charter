@@ -22,6 +22,7 @@ from pathlib import Path
 
 import lib
 import checks
+import charter_instructions
 
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
@@ -605,7 +606,7 @@ def add_paths(pkg, fresh_taskets: bool, settings_ignored: bool) -> list[str]:
 
 
 def survey(root: Path, pkg, track: str = "prototype", test_cmd: str | None = None, rehearsal: bool = True,
-           offline: bool = False, keep_clone: bool = False, ref: str | None = None) -> dict:
+           offline: bool = False, keep_clone: bool = False, ref: str | None = None, instructions: list[str] = ()) -> dict:
     ref = ref or mainline(root)
     paths = tracked(root, ref)
     installed = bool(blobs(root, ref, ["charter/VERSION"]))
@@ -619,7 +620,8 @@ def survey(root: Path, pkg, track: str = "prototype", test_cmd: str | None = Non
            "hooks": s_hooks(root, ref, paths), "claude": s_claude_files(root, ref, paths, ip), "credentials": s_credentials(root, ref),
            "binaries": s_binaries(root, ref), "ci": s_ci(root, ref, paths, ip, mainline(root)), "remote": s_remote(root, offline),
            "history": s_history(root, ref), "markdown": s_markdown(root, ref, paths), "decisions": s_decisions(root, ref, paths),
-           "test_candidates": s_tests(root, ref, paths), "tracked_files": len(paths)}
+           "test_candidates": s_tests(root, ref, paths), "tracked_files": len(paths),
+           "instructions": charter_instructions.review(root, ref, paths, Path(pkg.PKG) / ".claude" / "rules" / "charter.md", list(instructions))}
     res["frozen_recently_changed"] = s_frozen_recently_changed(root, ref, sz)
     res["exceptions_needed"] = exceptions_needed(sz, res["frozen_in_open_work"], (dt.date.today() + dt.timedelta(days=90)).isoformat(),
                                                  res["frozen_recently_changed"])
