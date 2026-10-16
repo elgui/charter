@@ -2,8 +2,9 @@
 tele-claude handed him a `sudo` line to paste because his global `~/.claude/CLAUDE.md` says to ask before any sudo,
 and no step of a migration had read that file against charter's rules. Claude Code concatenates every instruction
 file it loads and does not rank them (https://code.claude.com/docs/en/memory), so the survey, `charter-pkg
-instructions` and the install now list the lines that overlap a charter rule. Every test fails before the change:
-the module, the survey section, the plan decision, the verb and the install note did not exist."""
+instructions` and the install now list the lines that overlap a charter rule. Every test fails before the change
+(the module, the survey section, the plan decision, the verb and the install note did not exist), except
+`InstallNote.test_a_project_with_no_overlap_gets_no_note`, which guards the quiet install and so passes before it too."""
 import json
 import os
 import subprocess
