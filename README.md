@@ -1,18 +1,16 @@
 # Charter
 
-<img src="docs/assets/charter-hero.svg" alt="Charter: a written agreement, a unit of work, and evidence connected by a checked path" width="100%">
-
-**A working method for projects built with coding agents.** Charter puts scope, decisions, work, and proof in the repository. Hooks and CI check the rules at the moments they matter, while a human owner makes the calls that software cannot. [Read the method](docs/method.md) · [See every gate](docs/gates.md)
+**A working method for projects built with coding agents.** Charter is a repository-based method for agent-assisted software work, with a client-delivery track for agreed scope and change requests. It keeps decisions, work, and evidence together. Hooks and CI check the records, while a human owner makes the calls that software cannot. [Read the method](docs/method.md) · [See every gate](docs/gates.md)
 
 > **The promise:** a task marked done has checked acceptance criteria and recorded evidence; a change outside the agreed scope has a route back to the owner. The checks make those claims reviewable. They do not judge whether the evidence is true. [How the gates work](docs/gates.md) · [Where they stop](docs/gates.md#what-a-gate-cannot-see)
 
-## The idea, in one picture
+## From work to reviewable evidence
 
-<img src="docs/assets/charter-system.svg" alt="Scope and decisions guide a work unit; its probes and evidence pass through session, commit, and CI checks before review" width="100%">
+<img src="docs/assets/charter-system.svg" alt="Both tracks use the same loop: define a unit with acceptance criteria, work and record evidence, check repository records, and review whether the evidence supports the claim. Probe execution and independent review requirements are opt-ins." width="100%">
 
 | Write it once | What it answers | Who decides |
 |---|---|---|
-| [`charter/scope.md`](package/charter/templates/scope.md) | What is included in the work? | The owner |
+| [`charter/scope.md`](package/charter/templates/scope.md) (client track) | What is included in the agreement? | The owner |
 | [`charter/decisions/<id>.md`](package/charter/templates/decision.md) | Why does this design rule exist, and when should it be revisited? | The owner or an independent reviewer |
 | [`.taskets/<id>.md`](package/charter/templates/unit.md) | What will this unit change, how will it be checked, and what happened? | The worker records evidence; the reviewer checks it |
 
@@ -44,8 +42,10 @@ The example illustrates the flow; use the [unit template](package/charter/templa
 
 The [installation guide](docs/install.md) is the single procedure for installing, setting up, upgrading, or removing Charter. It covers two tracks:
 
-- **Client:** scope is tied to an agreed quote or contract, and out of scope paths need an owner approved change request.
-- **Prototype:** no scope file is required; the other checks still apply.
+- **Client:** scope is tied to a signed quote or contract; paths explicitly marked out of scope need an owner approved change request.
+- **Prototype:** the current track for projects without that contract, including internal tools and maintained products. No scope file is required. Done, decision, and size checks remain enforced; perimeter and deliverable anchoring checks warn. [Track selection](docs/install.md#step-1-choose-the-track) · [Track comparison](docs/method.md#two-tracks)
+
+<img src="docs/assets/charter-tracks.svg" alt="Both tracks share work units, decisions, evidence, and size checks. Prototype needs no contract or scope file. Client adds agreed scope and approved changes, plus blocking perimeter and deliverable anchoring checks. Scope enforcement matches excluded paths, not the meaning of a feature." width="100%">
 
 From a checkout of this repository, you can inspect a project without changing it:
 
