@@ -473,6 +473,16 @@ class WorkflowTriggers(unittest.TestCase):
         self.assertTrue(cs.triggers({"paths": ["apps/**"]}, ["apps/api/x.go"]))
         self.assertFalse(cs.triggers({"paths": ["apps/**"]}, ["README.md"]))
 
+    def test_globstar_slash_matches_the_root(self):
+        # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
+        # lists README.md among the matches of `**/README.md`.
+        import charter_survey as cs
+        push = {"paths-ignore": ["**/*.md"]}
+        self.assertFalse(cs.triggers(push, ["AGENTS.md", "docs/a/b.md"]))
+        self.assertTrue(cs.triggers(push, ["AGENTS.mdx"]))
+        self.assertTrue(cs.triggers({"paths-ignore": ["docs/**/*.md"]}, ["x/docs/a.md"]))
+        self.assertFalse(cs.triggers({"paths-ignore": ["docs/**/*.md"]}, ["docs/a.md"]))
+
 
 if __name__ == "__main__":
     unittest.main()
