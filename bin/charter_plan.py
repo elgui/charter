@@ -196,6 +196,9 @@ def report(s: dict) -> str:
     L += ["", f"- BMAD: {b['tracked']} tracked files under `_bmad/`, sprint status files {lst(b['sprint_status'])}, "
           f"{b['stories']} story files ({src('git ls-tree -r --name-only ' + ref + ' _bmad')})", ""]
 
+    if s.get("instructions"):
+        L += instructions(s["instructions"], ref)
+
     rh = s.get("rehearsal")
     L += ["## Rehearsal", ""]
     if not rh:
@@ -219,6 +222,41 @@ def report(s: dict) -> str:
             L.append(f"- Clone kept at {rh['clone']} (in the clone)")
     L.append("")
     return "\n".join(L)
+
+
+DOCS_MEMORY = "https://code.claude.com/docs/en/memory"
+
+
+def at(ins_line: dict, ref: str) -> str:
+    """Where a line of an instruction file is: `path:line` where that resolves here, else the line and the git command."""
+    if ins_line["where"] != "project" or ins_line.get("same", True):
+        return f"{ins_line['path']}:{ins_line['line']}"
+    return f"`{ins_line['path']}` line {ins_line['line']} ({src('git show ' + ref + ':' + ins_line['path'])})"
+
+
+def instructions(ins: dict, ref: str) -> list[str]:
+    """The section on instruction files: what a session reads, and the lines that overlap a charter rule."""
+    L = ["## Instructions the sessions read", "",
+         f"Claude Code concatenates every instruction file it loads and does not rank them, so a line here that overlaps a charter rule "
+         f"weighs as much as the rule ({DOCS_MEMORY}). An overlap is often an agreement; the owner reads each one.", ""]
+    for f in ins["files"]:
+        where = src(f"git show {ref}:{f['path']}") if f["where"] == "project" else \
+            ("(in the checkout, untracked)" if f["where"] == "checkout" else f["path"])
+        L.append(f"- `{f['path']}`, {f['lines']} lines, loaded {f['how']} ({where})")
+    if not ins["files"]:
+        L.append(f"- no instruction file in the project ({src('git ls-tree -r --name-only ' + ref)})")
+    if not ins["extra_named"]:
+        L.append("- Files outside the project were not read: the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/` load in every session "
+                 f"({DOCS_MEMORY}). Pass them with `--instructions <path>`.")
+    L += ["", f"{len(ins['overlaps'])} line(s) overlap a charter rule; one row per section and subject, `+n` counts the section's other lines on it "
+              f"({src('charter-pkg instructions <project> --ref ' + ref)}).", "",
+          row("Where", "Section", "Subject", "The line", "Charter rule"), row("---", "---", "---", "---", "---")]
+    for h in ins["overlaps"]:
+        L.append(row(at(h, ref), h["section"][:60], h["label"] + (f" (+{h['more']})" if h["more"] else ""), h["text"].replace("`", "'"),
+                     f"{ins['rules_file']}:{h['rule_line']}"))
+    if not ins["overlaps"]:
+        L.append(row("none", "", "", "", ins["rules_file"]))
+    return L + [""]
 
 
 # ---------------------------------------------------------------- plan
@@ -301,6 +339,18 @@ def decisions(s: dict) -> list[dict]:
                     "fact": f"{len(authors)} authors committed to {ref} in 90 days: {lst(authors)} ({src('git log --since=90.days --format=%an ' + ref)})",
                     "options": ["tell each of them: the rules file, the gates and the owner-only paths apply to their sessions and commits from the merge"],
                     "default": "tell them before the merge; that is the owner's act"})
+    ov = (s.get("instructions") or {}).get("overlaps") or []
+    if ov:
+        files = sorted({h["path"] for h in ov})
+        out.append({"id": "instructions", "q": "Where an instruction file and charter's rules overlap, which holds?",
+                    "fact": f"{len(ov)} line(s) in {len(files)} instruction file(s) overlap a charter rule, the first at {at(ov[0], ref)}; "
+                            f"Claude Code may follow either of two lines that conflict ({DOCS_MEMORY}, survey.md § Instructions the sessions read)",
+                    "options": ["charter holds: the line is edited to defer to charter (in the project, on the install branch; "
+                                "a file outside the project is the owner's to edit where it lives)",
+                                "the line holds: it stays, and becomes `charter/decisions/<slug>.md` with `kind: lesson`, so a session sees which one wins",
+                                "they agree: both stay"],
+                    "default": "read each line; where they agree both stay, where they disagree charter holds in the project's files "
+                               "and the owner rules on the files outside it"})
     if s["credentials"]:
         out.append({"id": "credentials", "q": "Are the credential-shaped literals placeholders?",
                     "fact": f"{len(s['credentials'])} found, first at {s['credentials'][0]['path']}:{s['credentials'][0]['line']} ({src('git grep -nIE -o <patterns> ' + ref)})",
@@ -406,6 +456,15 @@ def plan(s: dict, track: str) -> str:
              f"and editing code here would make the migration's merge start the deploy workflows. `{CLI} decisions index`",
              f"{len(dec['records'])} records, {len(dec['claude_md_sections'])} `CLAUDE.md` sections to read", f"`{CLI} check --all --decisions` clean", "revert",
              src(f"git ls-tree -r --name-only {ref}"))
+    ov = (s.get("instructions") or {}).get("overlaps") or []
+    if ov:
+        d = next(i for i, x in enumerate(ds, 1) if x["id"] == "instructions")
+        mine = sorted({h["path"] for h in ov if h["where"] != "machine"})
+        theirs = sorted({h["path"] for h in ov if h["where"] == "machine"})
+        step(f"Resolve the instruction overlaps as D{d} decided: edit the project's lines, one commit" +
+             (f"; the files outside the project ({lst(theirs, 3)}) are the owner's, edited where they live" if theirs else ""),
+             lst(mine, 6), f"`{TOOL} instructions {proj}` lists only the overlaps kept on purpose", "revert",
+             f"{len(ov)} overlaps (survey.md § Instructions the sessions read, {src(TOOL[8:] + ' instructions ' + proj)})")
     cand = [m["path"] for m in s["markdown"]["root"] + s["markdown"]["docs"] if m["archive_candidate"] and not m.get("cited_by")]
     kept = [m["path"] for m in s["markdown"]["root"] + s["markdown"]["docs"] if m["archive_candidate"] and m.get("cited_by")]
     if cand:

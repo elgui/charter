@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Two tracks with a shared core</title>
+  <desc id="desc">Both tracks enforce done evidence, decision checks and size limits. Prototype has no required scope file and warns on perimeter and anchoring. Client uses agreed scope, approved changes and blocking perimeter and anchoring checks. Scope checks only match excluded paths.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1L8 5L1 9" fill="none" stroke="#7b92af" stroke-width="1.8" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="640" rx="24" fill="#f1f5fa" stroke="none" />
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <text x="44" y="48" font-size="14" fill="#286c60" font-weight="700">CHOOSE BY AGREEMENT</text>
+    <text x="44" y="91" font-size="32" fill="#18304a" font-weight="700">Same core. Different scope controls.</text>
+    <rect x="44" y="119" width="1112" height="83" rx="16" fill="#dfece9" stroke="none" />
+    <text x="66" y="148" font-size="13" fill="#286c60" font-weight="700">BOTH TRACKS</text>
+    <text x="66" y="179" font-size="22" fill="#18304a" font-weight="600">Work units · Done evidence · Decision checks · File-size limits</text>
+    <rect x="44" y="226" width="542" height="270" rx="16" fill="#ffffff" stroke="#c8d6e4" />
+    <rect x="44" y="226" width="542" height="6" rx="3" fill="#286c60" stroke="none" />
+    <text x="68" y="272" font-size="27" fill="#18304a" font-weight="700">Prototype</text>
+    <text x="68" y="303" font-size="19" fill="#465d74" font-weight="400">Projects without a signed contract</text>
+    <rect x="614" y="226" width="542" height="270" rx="16" fill="#ffffff" stroke="#c8d6e4" />
+    <rect x="614" y="226" width="542" height="6" rx="3" fill="#94541e" stroke="none" />
+    <text x="638" y="272" font-size="27" fill="#18304a" font-weight="700">Client</text>
+    <text x="638" y="303" font-size="19" fill="#465d74" font-weight="400">Projects covered by a signed contract</text>
+    <text x="68" y="357" font-size="19" fill="#18304a" font-weight="400">No scope file required</text>
+    <text x="68" y="399" font-size="19" fill="#18304a" font-weight="400">Perimeter and anchoring: warnings</text>
+    <text x="68" y="441" font-size="19" fill="#18304a" font-weight="400">Optional rails, probes, and review</text>
+    <text x="638" y="357" font-size="19" fill="#18304a" font-weight="400">Agreed scope and approved changes</text>
+    <text x="638" y="399" font-size="19" fill="#18304a" font-weight="400">Perimeter and anchoring: blocking¹</text>
+    <text x="638" y="441" font-size="19" fill="#18304a" font-weight="400">Optional rails, probes, and review</text>
+    <text x="44" y="529" font-size="16" fill="#465d74" font-weight="400">¹ Perimeter blocks at commit; deliverable anchoring blocks in CI.</text>
+    <rect x="44" y="550" width="1112" height="66" rx="16" fill="#e4ebf3" stroke="none" />
+    <text x="64" y="577" font-size="13" fill="#36516f" font-weight="700">SCOPE CHECKS MATCH EXCLUDED PATHS</text>
+    <text x="64" y="602" font-size="18" fill="#18304a" font-weight="400">An unrequested feature inside an allowed file still needs human judgment.</text>
+  </g>
+</svg>

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 490" role="img" aria-labelledby="title desc">
+  <title id="title">From work to reviewable evidence</title>
+  <desc id="desc">Both tracks share units, decisions and evidence. Define a unit, work and record, check the records, then review the claim. Automatic acceptance probe execution and required independent review are opt-ins.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1L8 5L1 9" fill="none" stroke="#7b92af" stroke-width="1.8" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="490" rx="24" fill="#101e32" stroke="none" />
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <text x="44" y="48" font-size="14" fill="#7ee0c7" font-weight="700">THE SHARED WORKFLOW</text>
+    <text x="44" y="91" font-size="32" fill="#f3f7fc" font-weight="700">Make the work reviewable</text>
+    <text x="44" y="124" font-size="19" fill="#b9c9de" font-weight="400">One unit carries the criteria, the evidence, and the context for the next session.</text>
+    <rect x="44" y="166" width="260" height="206" rx="16" fill="#1c3049" stroke="#3b526e" />
+    <text x="64" y="198" font-size="15" fill="#7ee0c7" font-weight="700">01</text>
+    <text x="64" y="232" font-size="21" fill="#f3f7fc" font-weight="700">Define the unit</text>
+    <text x="64" y="269" font-size="18" fill="#b9c9de" font-weight="400">One deliverable</text>
+    <text x="64" y="298" font-size="18" fill="#b9c9de" font-weight="400">Acceptance probes</text>
+    <text x="64" y="327" font-size="18" fill="#b9c9de" font-weight="400">Declared paths</text>
+    <path d="M307 264h17" stroke="#7b92af" stroke-width="2" marker-end="url(#arrow)" />
+    <rect x="328" y="166" width="260" height="206" rx="16" fill="#1c3049" stroke="#3b526e" />
+    <text x="348" y="198" font-size="15" fill="#7ee0c7" font-weight="700">02</text>
+    <text x="348" y="232" font-size="21" fill="#f3f7fc" font-weight="700">Work and record</text>
+    <text x="348" y="269" font-size="18" fill="#b9c9de" font-weight="400">Code and decisions</text>
+    <text x="348" y="298" font-size="18" fill="#b9c9de" font-weight="400">Probe results</text>
+    <text x="348" y="327" font-size="18" fill="#b9c9de" font-weight="400">Evidence and log</text>
+    <path d="M591 264h17" stroke="#7b92af" stroke-width="2" marker-end="url(#arrow)" />
+    <rect x="612" y="166" width="260" height="206" rx="16" fill="#1c3049" stroke="#3b526e" />
+    <text x="632" y="198" font-size="15" fill="#7ee0c7" font-weight="700">03</text>
+    <text x="632" y="232" font-size="21" fill="#f3f7fc" font-weight="700">Check the records</text>
+    <text x="632" y="269" font-size="18" fill="#b9c9de" font-weight="400">Claude Code hooks</text>
+    <text x="632" y="298" font-size="18" fill="#b9c9de" font-weight="400">Git commit checks</text>
+    <text x="632" y="327" font-size="18" fill="#b9c9de" font-weight="400">CI checks</text>
+    <path d="M875 264h17" stroke="#7b92af" stroke-width="2" marker-end="url(#arrow)" />
+    <rect x="896" y="166" width="260" height="206" rx="16" fill="#1c3049" stroke="#3b526e" />
+    <text x="916" y="198" font-size="15" fill="#ffd09a" font-weight="700">04</text>
+    <text x="916" y="232" font-size="21" fill="#f3f7fc" font-weight="700">Review the claim</text>
+    <text x="916" y="269" font-size="18" fill="#b9c9de" font-weight="400">Does the evidence</text>
+    <text x="916" y="298" font-size="18" fill="#b9c9de" font-weight="400">support the result?</text>
+    <text x="916" y="327" font-size="18" fill="#b9c9de" font-weight="400">Owner settles changes</text>
+    <text x="44" y="413" font-size="13" fill="#7ee0c7" font-weight="700">CHECKS ESTABLISH</text>
+    <text x="44" y="442" font-size="18" fill="#f3f7fc" font-weight="400">Records are present and consistent.</text>
+    <text x="620" y="413" font-size="13" fill="#ffd09a" font-weight="700">PEOPLE JUDGE</text>
+    <text x="620" y="442" font-size="18" fill="#f3f7fc" font-weight="400">Whether the evidence proves the claim.</text>
+    <text x="44" y="475" font-size="15" fill="#b9c9de" font-weight="400">Automatic acceptance probe runs and required independent review are opt-ins.</text>
+  </g>
+</svg>
