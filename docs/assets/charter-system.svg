@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
+  <title id="title">How Charter connects the work</title>
+  <desc id="desc">Scope and decisions feed a work unit. Its acceptance probes and evidence pass through Claude Code, git, and CI checks, then reach human review.</desc>
+  <defs>
+    <linearGradient id="canvas" x2="1" y2="1"><stop stop-color="#f5f8ff"/><stop offset="1" stop-color="#eaf2f6"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="10" flood-color="#1f3757" flood-opacity=".09"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1l8 4-8 4" fill="none" stroke="#6b82a0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect width="1200" height="470" rx="24" fill="url(#canvas)"/>
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <text x="56" y="57" fill="#152841" font-size="26" font-weight="750" letter-spacing="-.7">One continuous line of accountability</text>
+    <text x="57" y="87" fill="#58708b" font-size="15">The repository holds the agreement, the work, and the proof.</text>
+
+    <g filter="url(#shadow)">
+      <rect x="55" y="130" width="222" height="101" rx="16" fill="#fff" stroke="#c8ded9"/>
+      <rect x="55" y="130" width="6" height="101" rx="3" fill="#39ae92"/>
+      <rect x="55" y="251" width="222" height="101" rx="16" fill="#fff" stroke="#c8ded9"/>
+      <rect x="55" y="251" width="6" height="101" rx="3" fill="#39ae92"/>
+      <rect x="348" y="170" width="225" height="144" rx="16" fill="#fff" stroke="#cbd6ed"/>
+      <rect x="348" y="170" width="6" height="144" rx="3" fill="#6488de"/>
+      <rect x="643" y="170" width="225" height="144" rx="16" fill="#fff" stroke="#cbd6ed"/>
+      <rect x="643" y="170" width="6" height="144" rx="3" fill="#6488de"/>
+      <rect x="938" y="170" width="207" height="144" rx="16" fill="#fff" stroke="#efd5be"/>
+      <rect x="938" y="170" width="6" height="144" rx="3" fill="#e69f69"/>
+    </g>
+
+    <g fill="none" stroke="#6b82a0" stroke-width="2.5" marker-end="url(#arrow)">
+      <path d="M278 181h30q14 0 14 14v29h23"/>
+      <path d="M278 301h30q14 0 14-14v-28h23"/>
+      <path d="M578 242h61"/>
+      <path d="M873 242h61"/>
+    </g>
+
+    <g fill="#257e6d" font-size="12" font-weight="750" letter-spacing="1.5">
+      <text x="78" y="163">01 / AGREEMENT</text>
+      <text x="78" y="284">02 / RATIONALE</text>
+    </g>
+    <text x="78" y="191" fill="#18304a" font-size="21" font-weight="740">Scope</text>
+    <text x="78" y="213" fill="#5e7188" font-size="13">What is in and out</text>
+    <text x="78" y="312" fill="#18304a" font-size="21" font-weight="740">Decisions</text>
+    <text x="78" y="334" fill="#5e7188" font-size="13">Why, and until when</text>
+
+    <text x="372" y="206" fill="#4d70bd" font-size="12" font-weight="750" letter-spacing="1.5">03 / WORK</text>
+    <text x="372" y="241" fill="#18304a" font-size="23" font-weight="740">Unit</text>
+    <text x="372" y="268" fill="#5e7188" font-size="14">Allowed paths</text>
+    <text x="372" y="289" fill="#5e7188" font-size="14">Acceptance probes</text>
+
+    <text x="667" y="206" fill="#4d70bd" font-size="12" font-weight="750" letter-spacing="1.5">04 / ENFORCEMENT</text>
+    <text x="667" y="241" fill="#18304a" font-size="23" font-weight="740">Checks</text>
+    <text x="667" y="268" fill="#5e7188" font-size="14">Session · git · CI</text>
+    <text x="667" y="289" fill="#5e7188" font-size="14">Reasons and overrides</text>
+
+    <text x="962" y="206" fill="#bd7947" font-size="12" font-weight="750" letter-spacing="1.5">05 / JUDGMENT</text>
+    <text x="962" y="241" fill="#18304a" font-size="23" font-weight="740">Review</text>
+    <text x="962" y="268" fill="#5e7188" font-size="14">Does proof support</text>
+    <text x="962" y="289" fill="#5e7188" font-size="14">the claim?</text>
+
+    <rect x="55" y="390" width="1090" height="48" rx="12" fill="#dfeaf3"/>
+    <circle cx="79" cy="414" r="8" fill="#39ae92"/>
+    <text x="101" y="420" fill="#28435f" font-size="15" font-weight="620">The owner sets the boundary. The worker records the proof. A reviewer checks what the software cannot.</text>
+  </g>
+</svg>
