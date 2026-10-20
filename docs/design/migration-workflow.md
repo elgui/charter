@@ -8,10 +8,10 @@ How an existing project moves onto charter: measured by code (`bin/charter_surve
 |---|---|---|
 | Survey | `bin/charter_survey.py`, run as `charter-pkg survey <project>` | Reads the project through git plumbing at the main line, never the index (`GIT_OPTIONAL_LOCKS=0`); rehearses the install in a throwaway clone |
 | Report and plan | `bin/charter_plan.py` | Renders the facts as `survey.md`, and as `plan.md`: owner decisions, then one step per commit with its check, its rollback and the fact it rests on |
-| Skill | `personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md` | Judgement and sequencing: settle what the facts settle, put the rest on a Slate, rehearse the whole plan, execute after the go-ahead |
+| Skill | `machine/skills/CharterAdmin/workflows/Migrate.md` | Judgement and sequencing: settle what the facts settle, put the rest to the owner, rehearse the whole plan, execute after the go-ahead |
 | Tests | `tests/test_migration.py` | 24 tests; all but two, which guard kept behaviour, fail on 99e1a2a |
 
-The skill lives in the personal layer because it calls this repository's installer, and `package/` never references anything outside the project (`docs/package.md`). It reaches `~/.claude` through the symlink manifest, option B of `personal/README.md`.
+The skill lives in the machine layer because it calls this repository's installer, and `package/` never references anything outside the project (`docs/package.md`). It reaches `~/.claude` through `charter-pkg machine install` or a user's own link manager (`machine/README.md`); until 0.4.18 it was the personal layer's, linked through one user's symlink manifest.
 
 ## Why the facts are measured
 
