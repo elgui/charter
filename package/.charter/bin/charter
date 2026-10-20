@@ -96,7 +96,12 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
     else:
         paths = tracked
         base = checks.usable_base(root, a.base)
-        changed = checks.changed_paths(root, a.base) if base else None
+        if base is None and a.base:   # a force push or a new branch: measure from the main line, not the whole tree (0.4.17)
+            base, source = checks.fallback_base(root)
+            if base:
+                rep.add(checks.Finding("error", "warn", f"base {a.base} is not usable in this clone (an all-zero SHA or a SHA a "
+                                       f"force-push removed); the change set is measured from {source} instead"))
+        changed = checks.changed_paths(root, base) if base else None
         renamed = checks.rename_sources(root, base) if base else {}
         if changed is None:
             changed = list(tracked)

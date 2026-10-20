@@ -1374,6 +1374,23 @@ def usable_base(root: Path, base: str | None) -> str | None:
     return mb.stdout.strip() if mb.returncode == 0 and mb.stdout.strip() else r.stdout.strip()
 
 
+def fallback_base(root: Path) -> tuple[str | None, str]:
+    """Where to measure from when the given base is unusable (0.4.17): the merge base with the main line when that is
+    behind HEAD, else HEAD~1; (None, "") when neither exists. The main line is looked up on the remote first: a CI
+    runner building another branch has origin/main but no local main."""
+    head = lib.git(root, "rev-parse", "HEAD").stdout.strip()
+    r = lib.git(root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    refs = ([r.stdout.strip()] if r.returncode == 0 and r.stdout.strip() else []) + ["origin/main", "origin/master", "main", "master"]
+    for ref in dict.fromkeys(refs):
+        if lib.git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+            continue
+        mb = lib.git(root, "merge-base", ref, "HEAD").stdout.strip()
+        if mb and mb != head:
+            return mb, f"the merge base with {ref}"
+    b = usable_base(root, None)
+    return (b, "HEAD~1") if b else (None, "")
+
+
 def changed_paths(root: Path, base: str | None) -> list[str] | None:
     """Paths changed from the merge base of `base` (default HEAD~1) and HEAD; None when the base is
     unusable, and the caller then checks every tracked path."""
