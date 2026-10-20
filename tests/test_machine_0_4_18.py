@@ -214,6 +214,18 @@ class MachineHook(Base):
         rc, out, so = hook(self.hook_p, self.root, self.home)
         self.assertNotIn("machine layer changed", so)
 
+    def test_an_override_does_not_make_the_copy_look_stale(self):
+        # /reviewPR #27 (codex, pass A): the copy's hash was compared with $CHARTER_PKG_DIR's machine/, not its own source
+        other = Path(tempfile.mkdtemp(prefix="other-checkout-")).resolve()
+        self.addCleanup(cleanup, other)
+        (other / "package").mkdir()
+        (other / "package" / "VERSION").write_text((REPO / "package" / "VERSION").read_text())
+        (other / "machine").mkdir()
+        (other / "machine" / "f").write_text("another layer\n")
+        rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(other))
+        self.assertIn(f"package repository: {other}", ctx(out), so)
+        self.assertNotIn("machine layer changed", so)
+
     def test_local_session_section_only(self):
         (self.claude / "charter-local.md").write_text("# Mine\n\n## Session\n\n- say hello\n\n## Admin\n\n- secret admin rule\n")
         rc, out, so = hook(self.hook_p, self.root, self.home)

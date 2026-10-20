@@ -117,15 +117,16 @@ def main() -> int:
         else:   # the project is ahead of this checkout: never suggest a downgrade
             out.append(f"  package {installed} installed, newer than this checkout's {latest}: pull {src} before upgrading anything")
         side = Path(__file__).parent / SIDECAR
-        if side.exists() and (src / "machine").is_dir():
-            try:
-                stale = json.loads(side.read_text()).get("hash") != layer_hash(src)
-            except (ValueError, OSError):
-                stale = False
-            if stale:
-                line = f"machine layer changed in {src}: python3 {src}/bin/charter-pkg machine install"
-                out.append("  " + line)
-                seen.append(line)
+        try:   # against the checkout the copy came from, whatever $CHARTER_PKG_DIR says
+            rec = json.loads(side.read_text()) if side.exists() else {}
+            home = Path(rec["source"]) if rec.get("source") else None
+            stale = bool(home) and (home / "machine").is_dir() and rec.get("hash") != layer_hash(home)
+        except (ValueError, OSError, TypeError):
+            stale = False
+        if stale:
+            line = f"machine layer changed in {home}: python3 {home}/bin/charter-pkg machine install"
+            out.append("  " + line)
+            seen.append(line)
     if vtuple(installed) < (0, 4, 18):
         for line in legacy_lines(root):
             out.append("  " + line)
