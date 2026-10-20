@@ -6,6 +6,7 @@
   charter-pkg uninstall <project> [--dry-run] [--force]
   charter-pkg status    <project>
   charter-pkg fleet     [--root DIR] [--upgrade]   every charter project under DIR; an agent commits the upgrades, the owner gets one command for the rest
+  charter-pkg machine   install [--link] [--no-settings] | uninstall | status   the user-level layer in ~/.claude (machine/README.md)
 
 Idempotent: a second install changes nothing. Files the package owns are listed with
 their hashes in <project>/.charter/manifest.json; a locally modified owned file is never
@@ -715,6 +716,13 @@ def main(argv=None) -> int:
     fl.add_argument("--owner", action="append", default=[], metavar="NAME=VALUE",
                     help="with --levels: also set a project's `owner` (the git author name or email CI accepts), in the same line")
     fl.add_argument("--dry-run", action="store_true", help="with --levels: print what would change and commit nothing")
+    mc = sub.add_parser("machine", help="the user-level layer in ~/.claude: a SessionStart hook and the CharterAdmin skill (machine/README.md)")
+    mc.add_argument("action", choices=["install", "uninstall", "status"])
+    mc.add_argument("--link", action="store_true", help="symlink into this checkout instead of copying, so an edit here is live")
+    mc.add_argument("--no-settings", action="store_true", help="leave ~/.claude/settings.json alone and print the entry to add")
+    mc.add_argument("--force", action="store_true", help="replace a hook or skill of the same name that this layer did not write")
+    mc.add_argument("--dry-run", action="store_true")
+    mc.add_argument("--home", default=None, help=argparse.SUPPRESS)   # tests: a home other than $HOME
     sv = sub.add_parser("survey", help="measure a project before a migration; read-only on the project")
     sv.add_argument("project")
     sv.add_argument("--track", choices=["client", "prototype"], required=True, help="the track the rehearsal installs and the plan assumes")
@@ -736,6 +744,14 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "fleet":
         return do_fleet(Path(a.root).expanduser().resolve(), a)
+    if a.cmd == "machine":
+        import charter_machine
+        home = Path(a.home).resolve() if a.home else Path.home()
+        if a.action == "install":
+            return charter_machine.install(home, link=a.link, settings=not a.no_settings, force=a.force, dry_run=a.dry_run)
+        if a.action == "uninstall":
+            return charter_machine.uninstall(home, dry_run=a.dry_run)
+        return charter_machine.status(home)
     project = Path(a.project).resolve()
     if not project.is_dir():
         print(f"not a directory: {project}")

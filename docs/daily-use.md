@@ -156,7 +156,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 - `python3 .charter/bin/charter next`: under "Waiting on the owner" it lists proposed decisions and change requests, each rail whose units are all finished (close it, or have a unit written for what is left), and owner-only files staged for your commit (`cmd_next` in `package/.charter/bin/charter`). `python3 .charter/bin/charter owner` prints the same queue alone, with HUMAN-ONLY units and acceptance lines only you can close, and the command for each (`--json` for a tool).
 - `python3 .charter/bin/charter log`: what the gates refused and warned about over 30 days. A warning that keeps firing on real problems is the evidence for turning it into a gate; one that fires on nothing is noise to remove (`docs/method.md:12`).
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
-  - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:31`);
+  - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`machine/skills/CharterAdmin/workflows/Migrate.md:25`);
   - `probes.base_must_fail` once the probes reliably fail before the work (`docs/package.md` § Versioning and upgrade, 0.4.1);
   - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:380`);
   - `rails.required` once `charter/rails.md` exists and every open unit names a rail (`package/charter/templates/rails.md`).
@@ -165,4 +165,4 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 
 ## Moving to a new charter version
 
-The personal-layer hook shows you `charter: package X available, Y installed` in the transcript when a project is behind, and names the proposals waiting on you (`personal/claude-home/hooks/charter-personal.py`). Ask the agent to upgrade; it follows `docs/install.md` § Upgrade and stops with the files staged for your commit.
+With the machine layer installed (`machine/README.md`), its hook shows you `charter: package X available, Y installed` in the transcript when a project is behind (`machine/hooks/charter-machine.py`); the project's own hook names the proposals waiting on you (`package/.charter/hooks/session_start.py`). Ask the agent to upgrade; it follows `docs/install.md` § Upgrade and stops with the files staged for your commit.

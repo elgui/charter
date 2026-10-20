@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.17. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.18. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 
@@ -237,9 +237,9 @@ Where a project has a single frontmatter writer, charter's four keys are optiona
 
 **Worktrees.** Both engines run steps in worktrees. The committed layer therefore lives only in tracked files: `.charter/`, `charter/`, `.claude/`, and the hook path set via `git config core.hooksPath .charter/githooks` (repository config is shared by worktrees, and `charter setup` sets it in a fresh clone), or, in a project that already runs a hook framework, a `charter check --staged` entry in that framework's tracked config. State written during a run goes to the git directory, an output and never an input: the gate log and session records to the common directory, which every worktree shares and which outlives a removed worktree; the active unit and per-session scratch to the worktree's own git directory, so two worktrees can work on two units. `${CLAUDE_PROJECT_DIR}` stays at the main checkout when a session enters a worktree mid-session, so hooks read `cwd` from their input to find the tree they act on. A CI runner's log is gone when the job ends.
 
-## Where the personal layer stops
+## Where the machine layer stops
 
-Everything above runs from a clean clone. The personal layer (`personal/` in this repository) adds what only makes sense on Gui's machines: a `CharterAdmin` skill that lists which projects run which version, drives installs, upgrades and the `Migrate` workflow, folds ledgers across projects, and turns open decisions into a Crossroads or Slate page (`personal/claude-home/Skills/CharterAdmin/SKILL.md`); and a SessionStart hook that says when the package is ahead of the project and which proposals wait on the owner (`personal/claude-home/hooks/charter-personal.py`). The committed layer never references it.
+Everything above runs from a clean clone. The machine layer (`machine/` in this repository, installed once per user by `charter-pkg machine install`) adds what only the user's machine can know: a `CharterAdmin` skill that lists which projects run which version, drives installs, upgrades and the `Migrate` workflow, folds ledgers across projects and puts open decisions to the owner (`machine/skills/CharterAdmin/SKILL.md`); and a SessionStart hook that names the charter checkout and says when it carries a newer package than the project (`machine/hooks/charter-machine.py`). A user's own conventions go in `~/.claude/charter-local.md`, which the hook and the skill read and nothing in charter writes (`machine/README.md`). The committed layer never references it.
 
 ## Less method, not more
 

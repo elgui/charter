@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """SessionStart. Gives Claude the charter index, and the person a short summary (systemMessage): version, track, active unit with its
-open criteria, active decisions, pending changes, recent gate activity (R5)."""
+open criteria, active decisions, pending changes, ended sessions not yet folded into the ledger, recent gate activity (R5).
+What waits on the owner and the fold backlog are in the summary too (0.4.18)."""
 import json
 import sys
 sys.dont_write_bytecode = True
 import datetime as dt
 
 from _common import tree_for, read_session, write_session, head, lib, checks
+
+
+def unfolded_sessions(root) -> int:
+    """Ended sessions recorded in the git directory that `charter ledger fold` has not yet copied into charter/ledger.jsonl."""
+    def ids(p):
+        out = set()
+        if p.exists():
+            for line in p.read_text(errors="replace").splitlines():
+                try:
+                    out.add(json.loads(line).get("session"))
+                except json.JSONDecodeError:
+                    pass
+        out.discard(None)
+        return out
+    return len(ids(lib.shared_state_dir(root) / "sessions.jsonl") - ids(root / lib.CHARTER_DIR / "ledger.jsonl"))
 
 
 def main() -> int:
@@ -63,6 +79,9 @@ def main() -> int:
         chg = [(k, v) for k, v in lib.change_requests(root).items() if str(v.get("status")) == "proposed"]
         if chg:
             out.append("Change requests waiting on the owner: " + ", ".join(k for k, _ in chg))
+        backlog = unfolded_sessions(root)
+        if backlog:
+            out.append(f"{backlog} ended session(s) not yet in the ledger: python3 .charter/bin/charter ledger fold")
         logp = lib.shared_state_dir(root) / "log.jsonl"
         if logp.exists():
             since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat()
@@ -80,7 +99,9 @@ def main() -> int:
         # plain stdout reaches Claude only; `systemMessage` is what the person sees in the transcript
         # (https://code.claude.com/docs/en/hooks, SessionStart decision control)
         seen = [out[0]] + [l if len(l) <= 160 else l[:157] + "..." for l in out[1:]
-                           if l.startswith(("charter/config.json", "The charter git hook", "Owner session", "Active unit", "No active unit"))]
+                           if l.startswith(("charter/config.json", "The charter git hook", "Owner session", "Active unit", "No active unit",
+                                           "Proposed decisions waiting", "Change requests waiting"))
+                           or "not yet in the ledger" in l]
         print(json.dumps({"systemMessage": "\n".join(seen),
                           "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(out)}}))
         return 0
