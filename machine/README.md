@@ -17,9 +17,9 @@ Claude Code reads user-level skills from `~/.claude/skills/` and user-level hook
     python3 <checkout>/bin/charter-pkg machine status
     python3 <checkout>/bin/charter-pkg machine uninstall
 
-- **Copy** is the default. The copy carries a sidecar, `~/.claude/hooks/charter-machine.json`, with the checkout's path and a hash of `machine/`. When the checkout's `machine/` changes (a `git pull`), the hook says so and `install` refreshes the copy. A branch switch in the checkout does not change what runs.
+- **Copy** is the default. The copy carries a sidecar, `~/.claude/hooks/charter-machine.json`, with the path of the checkout it came from, a hash of its `machine/` and a hash of every copied file. When the checkout's `machine/` changes (a `git pull`), the hook says so and `install` refreshes the copy. A branch switch in the checkout does not change what runs.
 - **Link** suits someone who edits this layer: a linked hook finds the checkout from its own resolved path (`checkout` in `hooks/charter-machine.py`), and every edit or branch switch in the checkout changes the running hook and skill at once.
-- `install` and `uninstall` take `--dry-run`. `install` refuses to replace a hook or skill of the same name that it did not write, unless `--force`; `--no-settings` leaves `~/.claude/settings.json` alone and prints the entry to add. Both are `bin/charter_machine.py`.
+- `install` and `uninstall` take `--dry-run`. `install` refuses to replace a hook or skill of the same name that it did not write, or a copy changed since it wrote it, unless `--force`, and `uninstall` keeps either (`_ours` in `bin/charter_machine.py`); `--no-settings` leaves `~/.claude/settings.json` alone and prints the entry to add. Both are `bin/charter_machine.py`.
 - A user who manages `~/.claude` with their own link manager or dotfiles repository can point it at `hooks/charter-machine.py` and `skills/CharterAdmin` instead, and add `settings-fragment.json` by hand. Any link name works for the hook; a linked hook finds its checkout from the target.
 - `CHARTER_PKG_DIR` overrides the checkout the hook and the skill use (`checkout` in `hooks/charter-machine.py`, `skills/CharterAdmin/SKILL.md` § The checkout).
 
