@@ -4,8 +4,10 @@ A push's previous SHA is unusable after a force push (the old tip is fetched by 
 branch (all zeroes). Up to 0.4.16 `check --all --base <that>` then counted every tracked path as changed, so files that
 were out of scope or oversized before the change set blocked it: 266 blocking on tcv2 (docs/review/findings-2026-09-23.md:32),
 135 on chatboting after a `staging` prune (elgui/chatboting#131). From 0.4.17 the change set is measured from the merge
-base with the main line when that is behind HEAD, else from HEAD~1, with a warning naming which; every tracked path
-counts as changed only when neither exists. A change set that breaks a gate is still refused.
+base with the main line when that is behind HEAD, else from HEAD~1 on a branch other than the main line, with a warning
+naming which; every tracked path still counts as changed on a push to the main line itself (a force push may have
+rewritten more than its last commit), a detached HEAD, or a clone with no main line. A change set that breaks a gate
+is still refused.
 Every test here fails on 0.4.16 except the ones marked (guard)."""
 import unittest
 
@@ -16,9 +18,11 @@ UNUSABLE = ("0" * 40, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 
 
 class UnusableBase(Base):
-    def test_a_clean_tip_passes_on_the_main_line(self):
+    def test_a_clean_tip_passes_on_a_branch_at_the_main_line(self):
         # app/billing.py is out of scope and was committed before; the push itself changes nothing
+        git(self.root, "checkout", "-q", "-b", "feature")
         git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "clean push")
+        git(self.root, "branch", "-q", "-f", "main", "HEAD")
         for base in UNUSABLE:
             r = charter(self.root, "check", "--all", "--ci", "--base", base)
             self.assertEqual(r.returncode, 0, f"base {base}: {r.stdout}")
@@ -50,6 +54,22 @@ class UnusableBase(Base):
         r = charter(c, "check", "--all", "--ci", "--base", UNUSABLE[1])
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertNotIn("every tracked path", r.stdout)
+
+    def test_a_force_push_to_the_main_line_checks_every_path(self):
+        # origin/main is HEAD, so there is no merge base behind it, and HEAD~1 would miss a commit below the tip
+        c = clone(self.root)
+        self.extra.append(c.parent)
+        (c / "app" / "billing.py").write_text("def invoice(a):\n    return a * 7\n")
+        commit_all(c, "out of scope, one commit before the tip")
+        git(c, "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "clean tip")
+        git(c, "update-ref", "refs/remotes/origin/main", "HEAD")
+        for detach in (False, True):
+            if detach:
+                git(c, "checkout", "-q", "--detach")
+            r = charter(c, "check", "--all", "--ci", "--base", UNUSABLE[1])
+            self.assertEqual(r.returncode, 1, f"detached {detach}: {r.stdout}")
+            self.assertIn("every tracked path", r.stdout)
+            self.assertNotIn("HEAD~1 instead", r.stdout)
 
     def test_a_usable_base_reports_no_fallback(self):   # (guard)
         git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "clean push")
