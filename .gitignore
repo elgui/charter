@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .charter/state/
+
+# a local personal layer never belongs in this public repository: machine/ is the generic layer, and one
+# user's additions live in their ~/.claude/charter-local.md (machine/README.md)
+personal/

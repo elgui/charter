@@ -521,7 +521,7 @@ footer{margin-top:14px;font-size:12.5px;color:var(--muted)}
   <rect class="box-sup" x="40" y="680" width="160" height="118" rx="10"/>
   <text class="t-serif" x="54" y="704" font-size="15">charter repo</text>
   <text class="t-mono" x="54" y="728" font-size="11.5">package/</text>
-  <text class="t-mono" x="54" y="746" font-size="11.5">personal/</text>
+  <text class="t-mono" x="54" y="746" font-size="11.5">machine/</text>
   <text class="t-mono" x="54" y="764" font-size="11.5">bin/charter-pkg</text>
   <text class="t-muted" x="54" y="786" font-size="11">the source, versioned</text>
 </g>
@@ -546,9 +546,9 @@ footer{margin-top:14px;font-size:12.5px;color:var(--muted)}
   <text class="t-b tc-warn" x="234" y="880" font-size="15">prototype</text>
   <text x="234" y="900" font-size="12">no scope · rails optional</text>
 </g>
-<g class="node" data-k="personal" data-role="owner" tabindex="0">
+<g class="node" data-k="machine" data-role="owner" tabindex="0">
   <rect class="box-sup" x="40" y="930" width="170" height="54" rx="10" style="stroke-dasharray:4 3"/>
-  <text class="t-b" x="54" y="952" font-size="13">personal layer</text>
+  <text class="t-b" x="54" y="952" font-size="13">machine layer</text>
   <text class="t-muted" x="54" y="970" font-size="11.5">CharterAdmin · ~/.claude</text>
 </g>
 <g class="node" data-k="setup" data-role="agent owner" tabindex="0">
@@ -699,11 +699,11 @@ footer{margin-top:14px;font-size:12.5px;color:var(--muted)}
     'rec-ledger': {k:'rec', t:'The cost ledger', d:`<p>The SessionEnd hook sums tokens per model from each transcript and its subagents into <code>sessions.jsonl</code>. <code>charter ledger fold</code> folds them per unit into <code>charter/ledger.jsonl</code>, priced from <code>config.json</code>. Nobody edits it by hand. Every figure is an estimate.</p>`, c:'python3 .charter/bin/charter ledger fold', s:'docs/method.md:14; docs/gates.md:15'},
     'rec-synth': {k:'rec', t:'The progress synthesis', d:`<p><code>charter synth</code> generates progress from the repository on demand: rails, units, cost. Every line carries an anchor, and it refuses to write when its own anchor check fails. This replaces per-phase progress files and roadmaps kept by hand.</p>`, c:'python3 .charter/bin/charter synth', s:'docs/method.md:13; docs/method.md:173-186'},
     'rec-evidence': {k:'rec', t:'Evidence classes', d:`<p>Every claim in a checked deliverable is one of four classes. <b>measured</b>: an anchor that resolves here. <b>vendor</b>: a URL. <b>reported</b>: an operator's word, marked <code>(reported in …)</code>. <b>inference</b>: marked <code>(estimate …)</code> or <code>(unverified)</code>. The first two anchor a claim; the last two are admitted because they say what they are.</p>`, s:'docs/method.md:150-161'},
-    'pkg-repo': {k:'', t:'This repository', d:`<p><code>package/</code> is what gets copied into projects. <code>personal/</code> is the layer for this machine, linked into <code>~/.claude</code>. <code>bin/charter-pkg</code> installs, upgrades, surveys and runs the fleet. A change to <code>package/</code> is a release.</p>`, c:'python3 bin/charter-pkg fleet --upgrade', s:'README.md § What is in here; AGENTS.md'},
+    'pkg-repo': {k:'', t:'This repository', d:`<p><code>package/</code> is what gets copied into projects. <code>machine/</code> is the user-level layer, installed once into <code>~/.claude</code> by <code>charter-pkg machine install</code>. <code>bin/charter-pkg</code> installs, upgrades, surveys and runs the fleet. A change to <code>package/</code> is a release.</p>`, c:'python3 bin/charter-pkg fleet --upgrade', s:'README.md § What is in here; AGENTS.md'},
     'pkg-project': {k:'', t:'What lands in a project', d:`<p><code>.charter/</code> (the engine, hashed), <code>charter/</code> (templates, config, decisions and the rest), <code>.claude/</code> rules, skills and agents, an <code>AGENTS.md</code> section, and the CI workflow. The project commits the copy. The install commit is the owner's; an upgrade matching the manifest can be committed by an agent.</p>`, s:'docs/package.md § What lands in a project; docs/install.md'},
     'track-client': {k:'block', t:'The client track', d:`<p>For work under a signed devis. <code>scope.md</code> is required and the scope gate is hard. Perimeter notes are hard at commit, and anchored reports are hard in CI.</p>`, s:'docs/method.md:201-218'},
     'track-proto': {k:'', t:'The prototype track', d:`<p>No scope file and no scope gate. Every other gate stays on: decisions, size and done-needs-evidence are hard, and acceptance may be a single probe. <code>rails.md</code> keeps a prototype on its road. It moves to the client track by writing a scope and setting <code>track</code>.</p>`, s:'docs/method.md:201-218'},
-    personal: {k:'owner', t:'The personal layer', d:`<p>The CharterAdmin skill and the <code>charter-personal.py</code> hook, linked from this checkout into <code>~/.claude</code>. An edit is live on the machine at once. It administers charter across projects; no project depends on it.</p>`, s:'README.md § What is in here; personal/README.md'},
+    machine: {k:'owner', t:'The machine layer', d:`<p>The CharterAdmin skill and the <code>charter-machine.py</code> hook, installed once per user into <code>~/.claude</code>, copied or linked from this checkout. The hook says when a project is behind the checkout; the skill administers charter across projects; no project depends on it. Your own conventions go in <code>~/.claude/charter-local.md</code>.</p>`, c:'python3 bin/charter-pkg machine install', s:'README.md § What is in here; machine/README.md'},
     setup: {k:'', t:'charter setup', d:`<p><code>core.hooksPath</code> is repository config and is not cloned, so each new clone runs this once to turn the pre-commit gate on. The SessionStart banner says when it is missing.</p>`, c:'python3 .charter/bin/charter setup', s:'docs/gates.md § Git hook'},
   };
   /* Links that light up together. */
@@ -715,7 +715,7 @@ footer{margin-top:14px;font-size:12.5px;color:var(--muted)}
     's-done':['g-done','g-stop','col-session','col-commit','col-ci','main-accepted'], 's-probe':['g-done','unit'], 's-evidence':['g-done','rec-evidence'], 's-edit':['col-session','g-perim','g-size','g-owner'], 's-start':['unit','rec-ledger'],
     'col-session':['rec-ledger','k-settings','g-stop'], 'col-commit':['setup'], 'col-ci':['k-ci','g-anchors'],
     'rec-log':['col-session','col-commit','col-ci'], 'rec-ledger':['col-session','unit','main-accepted'], 'rec-synth':['rec-evidence','g-anchors','rails','main-merge'], 'rec-evidence':['rec-synth','s-evidence','g-anchors'],
-    'pkg-repo':['pkg-project','k-engine','personal'], 'pkg-project':['pkg-repo','k-engine','k-settings','k-ci','setup'],
+    'pkg-repo':['pkg-project','k-engine','machine'], 'pkg-project':['pkg-repo','k-engine','k-settings','k-ci','setup'],
     'track-client':['scope','g-scope','k-config'], 'track-proto':['rails','k-config'], 'k-config':['track-client','track-proto','owner'],
     'g-scope':['scope','changes','track-client'], 'g-rails':['rails'], 'g-dec':['decisions'], 'g-done':['unit','s-done'], 'g-owner':['k-config','k-engine','k-settings','k-ci','owner'], 'g-anchors':['rec-synth','rec-evidence'], 'g-memory':['decisions'], 'g-perim':['unit'],
     'main-merge':['owner','main-lock'], 'main-lock':['owner','g-owner'], next:['v-owner','unit'],
