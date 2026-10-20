@@ -246,6 +246,21 @@ class MachineHook(Base):
         self.assertNotIn("not yet in the ledger", so)
         self.assertNotIn("waiting on you", so)
 
+    def test_older_installs_count_a_resumed_session_once(self):
+        # a resumed session ends again and gets a second row (#28): rotortrade had 72 rows for 31 sessions, and this
+        # hook said 72 where the project's own hook says 31
+        common = Path(git(self.root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip())
+        (common / "charter").mkdir(exist_ok=True)
+        rec = lambda s: json.dumps({"session": s, "ts": "2026-10-20T00:00:00+00:00"}) + "\n"
+        (common / "charter" / "sessions.jsonl").write_text(rec("a") + rec("a") + rec("b") + rec("b") + rec("c"))
+        (self.root / "charter" / "ledger.jsonl").write_text(rec("c") + json.dumps({"session": "", "source": "human"}) + "\n")
+        set_version(self.root, "0.4.17")
+        rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
+        self.assertIn("2 ended session(s) not yet in the ledger", ctx(out), so)
+        (self.root / "charter" / "ledger.jsonl").write_text(rec("a") + rec("b") + rec("c"))
+        rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
+        self.assertNotIn("not yet in the ledger", so)
+
 
 class ProjectHookTakesOver(unittest.TestCase):
     """From 0.4.18 the project's own SessionStart hook reports what the personal layer used to."""

@@ -61,6 +61,19 @@ def section(text: str, name: str) -> str:
     return "\n".join(out).strip()
 
 
+def session_ids(p: Path) -> set:
+    """The session ids a JSON-lines record names."""
+    out = set()
+    if p.exists():
+        for line in p.read_text(errors="replace").splitlines():
+            try:
+                out.add(json.loads(line).get("session"))
+            except (json.JSONDecodeError, AttributeError):
+                pass
+    out.discard(None)
+    return out
+
+
 def legacy_lines(root: Path) -> list[str]:
     """What the project's own SessionStart hook reports from 0.4.18: unfolded sessions, and records waiting on the owner."""
     out = []
@@ -69,11 +82,11 @@ def legacy_lines(root: Path) -> list[str]:
     sess = Path(common) / "charter" / "sessions.jsonl" if common else root / ".charter" / "state" / "sessions.jsonl"
     if not sess.exists():
         sess = root / ".charter" / "state" / "sessions.jsonl"   # a 0.1.0 install
-    led = root / "charter" / "ledger.jsonl"
-    n_s = sum(1 for _ in sess.open()) if sess.exists() else 0
-    n_l = sum(1 for line in led.open() if '"source": "human"' not in line) if led.exists() else 0
-    if n_s > n_l:
-        out.append(f"{n_s - n_l} ended session(s) not yet in the ledger: python3 .charter/bin/charter ledger fold")
+    # distinct session ids, as `unfolded_sessions` in the package's session_start.py: a resumed session ends, and is
+    # recorded, more than once
+    n = len(session_ids(sess) - session_ids(root / "charter" / "ledger.jsonl"))
+    if n:
+        out.append(f"{n} ended session(s) not yet in the ledger: python3 .charter/bin/charter ledger fold")
     props = []
     for d in ("decisions", "changes"):
         p = root / "charter" / d
