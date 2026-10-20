@@ -277,7 +277,7 @@ class ProjectHookTakesOver(unittest.TestCase):
 class NothingPersonal(unittest.TestCase):
     def test_the_layer_names_no_one_and_no_machine(self):
         for p in LAYER.rglob("*"):
-            if p.is_file():
+            if p.is_file() and "__pycache__" not in p.parts:
                 t = p.read_text()
                 for word in (r"/home/", r"\bGui\b", r"\bPAI", r"\bSlate\b", r"\bCrossroads\b", r"AI_tooling", r"devis"):
                     self.assertIsNone(re.search(word, t), f"{p.relative_to(REPO)} names {word}")
