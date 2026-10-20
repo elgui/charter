@@ -108,12 +108,14 @@ def main() -> int:
         out.append("  no charter checkout found: set CHARTER_PKG_DIR, or run `charter-pkg machine install` from one")
     else:
         out.append(f"  package repository: {src}")
-        if installed != latest:
+        if vtuple(latest) > vtuple(installed):
             line = f"package {latest} available, {installed} installed: python3 {src}/bin/charter-pkg upgrade {root} --dry-run"
             out.append("  " + line)
             seen.append(line)
-        else:
+        elif installed == latest:
             out.append(f"  package {installed} is current")
+        else:   # the project is ahead of this checkout: never suggest a downgrade
+            out.append(f"  package {installed} installed, newer than this checkout's {latest}: pull {src} before upgrading anything")
         side = Path(__file__).parent / SIDECAR
         if side.exists() and (src / "machine").is_dir():
             try:

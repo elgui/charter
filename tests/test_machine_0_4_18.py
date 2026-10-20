@@ -193,6 +193,15 @@ class MachineHook(Base):
         rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
         self.assertIn(f"package {latest} available, 0.4.0 installed", out.get("systemMessage", ""), so)
 
+    def test_a_project_ahead_of_the_checkout_is_not_told_to_downgrade(self):
+        # /reviewPR #27 (codex, both passes): `!=` announced the older checkout's version as available
+        latest = (REPO / "package" / "VERSION").read_text().strip()
+        set_version(self.root, "9.0.0")
+        rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
+        self.assertNotIn("available", so)
+        self.assertNotIn("systemMessage", out)
+        self.assertIn(f"newer than this checkout's {latest}", ctx(out))
+
     def test_a_copy_older_than_the_checkout_is_named(self):
         side = self.claude / "hooks" / "charter-machine.json"
         d = json.loads(side.read_text())
