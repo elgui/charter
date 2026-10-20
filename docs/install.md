@@ -26,7 +26,7 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 |---|---|---|---|
 | The project is a git repository with a commit | `git -C $P rev-parse --verify HEAD` | a commit SHA | A new project: `git init`, a first commit, then continue (`bin/charter-pkg:624` refuses a survey without one) |
 | The working tree is clean | `git -C $P status --porcelain` | no output | Stop. List the files to the owner. Do not stash, commit or discard someone else's work. `install` does not check this itself (`do_install` in `bin/charter-pkg`), so this step is the only guard |
-| No other session works in the tree | `tmux list-panes -a -F '#{pane_current_path}' \| grep -F "$P"` | no output (`no server running` also means none) | Stop and tell the owner, or work in a separate worktree (`machine/skills/CharterAdmin/workflows/Migrate.md:65`) |
+| No other session works in the tree | `tmux list-panes -a -F '#{pane_current_path}' \| grep -F "$P"` | no output (`no server running` also means none) | Stop and tell the owner, or work in a separate worktree (`machine/skills/CharterAdmin/workflows/Migrate.md:65`, `machine/skills/CharterAdmin/workflows/Migrate.md:70`) |
 | The charter checkout is the version you mean to install | `cat $C/package/VERSION; git -C $C status --short` | the version, as in `package/VERSION`; no output | Ask the owner which version to install |
 | Whether charter is already there | `python3 $M status $P` | `package version: X; installed: none` (`bin/charter-pkg:605`) | `installed: <version>`: go to [Upgrade](#upgrade) instead |
 
