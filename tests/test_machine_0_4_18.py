@@ -64,7 +64,9 @@ class CopyInstall(Base):
         self.assertEqual((self.claude / "skills" / "CharterAdmin" / "SKILL.md").read_text(),
                          (LAYER / "skills" / "CharterAdmin" / "SKILL.md").read_text())
         side = json.loads((self.claude / "hooks" / "charter-machine.json").read_text())
-        self.assertTrue((Path(side["source"]) / "package" / "VERSION").exists(), side)
+        # the checkout the files came from, so the hook's version and freshness checks read the tree it was copied from
+        # (/reviewPR #27: it recorded the main worktree when run from a linked one)
+        self.assertEqual(Path(side["source"]), REPO, side)
         rc, so = pkg(self.home, "install")
         self.assertEqual(rc, 0, so)
         self.assertIn("already wired", so)

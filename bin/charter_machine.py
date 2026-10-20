@@ -11,7 +11,6 @@ import hashlib
 import importlib.util
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -31,15 +30,6 @@ def _hook_module():
 
 def layer_hash(root: Path) -> str:
     return _hook_module().layer_hash(root)   # the hook compares the same hash against the checkout it records
-
-
-def source() -> Path:
-    """The checkout a copied hook reads: the main worktree of this repository, so an install run from a linked worktree
-    still follows the checkout that is kept up to date."""
-    out = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                         capture_output=True, text=True).stdout.strip()
-    common = Path(out) if out else None
-    return common.parent if common and common.name == ".git" and (common.parent / "package" / "VERSION").exists() else REPO
 
 
 def paths(home: Path) -> dict:
@@ -134,9 +124,9 @@ def install(home: Path, link: bool = False, settings: bool = True, force: bool =
             if not dry_run:
                 P["sidecar"].unlink()
     else:
-        print(f"  {act}write {P['sidecar']}: source {source()}")
+        print(f"  {act}write {P['sidecar']}: source {REPO}")
         if not dry_run:
-            P["sidecar"].write_text(json.dumps({"source": str(source()), "hash": layer_hash(REPO), "mode": "copy",
+            P["sidecar"].write_text(json.dumps({"source": str(REPO), "hash": layer_hash(REPO), "mode": "copy",
                                                 "files": {P[k].name: content(P[k]) for k in ("hook", "skill")},
                                                 "installed": dt.date.today().isoformat()}, indent=2) + "\n")
     if not settings:
