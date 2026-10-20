@@ -7,6 +7,7 @@ It never touches ~/.claude/charter-local.md, which is the user's. Python 3 stand
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -47,11 +48,26 @@ def paths(home: Path) -> dict:
             "sidecar": claude / "hooks" / SIDECAR, "skill": claude / "skills" / SKILL_NAME}
 
 
+def content(p: Path) -> dict:
+    """The hash of every file at a copied path, by its path relative to it ("" for a single file)."""
+    if p.is_file():
+        return {"": hashlib.sha256(p.read_bytes()).hexdigest()}
+    return {q.relative_to(p).as_posix(): hashlib.sha256(q.read_bytes()).hexdigest()
+            for q in sorted(p.rglob("*")) if q.is_file() and "__pycache__" not in q.parts}
+
+
 def _ours(p: Path, src: Path, side: Path) -> bool:
-    """A path install wrote: a link into a charter checkout's machine/, or a copy the sidecar records."""
+    """A path install wrote and nobody changed since: a link into a charter checkout's machine/, or a copy whose every
+    file still hashes to what the sidecar recorded at install."""
     if p.is_symlink():
         return Path(p.readlink()).as_posix().endswith("machine/" + src.relative_to(LAYER).as_posix())
-    return p.exists() and side.exists()
+    if not (p.exists() and side.exists()):
+        return False
+    try:
+        recorded = json.loads(side.read_text()).get("files", {}).get(p.name)
+    except (ValueError, OSError):
+        return False
+    return recorded is not None and recorded == content(p)
 
 
 def _command_is_ours(h: dict) -> bool:
@@ -84,7 +100,8 @@ def install(home: Path, link: bool = False, settings: bool = True, force: bool =
                if (P[k].exists() or P[k].is_symlink()) and not _ours(P[k], src, P["sidecar"])]
     if blocked and not force:
         for b in blocked:
-            print(f"refused: {b} exists and is not this layer's; move it aside, or pass --force to replace it")
+            print(f"refused: {b} exists and is not this layer's, or was changed since it was installed; "
+                  "move it aside, or pass --force to replace it")
         return 1
     s = _settings(P["settings"]) if settings else {}
     if s is None:
@@ -120,6 +137,7 @@ def install(home: Path, link: bool = False, settings: bool = True, force: bool =
         print(f"  {act}write {P['sidecar']}: source {source()}")
         if not dry_run:
             P["sidecar"].write_text(json.dumps({"source": str(source()), "hash": layer_hash(REPO), "mode": "copy",
+                                                "files": {P[k].name: content(P[k]) for k in ("hook", "skill")},
                                                 "installed": dt.date.today().isoformat()}, indent=2) + "\n")
     if not settings:
         print(f"  settings left alone (--no-settings); the hook runs once {P['settings']} has:")
@@ -144,7 +162,7 @@ def uninstall(home: Path, dry_run: bool = False) -> int:
         if not (P[k].exists() or P[k].is_symlink()):
             continue
         if not _ours(P[k], src, P["sidecar"]):
-            print(f"  kept {P[k]}: not this layer's")
+            print(f"  kept {P[k]}: not this layer's, or changed since it was installed")
             continue
         print(f"  {act}remove {P[k]}")
         if not dry_run:

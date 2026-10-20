@@ -119,6 +119,19 @@ class CopyInstall(Base):
         self.assertEqual([h["command"] for g in s["hooks"]["SessionStart"] for h in g["hooks"]], ["echo other"])
         self.assertTrue((self.claude / "charter-local.md").exists())
 
+    def test_a_copy_the_user_changed_is_neither_replaced_nor_removed(self):
+        # /reviewPR #27 (codex, both passes): ownership was "the sidecar exists", so a user's edit was deleted
+        pkg(self.home, "install")
+        notes = self.claude / "skills" / "CharterAdmin" / "MY-NOTES.md"
+        notes.write_text("mine\n")
+        rc, so = pkg(self.home, "install")
+        self.assertEqual(rc, 1, so)
+        self.assertIn("changed since it was installed", so)
+        rc, so = pkg(self.home, "uninstall")
+        self.assertIn("kept", so)
+        self.assertEqual(notes.read_text(), "mine\n")
+        self.assertFalse((self.claude / "hooks" / "charter-machine.py").exists(), so)   # the untouched hook still goes
+
 
 class LinkInstall(Base):
     def test_links_and_the_linked_hook_finds_its_checkout(self):
