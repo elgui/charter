@@ -61,7 +61,9 @@ def _ours(p: Path, src: Path, side: Path) -> bool:
 
 
 def _command_is_ours(h: dict) -> bool:
-    return HOOK_NAME in str(h.get("command", "")) + " ".join(map(str, h.get("args") or []))
+    """The entry install writes, exactly: another command that merely names the hook is someone else's."""
+    ours = json.loads(FRAGMENT.read_text())["hooks"]["SessionStart"][0]["hooks"][0]
+    return h.get("type") == ours["type"] and h.get("command") == ours["command"] and not h.get("args")
 
 
 def _settings(p: Path) -> dict | None:

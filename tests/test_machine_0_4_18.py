@@ -121,6 +121,17 @@ class CopyInstall(Base):
         self.assertEqual([h["command"] for g in s["hooks"]["SessionStart"] for h in g["hooks"]], ["echo other"])
         self.assertTrue((self.claude / "charter-local.md").exists())
 
+    def test_a_command_that_only_names_the_hook_is_someone_elses(self):
+        # /reviewPR #27 (codex, both passes): a substring match skipped the install and uninstall removed this entry
+        self.claude.mkdir()
+        theirs = {"type": "command", "command": "echo charter-machine.py"}
+        (self.claude / "settings.json").write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [theirs]}]}}))
+        rc, so = pkg(self.home, "install")
+        self.assertNotIn("already wired", so)
+        pkg(self.home, "uninstall")
+        s = json.loads((self.claude / "settings.json").read_text())
+        self.assertEqual([h for g in s["hooks"]["SessionStart"] for h in g["hooks"]], [theirs])
+
     def test_a_copy_the_user_changed_is_neither_replaced_nor_removed(self):
         # /reviewPR #27 (codex, both passes): ownership was "the sidecar exists", so a user's edit was deleted
         pkg(self.home, "install")
