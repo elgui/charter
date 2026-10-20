@@ -1,5 +1,7 @@
 # Personal layer
 
+**Superseded by `machine/` (0.4.18).** The generic layer is `machine/README.md`; what was particular to this machine moves out of this repository. This folder stays only until this machine's links point at `machine/`, and is then removed.
+
 What belongs in `~/.claude` on Gui's machines and nowhere else. The committed layer (`package/`) never references any of this.
 
 | File | Goes to | Why personal |

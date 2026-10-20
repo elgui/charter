@@ -17,8 +17,8 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 1. **Owner-only files are committed by the owner.** In an installed project these paths are the owner's: `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, `.claude/settings.json`, `.claude/settings.local.json` and `.github/workflows/charter.yml` (the full list, fields included, is in `package/.claude/rules/charter.md` § What only the owner changes). The pre-commit gate refuses a commit of them made from inside Claude Code (`docs/gates.md` § Owner-only changes). An install always touches them, so **you prepare and stage; the owner commits, with the one line the installer prints** (step 8). An upgrade touches them too, but from 0.4.6 package files exactly as the installer wrote them are not an owner-only change (`release_change` in `package/.charter/checks.py`): the installer's block says who commits, and when it says an agent, you commit. Only a merge into `.claude/settings.json` or a kept local file sends an upgrade to the owner.
 2. **Never set `CHARTER_OWNER`, never pass `--no-verify`, never run `charter owner commit`**, and never work around a refusal by writing the file through Bash. The refusal is the method working, not a fault (`package/.claude/rules/charter.md:36`). The one exception is a throwaway rehearsal clone that the survey made (`--keep-clone`), which is not the project.
 3. **Never push, open or merge a pull request, or deploy.** Those are the owner's acts (`package/.claude/rules/charter.md` § Decisions and memory, "Commitments").
-4. **Facts about an existing project come from the survey** (step 2), measured today, never from memory or another session's notes (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:14`).
-5. **Stop and report** any check that fails (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:17`).
+4. **Facts about an existing project come from the survey** (step 2), measured today, never from memory or another session's notes (`machine/skills/CharterAdmin/workflows/Migrate.md:7`).
+5. **Stop and report** any check that fails (`machine/skills/CharterAdmin/workflows/Migrate.md:10`).
 
 ## Step 0: preconditions
 
@@ -26,13 +26,13 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 |---|---|---|---|
 | The project is a git repository with a commit | `git -C $P rev-parse --verify HEAD` | a commit SHA | A new project: `git init`, a first commit, then continue (`bin/charter-pkg:624` refuses a survey without one) |
 | The working tree is clean | `git -C $P status --porcelain` | no output | Stop. List the files to the owner. Do not stash, commit or discard someone else's work. `install` does not check this itself (`do_install` in `bin/charter-pkg`), so this step is the only guard |
-| No other session works in the tree | `tmux list-panes -a -F '#{pane_current_path}' \| grep -F "$P"` | no output (`no server running` also means none) | Stop and tell the owner, or work in a separate worktree (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:76`) |
+| No other session works in the tree | `tmux list-panes -a -F '#{pane_current_path}' \| grep -F "$P"` | no output (`no server running` also means none) | Stop and tell the owner, or work in a separate worktree (`machine/skills/CharterAdmin/workflows/Migrate.md:65`) |
 | The charter checkout is the version you mean to install | `cat $C/package/VERSION; git -C $C status --short` | the version, as in `package/VERSION`; no output | Ask the owner which version to install |
 | Whether charter is already there | `python3 $M status $P` | `package version: X; installed: none` (`bin/charter-pkg:605`) | `installed: <version>`: go to [Upgrade](#upgrade) instead |
 
 ## Step 1: choose the track
 
-- **`client`** only when a signed devis or contract covers the project (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md:38`). The scope gate is on and `charter/scope.md` is required.
+- **`client`** only when a signed contract (a signed quote counts) covers the project (`machine/skills/CharterAdmin/workflows/Migrate.md:32`). The scope gate is on and `charter/scope.md` is required.
 - **`prototype`** otherwise. No scope file; the decisions, size and done gates stay hard (`docs/method.md:188-202`).
 
 The full comparison is `docs/method.md` § Two tracks. The survey and the first install both require `--track` and refuse to run without it, before writing anything (`main` and `do_install` in `bin/charter-pkg`). Once `charter/config.json` exists the installer never changes its track: a later `--track` that differs prints `NOTE --track <track> not applied: charter/config.json already says track <other>; the owner changes it there`. A prototype that gains a client switches when the owner writes `charter/scope.md` and sets `track` to `client`.
@@ -46,7 +46,7 @@ The full comparison is `docs/method.md` § Two tracks. The survey and the first 
   python3 $M survey $P --track <track> --out <a directory outside the project> --instructions ~/.claude/CLAUDE.md
   ```
 
-  Expected: `wrote <dir>/survey.json, survey.md, plan.md`, exit 0. Read `survey.md` and `plan.md` in full. The plan's steps, each with its check and rollback, take the place of steps 3 to 7 below for this project; steps 0, 8 and 9 and the rules above still apply. With the personal layer installed, the `Migrate` workflow of the `CharterAdmin` skill drives the whole survey, rehearsal and execution (`personal/claude-home/Skills/CharterAdmin/workflows/Migrate.md`). What comes after the install for each kind of project (taskets, BMAD, ad-hoc documents) is in `docs/migration.md`.
+  Expected: `wrote <dir>/survey.json, survey.md, plan.md`, exit 0. Read `survey.md` and `plan.md` in full. The plan's steps, each with its check and rollback, take the place of steps 3 to 7 below for this project; steps 0, 8 and 9 and the rules above still apply. With the machine layer installed (§ Not part of a project install), the `Migrate` workflow of the `CharterAdmin` skill drives the whole survey, rehearsal and execution (`machine/skills/CharterAdmin/workflows/Migrate.md`). What comes after the install for each kind of project (taskets, BMAD, ad-hoc documents) is in `docs/migration.md`.
 
   `--instructions <path>` (repeatable) also reads an instruction file outside the project, and what it imports: pass the user's `~/.claude/CLAUDE.md` and each `~/.claude/rules/*.md`, which load in every session (https://code.claude.com/docs/en/memory). Without it the survey reads only the project, so that it gives the same answer on any machine (`SurveyOnAnotherMachine` in `tests/test_migration.py`). Its section "Instructions the sessions read" lists every line of an instruction file that overlaps a charter rule, with both lines cited, and the plan turns them into an owner decision and a step (`bin/charter_instructions.py`). Claude Code does not rank two instruction files that conflict, and may follow either one (same URL, "User-level rules"), so an overlap left unread decides what a session does as much as charter does. An overlap is often an agreement; read each one.
 
@@ -169,10 +169,10 @@ Expected, one of:
 
 ## Upgrade
 
-A new package version reaches a project only by an upgrade; nothing pulls it. The personal-layer SessionStart hook says `package X available, Y installed` when a project is behind (`personal/claude-home/hooks/charter-personal.py`).
+A new package version reaches a project only by an upgrade; nothing pulls it. The machine layer's SessionStart hook says `package X available, Y installed` when a project is behind (`machine/hooks/charter-machine.py`).
 
 1. Step 0 again: `upgrade` does not check the working tree either (`do_install` in `bin/charter-pkg` runs both).
-2. `git -C $P switch -c charter-<version>`: the upgrade lands on a branch (`personal/claude-home/Skills/CharterAdmin/SKILL.md:65`).
+2. `git -C $P switch -c charter-<version>`: the upgrade lands on a branch (`machine/skills/CharterAdmin/SKILL.md:72`).
 3. Read the upgrade notes in `docs/package.md` § Versioning and upgrade for every version between the installed one and the target. Some ask for a step after the upgrade.
 4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`bin/charter-pkg:169-192`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:166`).
 5. `python3 $M upgrade $P`. It stages what it wrote and ends with a block that says who commits. `Staged <n> file(s) ...; none is an owner-only change, so an agent commits them:` is followed by the command: run it yourself (from 0.4.6, `release_change` in `package/.charter/checks.py`). `Waiting on the owner:` is step 8's block, ending with the owner's line. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
@@ -217,4 +217,4 @@ Every refusal names its override (`docs/method.md:119`). The common ones:
 
 ## Not part of a project install
 
-The personal layer (the `CharterAdmin` skill and the `charter-personal.py` SessionStart hook) is installed once per machine into `~/.claude`, not into projects: `personal/README.md`. Changing the method itself happens in this repository: `AGENTS.md` at its root.
+The machine layer (the `CharterAdmin` skill and the `charter-machine.py` SessionStart hook) is installed once per user into `~/.claude`, not into projects, and is optional: `python3 <checkout>/bin/charter-pkg machine install` copies it, `--link` symlinks it instead, `status` reports it and `uninstall` removes it. What it installs, and `~/.claude/charter-local.md` for your own conventions: `machine/README.md`. Changing the method itself happens in this repository: `AGENTS.md` at its root.

@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "python3 -B \"$HOME/.claude/hooks/charter-machine.py\"", "timeout": 10 } ] }
+    ]
+  }
+}
