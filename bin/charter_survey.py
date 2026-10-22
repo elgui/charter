@@ -411,7 +411,11 @@ def parse_triggers(src: str) -> dict:
 def gh_glob(pattern: str) -> re.Pattern:
     out, i = "", 0
     while i < len(pattern):
-        if pattern.startswith("**", i):
+        if pattern.startswith("**/", i):
+            # zero or more directories: GitHub's `**/README.md` matches a root README.md
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
             out += ".*"
             i += 2
         elif pattern[i] == "*":
