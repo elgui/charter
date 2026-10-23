@@ -913,7 +913,7 @@ def authority_svg(standalone: bool) -> str:
         b.append(text(1070, y + 25, how, "mono", 11.5))
         b.append("</g>")
     y = top + rh * len(ACTS) + 30
-    b.append(text(24, y, "No level delegates a config, settings or .charter/ change, a — owner: do or decide line, or the level itself; "
+    b.append(text(24, y, "Other than installer-exact upgrades, config, settings and .charter/ edits, — owner: do or decide lines, and the level stay with the owner; "
                          "the level is read from the default branch, and from GitHub, whichever is stricter.", "sub", 12))
     b.append(text(24, y + 20, "Sources: package/.claude/rules/charter.md § What only the owner changes, § The owner's delegate; docs/design/owner-delegate.md § Levels.", "sub", 12))
     return svg_doc("authority", W, H, f"Who may change what (charter {VERSION})",
