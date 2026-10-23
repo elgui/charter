@@ -66,7 +66,7 @@ For an existing project, start with the survey. For installation, follow [every 
 | [`tests/`](tests/) | Tests for the package and installer. |
 | [`docs/`](docs/) | Method, guides, diagrams, design notes, and dated development records. |
 
-**Explore:** [interactive map](docs/charter-map.html) · [method diagrams](docs/method-visual.html) · [desk sheet](docs/cheatsheet.pdf) · [migration paths](docs/migration.md) · [package and upgrade notes](docs/package.md)
+**Explore:** [what it provides and how it fits](docs/maps.html) ([as text, for agents](docs/maps.md)) · [interactive map](docs/charter-map.html) · [method diagrams](docs/method-visual.html) · [desk sheet](docs/cheatsheet.pdf) · [migration paths](docs/migration.md) · [package and upgrade notes](docs/package.md)
 
 ## Limits worth knowing
 

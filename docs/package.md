@@ -19,7 +19,7 @@ Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` 
 | `bin/make-testbed`, `bin/trial-run` | Trial tooling |
 | `machine/` | The machine layer, installed once per user into `~/.claude` by `charter-pkg machine install`, never into a project (`machine/README.md`, `bin/charter_machine.py`) |
 | `tests/` | The command is in `AGENTS.md` at the repository root. `test_review_regressions.py` holds one class per finding of the 2026-09-11 review, `test_harmonization_regressions.py` one class per defect the 2026-09-12 harmonization trial found, `test_migration.py` the survey and the defects the 2026-09-13 leCRM rehearsal found; the others are named after the feature or review they test |
-| `docs/` | Reference: `install.md`, `daily-use.md`, `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `cheatsheet.html` and `cheatsheet.pdf` (the A4 desk sheet), `charter-map.html` (the elements on one map), `design/`. History: `trials/`, `review/`, `briefs/`, `report-2026-09-11.md`, `session-log.md` |
+| `docs/` | Reference: `install.md`, `daily-use.md`, `method.md`, `gates.md`, `package.md`, `migration.md`, `method-visual.html` (the method in diagrams), `cheatsheet.html` and `cheatsheet.pdf` (the A4 desk sheet), `charter-map.html` (the elements on one map), `maps.html` and `maps.md` (what charter provides and how its ideas fit, for people and for agents, generated with the SVGs in `assets/maps/` by `assets/maps/build.py`), `design/`. History: `trials/`, `review/`, `briefs/`, `report-2026-09-11.md`, `session-log.md` |
 
 ## What lands in a project
 
