@@ -67,10 +67,11 @@ def session_ids(p: Path) -> set:
     if p.exists():
         for line in p.read_text(errors="replace").splitlines():
             try:
-                out.add(json.loads(line).get("session"))
+                sid = json.loads(line).get("session")
             except (json.JSONDecodeError, AttributeError):
-                pass
-    out.discard(None)
+                continue
+            if isinstance(sid, str) and sid:
+                out.add(sid)
     return out
 
 

@@ -103,7 +103,7 @@ CAPS = [
         what=("An agent's edit of an owner-only file or field is refused in the session, at a commit made inside Claude Code, "
               "and by the author check in CI. `charter owner` lists what waits on the owner, each with its command; `charter rule`, "
               "`approve` and `rail` write a ruling and commit it. An agent stages an owner-only change and runs `charter handover`, "
-              "which prints the owner's one line. Below `strict`, the owner's delegate takes the acts the level allows."),
+              "which prints the owner's one line. At `routine`, `answers` or `open`, the owner's delegate takes the acts the level allows."),
         actors=["owner", "delegate", "agent"],
         entry=[("charter owner", "the queue that waits on the owner, with the command for each", "`queue` in `package/.charter/owner.py`"),
                ("charter rule | approve | rail", "rule a decision, approve a change, set a rail, in one commit", "`package/.charter/owner.py`"),
@@ -1113,6 +1113,7 @@ def markdown() -> str:
     w("| id | Act | Agent | Delegate: routine | Delegate: answers | Delegate: open | Owner | How | Source |")
     w("|---|---|---|---|---|---|---|---|---|")
     for aid, label, *yes, how, src in ACTS:
+        label, how = (v.replace("|", r"\|") for v in (label, how))
         w(f"| `{aid}` | {label} | {' | '.join('yes' if v else '-' for v in yes)} | `{how}` | {src} |")
     w("")
     w("An owner-only change travels one way: the agent stages it and runs `charter handover`; the delegate commits it if the level "
@@ -1256,7 +1257,8 @@ function conceptPanel(c){
     + `<div class="src">Source: ${md(c.source)}</div>`;
 }
 function gatePanel(g){
-  const cell = c => c[0] === 'R' ? 'refuses' : c[0] === 'C' ? 'refuses' + (c[1] ? ' (' + esc(c[1]) + ')' : '') : c[0] === 'W' ? 'warns' : 'not checked';
+  const cell = c => (c[0] === 'R' || c[0] === 'C' ? 'refuses' : c[0] === 'W' ? 'warns' : 'not checked')
+    + (c[1] && c[0] !== '-' ? ' (' + esc(c[1]) + ')' : '');
   return `<span class="kind">gate${g.rule ? ' · ' + esc(g.rule) : ''}</span><h3>${esc(g.name)}</h3><ul><li>In the session: ${cell(g.cells[0])}</li><li>At commit: ${cell(g.cells[1])}</li><li>At merge: ${cell(g.cells[2])}</li></ul><p><b>The way past a refusal:</b> ${md(g.override)}</p><div class="src">Source: ${md(g.source)}</div>`;
 }
 function actPanel(a){

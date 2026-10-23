@@ -261,6 +261,23 @@ class MachineHook(Base):
         rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
         self.assertNotIn("not yet in the ledger", so)
 
+    def test_malformed_session_ids_do_not_hide_startup_information(self):
+        common = Path(git(self.root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip())
+        (common / "charter").mkdir(exist_ok=True)
+        bad = ["broken JSON", "[]", "null", "{}", '{"session": []}', '{"session": {}}',
+               '{"session": ""}', '{"session": 12}']
+        records = "\n".join(bad) + "\n"
+        (common / "charter" / "sessions.jsonl").write_text(
+            records + '{"session": "a"}\n{"session": "a"}\n{"session": "b"}\n')
+        (self.root / "charter" / "ledger.jsonl").write_text(records + '{"session": "b"}\n')
+        (self.root / "charter" / "decisions" / "cache-ttl.md").write_text(PROPOSED)
+        set_version(self.root, "0.4.17")
+        rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
+        self.assertEqual(rc, 0, so)
+        self.assertIn("1 ended session(s) not yet in the ledger", ctx(out), so)
+        self.assertIn(f"package repository: {REPO}", ctx(out), so)
+        self.assertIn("waiting on you: decisions/cache-ttl", out.get("systemMessage", ""), so)
+
 
 class ProjectHookTakesOver(unittest.TestCase):
     """From 0.4.18 the project's own SessionStart hook reports what the personal layer used to."""

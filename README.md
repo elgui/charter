@@ -42,12 +42,12 @@ The example illustrates the flow; use the [unit template](package/charter/templa
 
 The [installation guide](docs/install.md) is the single procedure for installing, setting up, upgrading, or removing Charter. It covers two tracks:
 
-- **Client:** scope is tied to a signed quote or contract; paths explicitly marked out of scope need an owner approved change request.
+- **Client:** scope is tied to a signed quote or contract; paths explicitly marked out of scope need an owner approved change request. [Scope gate](docs/gates.md#scope-r6)
 - **Prototype:** the current track for projects without that contract, including internal tools and maintained products. No scope file is required. Done, decision, and size checks remain enforced; perimeter and deliverable anchoring checks warn. [Track selection](docs/install.md#step-1-choose-the-track) · [Track comparison](docs/method.md#two-tracks)
 
 <img src="docs/assets/charter-tracks.svg" alt="Both tracks share work units, decisions, evidence, and size checks. Prototype needs no contract or scope file. Client adds agreed scope and approved changes, plus blocking perimeter and deliverable anchoring checks. Scope enforcement matches excluded paths, not the meaning of a feature." width="100%">
 
-From a checkout of this repository, you can inspect a project without changing it:
+From a checkout of this repository, you can inspect a project without changing it ([survey and dry run](docs/install.md)):
 
 ```sh
 python3 bin/charter-pkg survey /path/to/project --track prototype --out /path/to/report

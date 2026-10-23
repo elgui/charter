@@ -80,7 +80,7 @@ One engine judges each change as the agent edits, at commit, and in CI from a cl
 
 ### `cap.owner` 4. Keep the owner in charge
 
-The files and fields that define the gates are the owner's. Agents propose; the owner rules in one command. An agent's edit of an owner-only file or field is refused in the session, at a commit made inside Claude Code, and by the author check in CI. `charter owner` lists what waits on the owner, each with its command; `charter rule`, `approve` and `rail` write a ruling and commit it. An agent stages an owner-only change and runs `charter handover`, which prints the owner's one line. Below `strict`, the owner's delegate takes the acts the level allows. (`package/.claude/rules/charter.md:28-51`; `docs/gates.md` § Owner-only changes)
+The files and fields that define the gates are the owner's. Agents propose; the owner rules in one command. An agent's edit of an owner-only file or field is refused in the session, at a commit made inside Claude Code, and by the author check in CI. `charter owner` lists what waits on the owner, each with its command; `charter rule`, `approve` and `rail` write a ruling and commit it. An agent stages an owner-only change and runs `charter handover`, which prints the owner's one line. At `routine`, `answers` or `open`, the owner's delegate takes the acts the level allows. (`package/.claude/rules/charter.md:28-51`; `docs/gates.md` § Owner-only changes)
 
 - **Who acts:** `owner`, `delegate`, `agent` (section 1, `docs/maps.md`).
 - **Entry points:**
@@ -284,7 +284,7 @@ An `x` means the capability rests on the concept. The pairing is this map's read
 | `a.ruling` | Transcribe the owner's own ruling: rule, approve, rail | - | - | yes | yes | yes | `charter handover --ask … --quote` | `package/.claude/rules/charter.md:47` |
 | `a.road` | Edit charter/rails.md or charter/scope.md | - | - | - | yes | yes | `edit, then charter handover` | `package/.claude/rules/charter.md:44` |
 | `a.merge` | Merge the owner's own reviewed pull request | - | - | - | yes | yes | `/reviewPR, then handover --merge N` | `package/.claude/rules/charter.md:48` |
-| `a.structural` | Config (the level too), .charter/**, settings, CI workflow, split units, `— owner: do|decide` | - | - | - | - | yes | `the owner's line: … owner commit` | `docs/design/owner-delegate.md` § Levels |
+| `a.structural` | Config (the level too), .charter/**, settings, CI workflow, split units, `— owner: do\|decide` | - | - | - | - | yes | `the owner's line: … owner commit` | `docs/design/owner-delegate.md` § Levels |
 | `a.run` | Run a waiting chain's acts; resume a chain | - | - | - | - | yes | `charter owner run; /resume-chain ok` | `package/.claude/rules/charter.md:37-40` |
 | `a.commit` | Push, deploy, and every other commitment | - | - | - | - | yes | `the owner's word, in the session` | `package/.claude/rules/charter.md:57` |
 
