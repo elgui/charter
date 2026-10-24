@@ -12,9 +12,8 @@ case "$(git -C "$repo" remote get-url origin)" in
   git@github.com:elgui/charter.git|https://github.com/elgui/charter.git) ;;
   *) echo 'Origin is not the reviewed charter repository'; exit 1 ;;
 esac
-[ "$(cat "$repo/package/VERSION")" = 0.4.19 ] || { echo 'Unexpected package version'; exit 1; }
+[ "$(git -C "$repo" show "$head:package/VERSION")" = 0.4.19 ] || { echo 'Unexpected package version'; exit 1; }
 git -C "$repo" merge-base --is-ancestor "$release" "$head"
-[ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || { echo 'Tracked files changed; review first'; exit 1; }
 while IFS= read -r path; do
   case "$path" in
     docs/proposals/publish-owner-json-review.sh|docs/proposals/owner-json-content-contract.md|docs/proposals/owner-json-content-contract-pr.md) ;;

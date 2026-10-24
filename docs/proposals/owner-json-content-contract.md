@@ -18,7 +18,7 @@ Version 0.4.19, required release metadata, upgrade note and generated maps are p
 
 ## Present owner action
 
-The interactive payload `docs/proposals/publish-owner-json-review.sh` validates this branch, version, origin, tracked cleanliness and unchanged release content. It shows the exact head, asks for confirmation, then pushes that immutable head and opens the release PR with committed PR text. It preserves the unrelated untracked review file. It performs no merge, tag or installed upgrade (`docs/proposals/publish-owner-json-review.sh`).
+The interactive payload `docs/proposals/publish-owner-json-review.sh` validates this branch, version, origin and unchanged committed release content. It shows the exact head, asks for confirmation, then pushes that immutable head and opens the release PR with committed PR text. Publication reads immutable Git objects, so concurrent tracked and untracked working edits are preserved. It performs no merge, tag or installed upgrade (`docs/proposals/publish-owner-json-review.sh`).
 
 ## After publication: Gui's release and upgrade
 
