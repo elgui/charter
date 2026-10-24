@@ -30,7 +30,7 @@ import rails
 
 CHARTER_BIN = ".charter/bin/charter"
 KINDS = ("decide", "do", "check")
-FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run")
+FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because")
 # `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
 # tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
 OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
@@ -46,7 +46,7 @@ OWNER_SWITCH = "CHARTER_OWNER"
 
 def _item(**kw) -> dict:
     it = {f: None for f in FIELDS}
-    it.update(options=[], marked=True, run=[])
+    it.update(options=[], marked=True, run=[], contract=1)
     it.update(kw)
     return it
 
@@ -67,8 +67,33 @@ def _read(root: Path, rp: str) -> str:
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
 
 
+# Content belongs to this protocol; consumers need not parse the source documents.
+_CONSEQUENCES = {
+    ("rule", "active"): "Binds from now on; a later decision can supersede it.",
+    ("rule", "rejected"): "Records rejection; the proposal does not bind.",
+    ("approve", "approved"): "Permits work within the request's stated paths.",
+    ("approve", "rejected"): "Records rejection; the requested work remains unapproved.",
+    ("rail", "done"): "Closes this item of the road as completed.",
+    ("rail", "parked"): "Parks this item of the road for later work.",
+    ("rail", "dropped"): "Removes this item from the planned road.",
+}
+
+
+def _paragraph(text: str, heading: str) -> str | None:
+    """First paragraph, at most 500 characters; prefer a complete sentence."""
+    match = re.search(rf"^## {re.escape(heading)}[ \t]*\n(.*?)(?=^#{{1,2}} |\Z)", text, re.M | re.S)
+    if not match:
+        return None
+    paragraph = " ".join(re.split(r"\n\s*\n", match[1].strip(), maxsplit=1)[0].split())
+    if len(paragraph) <= 500:
+        return paragraph or None
+    ends = list(re.finditer(r"[.!?](?=\s|$)", paragraph[:500]))
+    return paragraph[:ends[-1].end()] if ends else paragraph[:499].rstrip() + "…"
+
+
 def _options(root: Path, verb: str, ident: str, values: tuple[str, ...], labels: dict[str, str]) -> list[dict]:
-    return [{"value": v, "label": labels.get(v, v), "perform": perform_argv(root, verb, ident, v)} for v in values]
+    return [{"value": v, "label": labels.get(v, v), "consequence": _CONSEQUENCES.get((verb, v)),
+             "perform": perform_argv(root, verb, ident, v)} for v in values]
 
 
 def owner_names(root: Path, cfg: dict) -> list[str]:
@@ -166,6 +191,8 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
         items.append(_item(key=f"decision:{k}", kind="decide", title=str(v.get("title", "")), file=v["_path"],
                            line=_line_of(_read(root, v["_path"]), r"^status:"),
                            ask=str(v.get("ask") or "") or None, recommend=rec if rec in DECISION_RULINGS else None,
+                           why=_paragraph(_read(root, v["_path"]), "Recommendation"),
+                           because=_paragraph(_read(root, v["_path"]), "Because"),
                            options=_options(root, "rule", k, ("active", "rejected"), {"active": "adopt it", "rejected": "reject it"}),
                            check=str(v.get("check") or "") or None,
                            perform=perform_argv(root, "rule", k, "{answer}")))
@@ -174,6 +201,9 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
             continue
         items.append(_item(key=f"change:{k}", kind="decide", title=str(v.get("title", "")), file=v["_path"],
                            line=_line_of(_read(root, v["_path"]), r"^status:"), ask=str(v.get("ask") or "") or None,
+                           recommend=str(v.get("recommend") or "").strip().lower() if str(v.get("recommend") or "").strip().lower() in CHANGE_RULINGS else None,
+                           why=_paragraph(_read(root, v["_path"]), "Recommendation"),
+                           because=_paragraph(_read(root, v["_path"]), "Why it is outside the scope"),
                            options=_options(root, "approve", k, CHANGE_RULINGS, {}),
                            perform=perform_argv(root, "approve", k, "{answer}")))
     staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "-z").stdout.split("\0") if x]

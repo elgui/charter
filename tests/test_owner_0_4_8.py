@@ -125,7 +125,7 @@ class OwnerJsonQueue(unittest.TestCase):
         self.assertEqual(set(rep), {"project", "charter", "owner", "delegate", "items"})   # delegate: 0.4.14
         self.assertEqual(rep["project"], str(self.root))
         self.assertEqual(rep["owner"], "Test Owner")
-        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run"}
+        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because"}
         for it in rep["items"]:
             self.assertEqual(set(it), fields, it)
             self.assertIn(it["kind"], ("decide", "do", "check"))
@@ -203,6 +203,58 @@ class OwnerJsonQueue(unittest.TestCase):
         r = charter(self.root, "probe", "b1")
         self.assertIn("test -f rows.txt", r.stdout)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)   # rows.txt does not exist
+
+
+class OwnerContentContract(unittest.TestCase):
+    def setUp(self):
+        self.root = project(check="touch check-ran && true")
+
+    def tearDown(self):
+        cleanup(self.root)
+
+    def queue(self):
+        result = charter(self.root, "owner", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_decision_content_is_additive_and_reports_never_act(self):
+        it = {i["key"]: i for i in self.queue()["items"]}["decision:pick-db"]
+        self.assertEqual((it["contract"], it["why"], it["because"]),
+                         (1, "It is what production runs.", "Tested."))
+        self.assertEqual(it["options"][0]["consequence"], "Binds from now on; a later decision can supersede it.")
+        self.assertFalse((self.root / "check-ran").exists())
+
+    def test_change_rationale_recommendation_and_rail_consequences(self):
+        put(self.root, "charter/changes/extra.md", CHANGE.replace("paths:", "recommend: approved\npaths:") +
+            "\n## Why it is outside the scope\n\nClient export was excluded.\n\nSecond paragraph.\n"
+            "\n## Recommendation\n\nApprove the bounded export.\n")
+        items = {i["key"]: i for i in self.queue()["items"]}
+        it = items["change:extra"]
+        self.assertEqual((it["recommend"], it["why"], it["because"]),
+                         ("approved", "Approve the bounded export.", "Client export was excluded."))
+        self.assertIn("stated paths", it["options"][0]["consequence"])
+        self.assertTrue(all(o["consequence"] for o in items["rail:r1"]["options"]))
+
+    def test_missing_empty_and_long_paragraphs(self):
+        path = "charter/decisions/pick-db.md"
+        text = PROPOSED.format(check="true")
+        for body, why in [("", None), ("\n\n", None), ("x" * 501, "x" * 499 + "…"),
+                          ("Sentence ends. " + "x" * 600, "Sentence ends."),
+                          ("x" * 500, "x" * 500)]:
+            with self.subTest(body=body[:30]):
+                put(self.root, path, text.split("## Recommendation")[0] + "## Recommendation\n\n" + body)
+                it = {i["key"]: i for i in self.queue()["items"]}["decision:pick-db"]
+                self.assertEqual(it["why"], why)
+        put(self.root, path, text.split("## Because")[0])
+        it = {i["key"]: i for i in self.queue()["items"]}["decision:pick-db"]
+        self.assertIsNone(it["because"])
+        self.assertIsNone(it["why"])
+
+    def test_paragraph_stops_at_heading_and_normalizes_lines(self):
+        put(self.root, "charter/decisions/pick-db.md", PROPOSED.format(check="true").split("## Because")[0] +
+            "## Because\n\nFirst line\ncontinues.\n\nExcluded.\n\n## Recommendation\n\nPreferred.\n## Ruling\n\nExcluded too.\n")
+        it = {i["key"]: i for i in self.queue()["items"]}["decision:pick-db"]
+        self.assertEqual((it["because"], it["why"]), ("First line continues.", "Preferred."))
 
 
 class RuleVerb(unittest.TestCase):

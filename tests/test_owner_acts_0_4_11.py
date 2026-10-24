@@ -354,6 +354,7 @@ class Run(OwnerActsCase):
         self.assertTrue(chainlib.allowed_at_cap(self.root, self.chain, 1, "Write", {"file_path": str(d / "owner.md")}))
         self.assertFalse(chainlib.allowed_at_cap(self.root, self.chain, 1, "Write", {"file_path": str(self.root / "app" / "x.py")}))
 
+    @unittest.skipUnless(Path("/bin/zsh").is_file(), "zsh-specific syntax requires /bin/zsh; production also supports /bin/sh")
     def test_the_acts_run_in_zsh(self):
         self.hand_over("## 1. A zsh expansion (u1)\ncloses: u1 AC-3\nexpect-output: OK\n\n```sh\necho ${(U):-ok}\n```\n")
         code, out = self.run_acts()

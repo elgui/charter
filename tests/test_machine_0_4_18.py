@@ -184,8 +184,8 @@ class MachineHook(Base):
         self.assertEqual((rc, so.strip()), (0, ""))
 
     def test_says_when_the_checkout_is_ahead(self):
-        set_version(self.root, "0.4.18")
         latest = (REPO / "package" / "VERSION").read_text().strip()
+        set_version(self.root, latest)
         rc, out, so = hook(self.hook_p, self.root, self.home, CHARTER_PKG_DIR=str(REPO))
         self.assertIn(f"package {latest} is current", ctx(out), so)
         self.assertNotIn("systemMessage", out)
