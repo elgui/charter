@@ -30,7 +30,7 @@ import rails
 
 CHARTER_BIN = ".charter/bin/charter"
 KINDS = ("decide", "do", "check")
-FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because")
+FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because", "readiness")
 # `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
 # tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
 OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
@@ -195,6 +195,7 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                            because=_paragraph(_read(root, v["_path"]), "Because"),
                            options=_options(root, "rule", k, ("active", "rejected"), {"active": "adopt it", "rejected": "reject it"}),
                            check=str(v.get("check") or "") or None,
+                           readiness=proposal_readiness(root, v["_path"]),
                            perform=perform_argv(root, "rule", k, "{answer}")))
     for k, v in lib.change_requests(root).items():
         if str(v.get("status")) != "proposed":
@@ -205,6 +206,7 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                            why=_paragraph(_read(root, v["_path"]), "Recommendation"),
                            because=_paragraph(_read(root, v["_path"]), "Why it is outside the scope"),
                            options=_options(root, "approve", k, CHANGE_RULINGS, {}),
+                           readiness=proposal_readiness(root, v["_path"]),
                            perform=perform_argv(root, "approve", k, "{answer}")))
     staged = [x for x in lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "-z").stdout.split("\0") if x]
     mine = list(checks.owner_only_staged(root, cfg, staged))
@@ -313,6 +315,8 @@ def human(rep: dict) -> str:
             L.append(f"- [{i['key']}] {i['title']} ({i['file']}:{i['line']})" + ("" if i["marked"] else " (unmarked)"))
             if i["ask"]:
                 L += [f"    ask: {l}" for l in i["ask"].splitlines()]
+            if i.get("readiness") and not i["readiness"]["ready"]:
+                L.append(f"    awaiting agent preparation: {i['readiness']['reason']}")
             if i["run"]:
                 L.append(run_lines(i).lstrip("\n"))
             if i["recommend"]:
@@ -374,12 +378,45 @@ def add_ruling(text: str, line: str) -> str:
     return body + "\n\n## Ruling\n\n" + line + "\n"
 
 
+def proposal_readiness(root: Path, rp: str) -> dict:
+    try:
+        return _proposal_readiness(root, rp)
+    except (OSError, subprocess.SubprocessError):
+        return {"ready": False, "code": "unavailable", "reason": f"cannot inspect the git state of {rp}; retry after checking the checkout"}
+
+
+def _proposal_readiness(root: Path, rp: str) -> dict:
+    """Read-only prerequisite shared by the owner queue and the ruling verbs. Keep drafts in
+    the queue: consumers must not mistake a temporarily unready proposal for a completed ask."""
+    config = ["-c", "core.fsmonitor=false"]
+    def git(*args):
+        return subprocess.run(["git", *config, "-C", str(root), "--literal-pathspecs", *args],
+                              capture_output=True, text=True, timeout=10,
+                              env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"}, stdin=subprocess.DEVNULL)
+    # The queue runs unattended: make filter drivers inert before status reads the worktree.
+    drivers = git("config", "--null", "--name-only", "--get-regexp", r"^filter\.")
+    if drivers.returncode not in (0, 1):
+        return {"ready": False, "code": "unavailable", "reason": f"cannot inspect git filters for {rp}"}
+    for name in {key[7:].rsplit(".", 1)[0] for key in drivers.stdout.split("\0") if key.startswith("filter.")}:
+        for field, value in (("process", ""), ("clean", "/bin/cat"), ("smudge", "/bin/cat"), ("required", "false")):
+            config += ["-c", f"filter.{name}.{field}={value}"]
+    if git("cat-file", "-e", f"HEAD:{rp}").returncode != 0:
+        return {"ready": False, "code": "uncommitted", "reason":
+                f"{rp} is not committed; commit the proposal first, then rule on it"}
+    status = git("status", "--porcelain", "--", rp)
+    if status.returncode != 0:
+        return {"ready": False, "code": "unavailable", "reason": f"cannot inspect the git state of {rp}; retry after checking the checkout"}
+    if status.stdout.strip():
+        return {"ready": False, "code": "modified", "reason":
+                f"{rp} has uncommitted changes; commit or discard them first, so the ruling is on what was proposed"}
+    return {"ready": True, "code": "committed", "reason": None}
+
+
 def _clean(root: Path, rp: str) -> None:
     """The file ruled on must be the committed one: what the owner read is what is ruled."""
-    if lib.git(root, "ls-files", "--error-unmatch", "--", rp).returncode != 0:
-        raise Refused(f"{rp} is not committed; commit the proposal first, then rule on it")
-    if lib.git(root, "status", "--porcelain", "--", rp).stdout.strip():
-        raise Refused(f"{rp} has uncommitted changes; commit or discard them first, so the ruling is on what was proposed")
+    state = proposal_readiness(root, rp)
+    if not state["ready"]:
+        raise Refused(state["reason"])
 
 
 def _committed_decisions(root: Path, override: tuple[str, str]) -> dict[str, dict]:

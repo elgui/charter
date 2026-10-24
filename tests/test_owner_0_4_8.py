@@ -125,7 +125,7 @@ class OwnerJsonQueue(unittest.TestCase):
         self.assertEqual(set(rep), {"project", "charter", "owner", "delegate", "items"})   # delegate: 0.4.14
         self.assertEqual(rep["project"], str(self.root))
         self.assertEqual(rep["owner"], "Test Owner")
-        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because"}
+        fields = {"key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because", "readiness"}
         for it in rep["items"]:
             self.assertEqual(set(it), fields, it)
             self.assertIn(it["kind"], ("decide", "do", "check"))
@@ -148,6 +148,49 @@ class OwnerJsonQueue(unittest.TestCase):
         charter(self.root, "owner")
         self.assertFalse((self.root / "check-ran").exists())
         self.assertFalse((self.root / "rows.txt").exists())
+
+    def test_proposal_readiness_keeps_untracked_and_staged_drafts_in_queue(self):
+        rp = "charter/changes/draft.md"
+        put(self.root, rp, CHANGE.replace("id: extra", "id: draft"))
+        for staged in (False, True):
+            if staged:
+                git(self.root, "add", "--", rp)
+            item = {i["key"]: i for i in self.queue()["items"]}["change:draft"]
+            self.assertEqual(item["readiness"]["ready"], False)
+            self.assertEqual(item["readiness"]["code"], "uncommitted")
+            self.assertIn("commit the proposal first", item["readiness"]["reason"])
+        git(self.root, "commit", "-q", "-m", "propose draft", "--", rp)
+        self.assertTrue({i["key"]: i for i in self.queue()["items"]}["change:draft"]["readiness"]["ready"])
+
+    def test_proposal_readiness_ignores_unrelated_work_but_blocks_changed_proposals(self):
+        items = {i["key"]: i for i in self.queue()["items"]}
+        for key in ("decision:pick-db", "change:extra"):
+            self.assertEqual(items[key]["readiness"], {"ready": True, "code": "committed", "reason": None})
+        for key in ("decision:pick-db", "change:extra"):
+            rp = items[key]["file"]
+            path = self.root / rp
+            path.write_text(path.read_text() + "\nAmended proposal.\n")
+            item = {i["key"]: i for i in self.queue()["items"]}[key]
+            self.assertFalse(item["readiness"]["ready"])
+            self.assertEqual(item["readiness"]["code"], "modified")
+
+    def test_proposal_readiness_never_runs_git_filter_or_fsmonitor_commands(self):
+        put(self.root, ".gitattributes", "charter/changes/*.md filter=trap\n")
+        for field in ("clean", "process"):
+            git(self.root, "config", f"filter.trap.{field}", "touch filter-ran; cat")
+        git(self.root, "config", "core.fsmonitor", "touch fsmonitor-ran")
+        index = self.root / ".git/index"
+        before = index.read_bytes()
+        code = ("import sys; from pathlib import Path; "
+                "sys.path.insert(0, str(Path(sys.argv[1]) / '.charter')); import owner; "
+                "print(owner.proposal_readiness(Path(sys.argv[1]), 'charter/changes/extra.md'))")
+        r = subprocess.run([sys.executable, "-B", "-c", code, str(self.root)], capture_output=True,
+                           text=True, env=clean_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("'ready': True", r.stdout)
+        self.assertFalse((self.root / "filter-ran").exists())
+        self.assertFalse((self.root / "fsmonitor-ran").exists())
+        self.assertEqual(index.read_bytes(), before)
 
     def test_owner_json_change_rail_staged(self):
         set_config(self.root, limits={"file_lines": 900})
