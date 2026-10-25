@@ -99,6 +99,10 @@ A refusal prints one line per finding, each with its `Override:`. Do what the ov
 
 ## 6. Close the unit
 
+Use [What verification establishes](verification.md) to distinguish a done record, executed probes, review and the tele-claude checker, and to report their limits (`docs/verification.md:7`).
+
+For an optional later check of whether delivered work helped, see the [hypothetical outcome-review example](examples/outcome-review.md), which uses existing Context, Acceptance, Evidence and Log sections (`package/charter/templates/unit.md:18`).
+
 To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` § Finish).
 
 1. `python3 .charter/bin/charter probe <id>`. In the rehearsal, after the work: ``- `$ python3 -c "from app.greet import greet; assert greet()=='hello'"` → exit 0``.
