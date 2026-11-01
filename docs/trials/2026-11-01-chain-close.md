@@ -33,12 +33,12 @@ The tmux session and the process were gone after it. The row goes too, so `agent
 
 | End | Chain | Session ended | `tab-closed` | Path |
 |---|---|---|---|---|
-| hand-over | `20261101-214136` | s01 21:43:11 | 21:43:32 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
-| complete, with a review after it | `20261101-214136` | s02 21:44:03 | 21:44:23 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
-| complete, the last session | `20261101-214136` | s03 21:44:28 | 21:44:47 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
-| complete, then a slow review | `20261101-214519` | s01 21:45:58 | 21:46:18 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
-| halt | `20261101-214519` | s02 21:47:14 | 21:47:33 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
-| wait | `20261101-214752` | s01 21:48:29 | 21:48:48 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| hand-over | `20261101-214136` | s01 21:43:11 | 21:43:32 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
+| complete, with a review after it | `20261101-214136` | s02 21:44:03 | 21:44:23 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
+| complete, the last session | `20261101-214136` | s03 21:44:28 | 21:44:47 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
+| complete, then a slow review | `20261101-214519` | s01 21:45:58 | 21:46:18 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
+| halt | `20261101-214519` | s02 21:47:14 | 21:47:33 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
+| wait | `20261101-214752` | s01 21:48:29 | 21:48:48 | `close_session` from `_hand_over` (operator report, 2026-11-01) |
 | stall | `20261101-214910` | s01 21:49:17 | 21:49:36 | `close_session` from `on_stop` (operator report, 2026-11-01) |
 
 For each one, `status <id>` read `no tele-claude session`. For the stall, the tmux session and the pid were checked as well, a process of 315 MB RSS. The stall was fed: the Stop hook ran three times by hand with the real session's id, on a real tab, because a model that is told to go on does not stall on demand (operator report, 2026-11-01).
@@ -53,9 +53,12 @@ In the bed's first launch, session 1 stopped at Claude Code's trust menu, and `c
 
 Trust does not come from a parent folder: the home of all the projects was trusted, and the bed still asked. After the answer in the linked worktree, Claude Code recorded it under the **main checkout's** path, not the worktree's. A linked worktree of a trusted repository, with no record of its own, came up `ready: true`, with no menu (operator report, 2026-11-01). So `untrusted` reads both keys, and the warning is for a repository nobody has trusted.
 
+A review of the fix then found that these runs held by timing: the first version started the closer from `close_link`, before the next session's launch, which runs inside the pane the closer kills. The launches here took about 9 s of a 15 s delay. `_hand_over` now starts the closer after the launch; the rows above ran on the first version (operator report, 2026-11-01).
+
 ## What it does not show
 
 - `wait` at a real Codex review of owner.md: the bed ran `--owner-review off` (operator report, 2026-11-01).
 - A real `opus[1m]` session's memory: the figures here are `haiku` at effort `low` (operator report, 2026-11-01).
 - A resume after the tab closed, on this backend. The code path is `tests/test_owner_gate.py`, which has no tab to close (operator report, 2026-11-01).
+- A closer killed outright, by the kernel or a reboot: `close_started` stays set, so the sweep at the next hand-over skips that session, and it stays until someone closes it (operator report, 2026-11-01).
 - A launch through the session server during a stall. One `create` in about ten died on a 5 s read timeout before creating anything: `http_json` in the shim catches `HTTPError` and `URLError`, and a read timeout is neither. In a chain that is a safe halt, `launching session n failed`, and `/resume-chain` retries it (`start_link` in `package/.charter/chain.py`); the fix belongs to the shim's repository (operator report, 2026-11-01).

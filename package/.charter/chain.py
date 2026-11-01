@@ -867,7 +867,6 @@ def close_link(root: Path, chain: dict, n: int, status: str, abnormal: bool = Fa
             "gates blocked" if nums["gates_blocked"] else "", f"{nums['dirty']} uncommitted" if nums["dirty"] else ""]
     event(root, chain["id"], f"s{n:02d}", "closed" if not abnormal else "closed-abnormal",
           f"{status}; " + ", ".join(b for b in bits if b))
-    close_session(root, chain, n)
     return rec
 
 
@@ -1409,6 +1408,8 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
     else:
         groups.advance(root, chain, n, status, next_unit)
     chain = load(root, chain["id"])
+    # last: the next session was launched above from inside this session's pane, which the close kills
+    close_session(root, chain, n)
     g = groups.current(chain)
     then = (f", the review of group {groups.label(g['key'])} is running and the next session starts when it ends"
             if g and g["state"] == "reviewing" else f", session {n + 1} launched")
@@ -1620,6 +1621,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         after = [c for c in commits_since(root, end, chain["id"]) if c[:7] not in named]   # named once, as closed outside
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
+        close_session(root, chain, n)
     commit = ""
     if writes:
         import owner as ownerq

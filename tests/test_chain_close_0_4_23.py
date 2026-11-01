@@ -23,7 +23,7 @@ sys.path.insert(0, str(PKG / ".charter"))
 import chain as chainlib  # noqa: E402
 
 SHIM = """#!{py}
-import json, os, shutil, sys
+import json, os, shutil, sys, time
 argv = sys.argv[1:]
 d = {d!r}
 with open(os.path.join(d, "calls.jsonl"), "a") as f:
@@ -31,7 +31,11 @@ with open(os.path.join(d, "calls.jsonl"), "a") as f:
 if argv[0] == "create":
     goal, brief = argv[argv.index("--goal") + 1], argv[argv.index("--briefing-file") + 1]
     shutil.copy(brief, os.path.join({out!r}, goal + ".md"))
+    if os.path.exists(os.path.join(d, "slow-create")):
+        time.sleep(1.5)
     print(json.dumps({{"backend": "tele-claude", "session_id": "tab-" + str(int(goal[-2:])), "ready": True}}))
+    with open(os.path.join(d, "calls.jsonl"), "a") as f:
+        f.write(json.dumps({{"argv": ["created", "tab-" + str(int(goal[-2:]))], "cwd": os.getcwd()}}) + "\\n")
 elif argv[0] == "delete":
     if os.path.exists(os.path.join(d, "delete-fails")):
         print("tele-claude stalled", file=sys.stderr)
@@ -176,6 +180,19 @@ class EveryEnd(CloseCase):
         self.assertNotIn("tab-2", self.deleted())
         self.assertTrue(chainlib.link(self.root, self.cid, 1).get("tab_closed"))
         self.assertTrue(self.calls("create")[1])
+
+    def test_the_close_waits_for_the_launch_that_runs_in_the_pane_it_will_kill(self):
+        # `chain next` launches the next session from inside session n's own pane: a delete during that launch would kill
+        # it, and leave a session no link records
+        (self.shimdir / "slow-create").write_text("")
+        self.join(1, "s1")
+        self.write_handoff(1)
+        r = cli(self.root, "next", sid="s1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.wait_deleted("tab-1")
+        rows = [json.loads(x)["argv"] for x in (self.shimdir / "calls.jsonl").read_text().splitlines()]
+        self.assertLess(rows.index(["created", "tab-2"]), next(i for i, a in enumerate(rows) if a[:2] == ["delete", "tab-1"]))
+        self.assertEqual(chainlib.link(self.root, self.cid, 2).get("backend_id"), "tab-2")
 
     def test_the_last_session_is_freed_when_the_chain_completes(self):
         self.join(1, "s1")

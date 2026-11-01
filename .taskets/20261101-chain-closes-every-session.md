@@ -48,6 +48,7 @@ full. Two defects, both measured on 2026-11-01 from a tele-claude session (opera
 
 ## Log
 
+- 2026-11-01: review after closing: the closer started before the next session's launch, which runs in the pane it kills. Moved to the end of `_hand_over`, with a test that fails before it.
 - 2026-11-01: full suite green at 4ecb010; closed. Merging is the owner's.
 - 2026-11-01: fix and trial landed; AC-4 evidence is docs/trials/2026-11-01-chain-close.md. Added beyond the first list: the trust warning and the honest menu message, both found by the trial.
 - 2026-11-01: opened. Tests before the fix. This repository runs no `.charter/` of its own (`AGENTS.md`), so this tasket is the record and its probes run from `tests/`.
