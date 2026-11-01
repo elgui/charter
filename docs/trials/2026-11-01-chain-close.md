@@ -12,7 +12,7 @@ Before the fix, a `create` without `--workspace` from the scratch repository, wi
 pane_current_path: <the caller's checkout>
 ```
 
-`cwd` on the subprocess does not move it: the shim takes the caller's registered row (`README.md` § Where the child lands, beside the shim). A chain started in a linked worktree would have worked in the other tree, on its branch. After the fix, chain `20261101-214136` registered `working_dir` as the linked worktree, and every session of the four chains below did too (operator report, 2026-11-01).
+`cwd` on the subprocess does not move it: the shim takes the caller's registered row (`README.md` § Where the child lands, beside the shim). A chain started in a linked worktree would have worked in the other tree, on its branch. After the fix, s01 of chain `20261101-214136` and s01 of chain `20261101-214910` read `working_dir` as the linked worktree from `/api/sessions`, and the commits of the sessions between them are on `work` (operator report, 2026-11-01).
 
 ## What `delete` frees
 
@@ -25,7 +25,7 @@ pane_current_path: <the caller's checkout>
 | just before `delete` | 17,405 | 3,791 |
 | 3 s after `delete` | 17,195 | 3,791 |
 
-The tmux session and the process were gone after it. The row goes too, so `agent_session.py status <id>` then fails with `no tele-claude session <id>`, exit 1, not the verdict `dead`, and a second `delete` gets HTTP 404. The box was shared with about 70 other sessions, so `free -m` alone is a noisy reading; the process and the tmux session are the proof (operator report, 2026-11-01).
+The tmux session and the process were gone after it. The row goes too, so `agent_session.py status <id>` then fails with `no tele-claude session <id>`, exit 1, not the verdict `dead`, and a second `delete` gets HTTP 404. The box was shared with other live sessions, so `free -m` alone is a noisy reading; the process and the tmux session are the proof (operator report, 2026-11-01).
 
 ## Every end
 
@@ -43,7 +43,7 @@ The tmux session and the process were gone after it. The row goes too, so `agent
 
 For each one, `status <id>` read `no tele-claude session`. For the stall, the tmux session and the pid were checked as well, a process of 315 MB RSS. The stall was fed: the Stop hook ran three times by hand with the real session's id, on a real tab, because a model that is told to go on does not stall on demand (operator report, 2026-11-01).
 
-The closer survives the delete: it wrote `tab-closed` after its own session was gone, in every row above.
+The closer survives the delete: it wrote `tab-closed` after its own session was gone, in every row above (operator report, 2026-11-01).
 
 In chain `20261101-214519` the reviewer took 40 s, longer than the close, so the runner launched s02 at 21:46:45, 27 s after s01's pane was gone. That is the normal order with a real review, and the launch needs `--workspace`: with the parent's pane gone there is no registered row to inherit (operator report, 2026-11-01).
 
@@ -55,7 +55,7 @@ Trust does not come from a parent folder: the home of all the projects was trust
 
 ## What it does not show
 
-- `wait` at a real Codex review of owner.md: the bed ran `--owner-review off`.
-- A real `opus[1m]` session's memory: the figures here are `haiku` at effort `low`.
-- A resume after the tab closed, on this backend. The code path is `tests/test_owner_gate.py`, which has no tab to close.
+- `wait` at a real Codex review of owner.md: the bed ran `--owner-review off` (operator report, 2026-11-01).
+- A real `opus[1m]` session's memory: the figures here are `haiku` at effort `low` (operator report, 2026-11-01).
+- A resume after the tab closed, on this backend. The code path is `tests/test_owner_gate.py`, which has no tab to close (operator report, 2026-11-01).
 - A launch through the session server during a stall. One `create` in about ten died on a 5 s read timeout before creating anything: `http_json` in the shim catches `HTTPError` and `URLError`, and a read timeout is neither. In a chain that is a safe halt, `launching session n failed`, and `/resume-chain` retries it (`start_link` in `package/.charter/chain.py`); the fix belongs to the shim's repository (operator report, 2026-11-01).
