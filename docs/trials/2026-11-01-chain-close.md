@@ -33,13 +33,13 @@ The tmux session and the process were gone after it. The row goes too, so `agent
 
 | End | Chain | Session ended | `tab-closed` | Path |
 |---|---|---|---|---|
-| hand-over | `20261101-214136` | s01 21:43:11 | 21:43:32 | `close_link` from `_hand_over` |
-| complete, with a review after it | `20261101-214136` | s02 21:44:03 | 21:44:23 | `close_link` from `_hand_over` |
-| complete, the last session | `20261101-214136` | s03 21:44:28 | 21:44:47 | `close_link` from `_hand_over` |
-| complete, then a slow review | `20261101-214519` | s01 21:45:58 | 21:46:18 | `close_link` from `_hand_over` |
-| halt | `20261101-214519` | s02 21:47:14 | 21:47:33 | `close_link` from `_hand_over` |
-| wait | `20261101-214752` | s01 21:48:29 | 21:48:48 | `close_link` from `_hand_over` |
-| stall | `20261101-214910` | s01 21:49:17 | 21:49:36 | `close_session` from `on_stop` |
+| hand-over | `20261101-214136` | s01 21:43:11 | 21:43:32 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| complete, with a review after it | `20261101-214136` | s02 21:44:03 | 21:44:23 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| complete, the last session | `20261101-214136` | s03 21:44:28 | 21:44:47 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| complete, then a slow review | `20261101-214519` | s01 21:45:58 | 21:46:18 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| halt | `20261101-214519` | s02 21:47:14 | 21:47:33 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| wait | `20261101-214752` | s01 21:48:29 | 21:48:48 | `close_link` from `_hand_over` (operator report, 2026-11-01) |
+| stall | `20261101-214910` | s01 21:49:17 | 21:49:36 | `close_session` from `on_stop` (operator report, 2026-11-01) |
 
 For each one, `status <id>` read `no tele-claude session`. For the stall, the tmux session and the pid were checked as well, a process of 315 MB RSS. The stall was fed: the Stop hook ran three times by hand with the real session's id, on a real tab, because a model that is told to go on does not stall on demand (operator report, 2026-11-01).
 
