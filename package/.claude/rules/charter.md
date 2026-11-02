@@ -8,6 +8,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 - Read the unit's `## Acceptance` list (`## Done When` in a tasket the Tasket skill wrote). Each line is a probe you will run. If a probe cannot be named, write it before coding.
 - On the client track, the unit's `scope:` must name an item in `charter/scope.md`. Work outside the scope is a change request in `charter/changes/`, not a commit.
 - Where `charter/rails.md` exists, the unit's `rail:` (or its `roadmap:` anchor) must name an open item of it. Work the road does not name is not started: ask the owner to add a rail item first, because that is the re-plan.
+- Before writing a rail's units, ask whether two units built separately could choose incompatibly on something costly to undo, or whether the rail answers to a text owed to someone. If so, run `/charter-spec` first. If not, write the units. The owner can ask for a spec or waive one.
 - If the session banner says the git hook is not active, run `python3 .charter/bin/charter setup` once. If it says the clone runs other git hooks, tell the owner instead; `setup` would stop them.
 
 ## While you work
