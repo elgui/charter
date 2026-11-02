@@ -59,7 +59,7 @@
 
 ## Review
 
-<Every finding of both passes, ids F and N. Answer: `fixed <commit>`, `dismissed <path:line>: <why>`, or `open <question id>`. For a clean review, a line: `No findings: <reviewer, date>`.>
+<Every finding of every pass, ids F and N. Answer: `fixed <commit>`, `dismissed <path:line>: <why>`, or `open <question id>`. For a clean review, a line: `No findings: <reviewer, date>`.>
 
 | Id | Severity | Finding | Answer |
 |---|---|---|---|
