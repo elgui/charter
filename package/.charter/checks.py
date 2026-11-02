@@ -228,11 +228,11 @@ class SizeBudget:
 # (cross-review, 2026-10-04)
 PACKAGE_FILES = frozenset((
     ".claude/rules/charter.md", ".claude/skills/charter-unit/SKILL.md", ".claude/skills/charter-decision/SKILL.md",
-    ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/commands/resume-chain.md",
-    ".claude/agents/charter-reviewer.md",
+    ".claude/skills/charter-progress/SKILL.md", ".claude/skills/charter-chain/SKILL.md", ".claude/skills/charter-spec/SKILL.md",
+    ".claude/commands/resume-chain.md", ".claude/agents/charter-reviewer.md",
     ".github/workflows/charter.yml", "charter/README.md", "charter/templates/scope.md", "charter/templates/decision.md",
     "charter/templates/change.md", "charter/templates/unit.md", "charter/templates/rails.md", "charter/templates/handoff.md",
-    "charter/templates/owner.md"))
+    "charter/templates/owner.md", "charter/templates/spec.md"))
 
 
 def size_budget_for(root: Path, cfg: dict, rp: str, today: str | None = None) -> SizeBudget | None:

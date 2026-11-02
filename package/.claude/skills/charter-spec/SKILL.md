@@ -5,7 +5,7 @@ description: Turn a rail into units precise enough to build without guessing, wi
 
 # charter-spec
 
-An opt-in recipe. It adds one file, `charter/specs/<rail id>.md` from `charter/templates/spec.md`, and otherwise uses what the project already has: a spec unit, a checkpoint unit, proposed decisions and work units. It adds no gate and no status.
+An opt-in recipe. It adds one file, `charter/specs/<rail id>.md` from `charter/templates/spec.md`, and otherwise uses what the project already has: a spec unit, a checkpoint unit, proposed decisions and work units. It adds no gate and no status. In a project installed before this recipe, take the template from the checkout you read this file from.
 
 ## Does this rail need it?
 
@@ -20,30 +20,47 @@ This recipe covers manual sessions and a Run All. A chain does not read `gate:`,
 
 ## The steps
 
-1. **Open the units.** Write the spec unit from `charter/templates/unit.md`, then the checkpoint (§ The checkpoint), before any work unit. Set `status: now` on the spec unit by hand, then `charter unit start <id>`.
+1. **Open the units.** Write the spec unit from `charter/templates/unit.md`, then the checkpoint, before any work unit, all in one group (§ The units). Set `status: now` on the spec unit by hand, then run `python3 .charter/bin/charter unit start <id>`.
 2. **Name the sources.** List every text, file and system the rail rests on, with its version or date, and read them before designing. Check that the copy you were handed is the copy that was sent.
 3. **Compare.** Set the sources beside the code and beside what the running system measures, and write down each mismatch with its source. This step finds the most. Read the code the design touches, and do not trust an earlier unit or brief about it.
 4. **Map the clauses,** only where a binding text exists. One row per promise: clause, what it asks, the unit or rail that owns it, the probe. Point to decisions; never copy them into the table.
-5. **Decide what binds.** For each choice ask: could two units built separately choose incompatibly? If it is also a real trade-off, it is a decision (`/charter-decision`) with `status: proposed`, `ask:`, `recommend:`, and `binds:` for the paths it will govern, even if they do not exist yet. Leave `check:` empty until the code exists, because `charter check --all` runs it. Option surveys go in the decision, not the spec.
-6. **Sort the open questions** by who can answer: agent, owner, partner, customer. Answer the agent's. Give each of the others a default, or mark it blocking. Hold a blocking one on a checkpoint (§ The checkpoint). Keep the rest in the spec: a question nobody can act on yet is not an ask.
+5. **Decide what binds.** For each choice ask: could two units built separately choose incompatibly? If it is also a real trade-off, it is a decision (`/charter-decision`) with `status: proposed`, `ask:`, `recommend:`, and `binds:` for the paths it will govern, even if they do not exist yet. Leave `check:` empty until the code exists, because `python3 .charter/bin/charter check --all` runs it, and give the unit that lands the code an `— owner: do` line to add it, since `check:` and `binds:` of an active decision are the owner's. Option surveys go in the decision, not the spec.
+6. **Sort the open questions** by who can answer: agent, owner, partner, customer. Answer the agent's. Give each of the others a default, or mark it blocking. Hold a blocking one on a checkpoint (§ The units). Keep the rest in the spec: a question nobody can act on yet is not an ask.
 7. **Write the units,** with named probes. A probe must fail before the work, must prove the deliverable and not a state of the workflow, and must not contain a backtick, which cuts it silently. A probe of a live system proves the property, not a name.
 8. **First review.** Have a reviewer of a model family other than the writer's read the spec, the decisions, the units and any script meant for the owner (§ The review). Check each finding's citations against the source, then answer every finding in `## Review`. Do this after the units exist: a review that runs before them cannot see them.
 9. **Second pass.** Have the same reviewer judge each answer and report only new defects. Fixes are where the next errors are.
-10. **Ready when.** Ask of each unit: could it start and finish without guessing? Write one row per unit, and look one rail past this one: a rail can close with a promise still undeliverable, because a question sits past it with no default. Place each condition (§ The checkpoint). Run the probes that compare the spec with the units.
-11. **One ruling.** The proposed decisions reach the owner through `charter owner`. Where they need several owner acts, ask for them together, and say who performs each. An answer is not leave to run an owner verb.
+10. **Ready when.** Ask of each unit: could it start and finish without guessing? Write one row per unit, and look one rail past this one: a rail can close with a promise still undeliverable, because a question sits past it with no default. Place each condition (§ The units).
+11. **One ruling.** The proposed decisions reach the owner through `python3 .charter/bin/charter owner`. Where they need several owner acts, ask for them together, and say who performs each. An answer is not leave to run an owner verb.
 12. **Close and freeze.** Close the spec unit when the agent's work is done; the checkpoint holds what the owner has not done, so `status: blocked` is not needed. Stamp the ruling in the spec's header. From then on the spec is a dated record: live truth is in the decisions, the units and the checkpoint.
 
-## The checkpoint
+## The units
 
-A unit with no worker: `role: epic`, `gate: human`, a `gate_reason` that starts `HUMAN-ONLY:`, `perimeter: []`, and an `order` before the units it holds. `status: later` holds nothing in a Run All. `charter owner` lists a checkpoint, and a Run All stops at it.
+The spec unit, the checkpoint and every work unit share one group, because a run takes one group and ignores a dependency outside it:
+
+```yaml
+# on every unit of the rail
+rail: <rail id>
+group: <rail id>
+group_order: <n>
+order: <n>
+# on the checkpoint, which has no worker
+role: epic
+gate: human
+gate_reason: "HUMAN-ONLY: <what must hold>, then continue"
+perimeter: []
+# on each held unit
+depends_on: [<checkpoint id>, <each earlier unit it needs>]
+```
+
+Name every dependency. An explicit `depends_on` replaces the rule that a step waits for the one before it, and a run can turn that rule off, so order alone does not hold anything. The checkpoint's status can stay `later`: `gate: human` with `role: epic` stops a Run All whatever its status, unless the status is terminal. On a work unit `later` holds nothing. `python3 .charter/bin/charter owner` lists a checkpoint.
 
 Place each condition by kind:
 
 | Condition | Where it goes |
 |---|---|
-| On the whole group | The checkpoint at its head |
-| On an earlier unit of the group | Unit order. Where a unit has an explicit `depends_on`, which replaces order, name both that unit and the checkpoint |
-| Outside, on a later unit | Its own checkpoint, ordered before that unit |
+| On the whole group | The checkpoint, named in every held unit's `depends_on` |
+| On an earlier unit of the group | That unit, in `depends_on` |
+| Outside, on a later unit | A second checkpoint in the group, in that unit's `depends_on` |
 | Past this rail | A checkpoint on that rail |
 
 Each condition is one acceptance line with a probe:
@@ -51,39 +68,40 @@ Each condition is one acceptance line with a probe:
 - A fact someone must supply: an `— owner: check` line whose probe tests where the answer is recorded.
 - A blocking choice: a proposed decision, and an `— owner: do` line whose probe tests that it is ruled either way, `grep -Eq '^status: (active|rejected)' charter/decisions/<id>.md`. If it was rejected, rewrite the unit before the owner closes the line. `do` keeps that judgment from the delegate.
 
-Do not use `— owner: decide` here: `charter owner` gives such a line no options to answer with.
+Do not use `— owner: decide` here: the owner's queue gives such a line no options to answer with.
 
-Continue on a Run All clears the stop and does nothing else: it runs no probe, closes no line and closes no unit. Clearing a checkpoint takes four acts:
+Continue on a Run All clears the stop. It runs no probe and ticks no line, and on a run with no worktree of its own it also writes `status: done` to the checkpoint, so the order matters:
 
 1. Run the line's probe and confirm the condition.
-2. Close the line. At delegate level `strict`, the owner ticks it and commits. Where the level delegates it, the agent stages the tick and runs `charter handover`, and the delegate commits after rerunning the probe. A probe that only prints stays the owner's.
-3. Add the evidence and set the checkpoint to `done`.
+2. Close the line. At delegate level `strict`, the owner ticks it and commits. Where the level delegates it, the agent stages the tick and runs `python3 .charter/bin/charter handover`, and the delegate commits after rerunning the probe. A probe that only prints stays the owner's.
+3. Add the evidence, and set the checkpoint to `done`.
 4. The owner presses Continue.
 
-A manual session has no such stop, and `charter unit start` does not look at earlier units. Read `charter owner` before starting a unit of a specced rail.
+A manual session has no such stop, and `unit start` does not look at earlier units. Read `python3 .charter/bin/charter owner` before starting a unit of a specced rail.
 
 ## The spec unit
 
-Its acceptance, with `<rail>` and the decision prefix filled in:
+Its acceptance, with each `<...>` filled in. Write the ids once the units exist. Drop AC-2 for a rail with no binding choice, and say why under `## Decisions`. Drop AC-5 where there is no clause map.
 
 ```markdown
-- [ ] AC-1: the spec holds its sections — probe: `for h in Sources Decisions 'Open questions' Units Review 'Ready when'; do grep -q "^## $h" charter/specs/<rail>.md || exit 1; done`
-- [ ] AC-2: each binding choice is a decision, and the gates pass — probe: `ls charter/decisions/<prefix>-*.md && python3 .charter/bin/charter check --all`
-- [ ] AC-3: the units exist, held by a checkpoint — probe: `grep -l '^rail: <rail>' .taskets/*.md | xargs grep -l '^gate: human' | grep -q .`
-- [ ] AC-4: every finding is answered — probe: `grep -Eq '^[|] F1 ' charter/specs/<rail>.md && ! grep -E '^[|] [FN][0-9]+ ' charter/specs/<rail>.md | grep -vE 'fixed|dismissed|open'`
+- [ ] AC-1: the spec is filled in — probe: `f=charter/specs/<rail>.md; for h in Sources Mismatches Decisions Design 'Failure modes' 'What later rails inherit' 'Open questions' Units Review 'Ready when'; do grep -qx "## $h" $f || exit 1; done; ! grep -qE '^(<|[|] <)|<rail id>' $f`
+- [ ] AC-2: each binding choice is a decision, and the gates pass — probe: `for d in <decision ids>; do test -f charter/decisions/$d.md || exit 1; done && python3 .charter/bin/charter check --all`
+- [ ] AC-3: the units exist and the checkpoint holds them — probe: `for u in <work unit ids>; do grep -q '^depends_on:.*<checkpoint id>' .taskets/$u*.md || exit 1; done; f=$(ls .taskets/<checkpoint id>*.md); grep -qx 'gate: human' $f && grep -qx 'role: epic' $f`
+- [ ] AC-4: every finding is answered — probe: `awk -F'[|]' '/^[|] [FN][0-9]+ /{n++; a=$(NF-1); gsub(/^ +/,"",a); if (a !~ /^(fixed|dismissed|open) /) bad=1} /^No findings/{n++} END{exit (bad || !n)}' charter/specs/<rail>.md`
+- [ ] AC-5: every clause-map probe has a unit line — probe: `for p in <clause-map probes>; do grep -l -- "$p" .taskets/*.md | grep -qv '<spec unit id>' || { echo "no unit line: $p"; exit 1; }; done`
 ```
 
-Put no ruling in these probes, so they stay true before and after the owner rules. The spec's own statements are normative, so do not run `charter anchors` on it: its citations still have to exist in a clean clone, and the review checks that.
+Put no ruling in these probes, so they stay true before and after the owner rules. They check form; the review checks content. The spec's statements are normative, so do not run `charter anchors` on it, but its citations must still exist in a clean clone.
 
 ## The review
 
-Give the reviewer the paths and the questions, not your conclusions. When Claude wrote the spec:
+Give the reviewer the paths and the questions, not your conclusions. Any read-only session of another model family will do, for both passes. If none is available, stop and tell the owner: the writer cannot review its own spec. When Claude wrote the spec and `codex` is installed:
 
 ```bash
 codex exec -C <root> -s read-only --ephemeral -c model_reasoning_effort=medium -o <report> "<prompt>" < /dev/null
 ```
 
-Keep the `< /dev/null`: with stdin open, `codex exec` waits for it. When Codex wrote the spec, use a session of another family with no Edit or Write tool, such as the `charter-reviewer` agent. The prompt asks for defects only, not style, each with its severity, line, evidence and fix:
+Keep the `< /dev/null`: with stdin open, `codex exec` waits for it. When Codex wrote the spec, a Claude session with no Edit or Write tool will do, such as the `charter-reviewer` agent. The prompt asks for defects only, not style, each with its severity, line, evidence and fix:
 
 1. Does every number, count and quotation match its source?
 2. Does each citation say what is claimed, and does each cited path exist in a clean clone?
