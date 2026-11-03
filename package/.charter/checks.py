@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import posixpath
 import re
 import shlex
 import shutil
@@ -460,24 +459,37 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
 
 def _quotes_open(cmd: str) -> bool:
     try:
-        shlex.split(cmd)
+        shlex.split(cmd, comments=True)   # an apostrophe in a `# don't` comment closes nothing
         return False
     except ValueError:
         return True
 
 
+def _unpaired_run(text: str) -> bool:
+    """Markdown closes a run of n backticks only with the next run of exactly n, so `` ` `` holds a literal
+    backtick. A run left without its partner is text that was meant to sit inside a code span."""
+    runs = [len(r) for r in re.findall(r"`+", text)]
+    i = 0
+    while i < len(runs):
+        close = next((k for k in range(i + 1, len(runs)) if runs[k] == runs[i]), None)
+        if close is None:
+            return True
+        i = close + 1
+    return False
+
+
 def check_probe_cut(text: str, path: str) -> list[Finding]:
     """`PROBE_RE` stops at the first closing backtick, so a probe holding one runs as a shorter command. A cut leaves
     another backtick later on the line, and one of three signs: text glued to the closing backtick, a command whose
-    quotes do not close, or an odd number of backticks left, one of them the probe's real end. A probe followed by
-    a paired code span, as in `cmd` (see `x`), leaves an even number and is whole."""
+    quotes do not close, or a run of backticks left unpaired, one of them the probe's real end. A probe followed by
+    a whole code span, as in `cmd` (see `x`), leaves every run paired and is whole."""
     _, _, body = lib.split_frontmatter(text)
     acc = lib.acceptance(body)
     out = []
     for i, m in enumerate(PROBE_RE.finditer(acc)):
         rest, cmd = acc[m.end():].split("\n", 1)[0], m.group(2)
         glued = rest[:1] and not rest[:1].isspace() and rest[:1] not in ".,;:)!?"
-        if "`" in rest and (glued or rest.count("`") % 2 or _quotes_open(cmd)):
+        if "`" in rest and (glued or _unpaired_run(rest) or _quotes_open(cmd)):
             out.append(Finding("done", "warn", f"{m.group(1) or f'line {i + 1}'}: its probe is cut at a backtick and runs only `{cmd.strip()}`",
                                path=path, override="write the probe without backticks; use $(...) for a command substitution"))
     return out
@@ -1317,8 +1329,8 @@ class AnchorReport:
 ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|operator[ _-]report[^)]*|inference[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
 # a backticked path: a slash, and a file extension or a trailing slash, so `origin/main` and `and/or` are not paths
-# The extension must hold a letter, so a ratio such as `1/2.0` or a branch such as `release/0.4.22` is not a path.
-CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*))`")
+CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]+))`")
+NUMBER_RE = re.compile(r"[\d.]+")   # a last part made of digits and dots: a ratio `1/2.0`, a branch `release/0.4.22`
 
 
 def _is_dir(root: Path, rel: str) -> bool:
@@ -1335,8 +1347,10 @@ def missing_dirs(root: Path, line: str) -> list[str]:
     out = []
     for m in CITED_PATH_RE.finditer(line):
         cand = m.group(1)
-        norm = posixpath.normpath(cand)
-        d = norm if cand.endswith("/") else posixpath.dirname(norm)
+        if NUMBER_RE.fullmatch(cand.rstrip("/").rsplit("/", 1)[-1]):
+            continue
+        # the directory as written: `x/../docs` needs `x` to exist, so it is not normalised away
+        d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
         if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
             out.append(cand)
     return out
@@ -1345,10 +1359,10 @@ def missing_dirs(root: Path, line: str) -> list[str]:
 def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int, str, int, str]]:
     """Group missing paths by the shallowest directory that is not here: (first line, that directory, count,
     first path). One line per absent tree keeps the report readable where a document names many paths in it.
-    Paths are normalised first, so `./analysis/a.md` and `analysis/b.md` share one line."""
+    A `./` part is dropped, so `./analysis/a.md` and `analysis/b.md` share one line; `..` is kept."""
     groups: dict[str, list] = {}
     for ln, cand in missing:
-        parts = posixpath.normpath(cand).split("/")
+        parts = [p for p in cand.rstrip("/").split("/") if p != "."]
         top = next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
                     if "/".join(parts[:k]) not in ("", "~", "..") and not _is_dir(root, "/".join(parts[:k]))), cand)
         g = groups.setdefault(top.rstrip("/") + "/", [ln, 0, cand])

@@ -102,6 +102,10 @@ class ProbeCut(Project):
         self.write(".taskets/u2.md", unit("u2", acceptance="- [ ] AC-1: it greps — probe: `grep -q ` app/health.py`"))
         self.assertIn("cut at a backtick", self.check_staged(".taskets/u2.md"))
 
+    def test_a_cut_command_substitution_is_cut(self):
+        self.write(".taskets/u2.md", unit("u2", acceptance="- [ ] AC-1: empty — probe: `test -z ` printf bad``"))
+        self.assertIn("cut at a backtick", self.check_staged(".taskets/u2.md"))
+
     def test_a_cut_that_leaves_an_open_quote_and_a_space_is_cut(self):
         self.write(".taskets/u2.md", unit("u2", acceptance="- [ ] AC-1: recent — probe: `test \"` date +%Y`\" -gt 2000`"))
         self.assertIn("cut at a backtick", self.check_staged(".taskets/u2.md"))
@@ -110,7 +114,9 @@ class ProbeCut(Project):
 class ProbeWhole(Project):
     ACC = ("- [ ] AC-1: exists — probe: `test -f app/health.py`\n"
            "- [ ] AC-2: still there — probe: `test -f app/health.py` (see `app/health.py`).\n"
-           "- [ ] AC-3: a stray space — probe: `test -f app/health.py ` (see `app/health.py`).")
+           "- [ ] AC-3: a stray space — probe: `test -f app/health.py ` (see `app/health.py`).\n"
+           "- [ ] AC-4: a comment — probe: `test -f app/health.py # don't remove` (see `app/health.py`).\n"
+           "- [ ] AC-5: a literal backtick after it — probe: `test -f app/health.py` (the delimiter is `` ` ``).")
 
     def test_a_whole_probe_gives_no_warning(self):
         self.write(".taskets/u2.md", unit("u2", acceptance=self.ACC))
@@ -122,7 +128,8 @@ class ProbeWhole(Project):
         git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "unit")
         r = charter(self.root, "probe", "u2")
         lines = [l for l in r.stdout.splitlines() if l.startswith("- `$ ")]
-        self.assertEqual(lines, ["- `$ test -f app/health.py` → exit 0"] * 3, r.stdout + r.stderr)
+        self.assertEqual(lines, ["- `$ test -f app/health.py` → exit 0"] * 3 + ["- `$ test -f app/health.py # don't remove` → exit 0",
+                                                                                  "- `$ test -f app/health.py` → exit 0"], r.stdout + r.stderr)
 
 
 # ------------------------------------------------------------------ 2. a cited path that does not exist
@@ -145,6 +152,14 @@ class MissingPath(Project):
     def test_a_file_where_a_directory_should_be_is_listed(self):
         self.write("notes.md", DOC.format(ref="`README.md/child.py`"))
         self.assertIn("README.md/child.py", charter(self.root, "anchors", "notes.md").stdout)
+
+    def test_a_missing_directory_before_dot_dot_is_listed(self):
+        self.write("notes.md", DOC.format(ref="`no-such-dir/../app/health.py`"))
+        self.assertIn("no-such-dir/../app/health.py", charter(self.root, "anchors", "notes.md").stdout)
+
+    def test_a_file_with_a_numeric_extension_is_a_path(self):
+        self.write("notes.md", DOC.format(ref="`no-such-dir/man1/charter.1`"))
+        self.assertIn("no-such-dir/man1/charter.1", charter(self.root, "anchors", "notes.md").stdout)
 
     def test_one_absent_tree_is_one_line_however_it_is_written(self):
         self.write("notes.md", DOC.format(ref="`analysis/a.md`") + DOC.format(ref="`./analysis/b.md`"))
