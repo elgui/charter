@@ -1,0 +1,25 @@
+PASS installer owns .claude/skills/charter-spec/SKILL.md
+PASS installer owns charter/templates/spec.md
+PASS PACKAGE_FILES includes skill and template
+PASS five spec acceptance probes extract whole
+PASS AC-1 rejects untouched template
+PASS AC-1 accepts filled structure
+PASS AC-1 rejects table placeholders
+PASS AC-2 rejects blank question/recommendation
+PASS AC-2 accepts proposed decision before ruling
+PASS AC-3 accepts both held units
+PASS AC-3 rejects missing dependency on first unit
+PASS AC-3 rejects wrong group
+PASS AC-3 rejects checkpoint with worker role
+PASS AC-4 rejects absent review
+PASS AC-4 accepts fixed
+PASS AC-4 accepts dismissed
+PASS AC-4 accepts open
+PASS AC-4 rejects incomplete answer 'fixed'
+PASS AC-4 rejects incomplete answer 'fixed xyz'
+PASS AC-4 rejects incomplete answer 'dismissed'
+PASS AC-4 rejects incomplete answer ''
+PASS AC-4 accepts clean review
+PASS AC-5 ignores spec unit self-coverage
+PASS AC-5 rejects missing second clause probe
+PASS AC-5 accepts coverage by work units

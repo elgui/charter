@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -12,10 +13,17 @@ roots = {'charter': here.parents[2], 'tele-claude': args.tele_claude.resolve()}
 record = json.loads((here / 'sources.json').read_text())
 changed = []
 for source in record['sources']:
-    path = roots[source['repo']] / source['path']
-    digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else 'missing'
+    root = roots[source['repo']]
+    if source.get('ref'):
+        result = subprocess.run(['git', '-C', str(root), 'show',
+                                 f"{source['ref']}:{source['path']}"], capture_output=True)
+        digest = hashlib.sha256(result.stdout).hexdigest() if result.returncode == 0 else 'missing'
+    else:
+        path = root / source['path']
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else 'missing'
     if digest != source['sha256']:
-        changed.append(f"{source['repo']}:{source['path']}")
+        changed.append(f"{source['repo']}:{source['path']}" +
+                       (f" (ref {source['ref']})" if source.get('ref') else ''))
 if changed:
     print('Review changed sources before refreshing the baseline:\n' + '\n'.join(changed))
     raise SystemExit(1)

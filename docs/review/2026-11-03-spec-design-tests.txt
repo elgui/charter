@@ -1,0 +1,20 @@
+Spec-design regression evidence
+Measured 2026-11-03T16:04:39+00:00
+
+Full-suite command (from tests/, resolved TMPDIR):
+python3 -B -m unittest test_gates test_installer test_review_regressions test_harmonization_regressions test_batch1_regressions test_migration test_size_exceptions test_rails test_review_20260923 test_probe_at_base test_review_required test_config_0_4_3 test_next_0_4_4 test_handover_0_4_5 test_release_commit_0_4_6 test_chain_0_4_7 test_groups_0_4_8 test_chain_reliability test_gate_noise_0_4_7 test_owner_0_4_8 test_chain_wait test_owner_gate test_owner_acts_0_4_11 test_owner_commit_0_4_12 test_json_verbs_0_4_13 test_delegate_0_4_14 test_delegate_watcher test_failure_record_0_4_15 test_instruction_review test_unusable_base_0_4_17 test_machine_0_4_18 test_owner_integration test_owner_acceptance test_spec_step_defects
+
+main-suite at b2df24eaac0ea16fd330e61502789c02c095c4ff
+Ran 752 tests in 962.111s
+OK (skipped=1)
+Non-fatal ResourceWarnings: a still-running subprocess and an unclosed buffered reader.
+
+draft-suite at 1cf1cc8067e222426e87476b776fc688904f5622
+Ran 752 tests in 961.956s
+OK (skipped=1)
+Non-fatal ResourceWarnings: a still-running subprocess and an unclosed buffered reader.
+
+Focused draft command (same cwd/TMPDIR):
+python3 -B -m unittest test_spec_step_defects test_installer test_release_commit_0_4_6 test_size_exceptions test_owner_acceptance test_instruction_review
+Ran 88 tests in 89.004s
+OK
