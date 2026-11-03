@@ -239,6 +239,9 @@ def cmd_anchors(a) -> int:
             print(f"  unanchored L{ln}: {t}")
         for ln, t in rep.unresolved:
             print(f"  unresolved L{ln}: {t}")
+        for ln, top, n, first in checks.missing_roots(root, rep.missing):
+            more = f", and {n - 1} more path(s) under it" if n > 1 else ""
+            print(f"  missing path L{ln}: {first}: {top} does not exist here{more} (a report, not a failure)")
         lib.log_event(root, "cli", "anchors", "ok" if rep.ok else "warn" if warn_only else "block",
                       f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved", path=f, mode="pr" if a.pr else "doc")
         if not rep.ok and not warn_only:

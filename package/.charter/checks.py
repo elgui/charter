@@ -1287,6 +1287,7 @@ class AnchorReport:
     admitted: int = 0
     unanchored: list[tuple[int, str]] = field(default_factory=list)
     unresolved: list[tuple[int, str]] = field(default_factory=list)
+    missing: list[tuple[int, str]] = field(default_factory=list)   # a report only: it does not change `ok`
 
     @property
     def ok(self) -> bool:
@@ -1298,6 +1299,33 @@ class AnchorReport:
 # scratch locations; inference is `inference`, `unverified`, `not verified`, `estimate` and `to be confirmed`.
 ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|operator[ _-]report[^)]*|inference[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
+# a backticked path: a slash, and a file extension or a trailing slash, so `origin/main` and `and/or` are not paths
+CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]+))`")
+
+
+def missing_dirs(root: Path, line: str) -> list[str]:
+    """Backticked paths in a line whose directory does not exist here. A file not yet written in an existing
+    directory is not listed: a spec names the files its units will create."""
+    out = []
+    for m in CITED_PATH_RE.finditer(line):
+        cand = m.group(1)
+        d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
+        if d not in ("", "~") and not _exists(_abs(root, d)):   # `~/.claude` is a file in the home directory
+            out.append(cand)
+    return out
+
+
+def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int, str, int, str]]:
+    """Group missing paths by the shallowest directory that is not here: (first line, that directory, count,
+    first path). One line per absent tree keeps the report readable where a document names many paths in it."""
+    groups: dict[str, list] = {}
+    for ln, cand in missing:
+        parts = cand.rstrip("/").split("/")
+        top = next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
+                    if "/".join(parts[:k]) not in ("", "~") and not _exists(_abs(root, "/".join(parts[:k])))), cand)
+        g = groups.setdefault(top.rstrip("/") + "/", [ln, 0, cand])
+        g[1] += 1
+    return [(ln, top, n, first) for top, (ln, n, first) in groups.items()]
 
 
 def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False) -> tuple[int, list[str]]:
@@ -1354,6 +1382,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             continue
         if in_code:
             continue
+        rep.missing.extend((i, p) for p in missing_dirs(root, s))
         if "<!-- charter: opinion -->" in s:
             in_opinion = True; flush(); continue
         if "<!-- charter: /opinion -->" in s:

@@ -120,6 +120,45 @@ class ProbeWhole(Project):
         self.assertEqual(lines, ["- `$ test -f app/health.py` → exit 0"] * 2, r.stdout + r.stderr)
 
 
+# ------------------------------------------------------------------ 2. a cited path that does not exist
+
+DOC = "The handler is at app/health.py:5, and the study it follows is in {ref}.\n"
+
+
+class MissingPath(Project):
+    def test_anchors_lists_a_backticked_path_whose_directory_does_not_exist(self):
+        self.write("notes.md", DOC.format(ref="`analysis/2026-11/study.md`"))
+        r = charter(self.root, "anchors", "notes.md")
+        line = next((l for l in r.stdout.splitlines() if "analysis/2026-11/study.md" in l), "")
+        self.assertTrue(line, r.stdout + r.stderr)
+        self.assertIn("L1", line)
+
+    def test_a_missing_directory_written_with_a_trailing_slash_is_listed(self):
+        self.write("notes.md", DOC.format(ref="`analysis/2026-11/`"))
+        self.assertIn("analysis/2026-11/", charter(self.root, "anchors", "notes.md").stdout)
+
+
+class MissingPathGuard(Project):
+    def test_the_report_does_not_change_the_exit_code(self):
+        self.write("ok.md", DOC.format(ref="README.md"))
+        self.write("missing.md", DOC.format(ref="`analysis/2026-11/study.md`"))
+        ok, missing = charter(self.root, "anchors", "ok.md"), charter(self.root, "anchors", "missing.md")
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        self.assertEqual(missing.returncode, ok.returncode, missing.stdout)
+        self.assertIn(": ok", missing.stdout.splitlines()[0])
+
+    def test_prose_refs_and_existing_paths_are_not_listed(self):
+        text = (DOC.format(ref="`app/health.py`") + "Use one and/or the other, from `origin/main` or `owner/repo`, by `app/*.py`.\n"
+                "A new file `app/new_module.py` and a home file `~/.no-such-file-here` are not missing directories.\n")
+        self.write("notes.md", text)
+        out = charter(self.root, "anchors", "notes.md").stdout
+        self.assertNotIn("missing path", out)
+
+    def test_a_path_inside_a_code_block_is_not_listed(self):
+        self.write("notes.md", DOC.format(ref="README.md") + "\n```\ncat `analysis/2026-11/study.md`\n```\n")
+        self.assertNotIn("missing path", charter(self.root, "anchors", "notes.md").stdout)
+
+
 
 
 if __name__ == "__main__":
