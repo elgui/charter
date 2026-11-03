@@ -27,12 +27,13 @@ kind: work
 
 ## Evidence
 
-- commit d71bc66 on branch `fix/spec-step-defects`, released as 0.4.22
+- commit 33464e5 (review answer) and d71bc66 on branch `fix/spec-step-defects`, released as 0.4.22
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.ProposedDecision → OK
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.ProposedDecisionGuard → OK
 
 ## Log
 
 - 2026-11-03: fixed in its own commit; each commit was checked out alone and passed its own test classes.
+- 2026-11-03: a codex review found defects in this fix; answered in 33464e5: unit start no longer warns on a closed unit.
 
 ## Outside perimeter

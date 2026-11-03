@@ -27,12 +27,13 @@ kind: work
 
 ## Evidence
 
-- commit 34dbc83 on branch `fix/spec-step-defects`, released as 0.4.22
+- commit 33464e5 (review answer) and 34dbc83 on branch `fix/spec-step-defects`, released as 0.4.22
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.ProbeCut → OK
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.ProbeWhole → OK
 
 ## Log
 
 - 2026-11-03: fixed in its own commit; each commit was checked out alone and passed its own test classes.
+- 2026-11-03: a codex review found defects in this fix; answered in 33464e5: the cut rule now reads quotes and backtick parity.
 
 ## Outside perimeter

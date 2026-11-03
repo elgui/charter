@@ -27,12 +27,13 @@ kind: work
 
 ## Evidence
 
-- commit 6c0fb63 on branch `fix/spec-step-defects`, released as 0.4.22
+- commit 33464e5 (review answer) and 6c0fb63 on branch `fix/spec-step-defects`, released as 0.4.22
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.MissingPath → OK
 - $ cd tests && python3 -B -m unittest test_spec_step_defects.MissingPathGuard → OK
 
 ## Log
 
 - 2026-11-03: fixed in its own commit; each commit was checked out alone and passed its own test classes. Listed only when the directory is absent, as AC-1 says; an absent file in an existing directory is still not reported.
+- 2026-11-03: a codex review found defects in this fix; answered in 33464e5: the report now checks that the directory is one, skips numeric extensions, and normalises ./.
 
 ## Outside perimeter
