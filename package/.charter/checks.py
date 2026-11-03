@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -456,16 +458,26 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
                     override="append a dated `## Log` line saying which criterion changed and why, in the same edit")]
 
 
+def _quotes_open(cmd: str) -> bool:
+    try:
+        shlex.split(cmd)
+        return False
+    except ValueError:
+        return True
+
+
 def check_probe_cut(text: str, path: str) -> list[Finding]:
-    """`PROBE_RE` stops at the first closing backtick, so a probe holding one runs as a shorter command. The sign is
-    text glued to that backtick, or a command ending in a space with another backtick later on the line."""
+    """`PROBE_RE` stops at the first closing backtick, so a probe holding one runs as a shorter command. A cut leaves
+    another backtick later on the line, and one of three signs: text glued to the closing backtick, a command whose
+    quotes do not close, or an odd number of backticks left, one of them the probe's real end. A probe followed by
+    a paired code span, as in `cmd` (see `x`), leaves an even number and is whole."""
     _, _, body = lib.split_frontmatter(text)
     acc = lib.acceptance(body)
     out = []
     for i, m in enumerate(PROBE_RE.finditer(acc)):
         rest, cmd = acc[m.end():].split("\n", 1)[0], m.group(2)
         glued = rest[:1] and not rest[:1].isspace() and rest[:1] not in ".,;:)!?"
-        if glued or (cmd != cmd.rstrip() and "`" in rest):
+        if "`" in rest and (glued or rest.count("`") % 2 or _quotes_open(cmd)):
             out.append(Finding("done", "warn", f"{m.group(1) or f'line {i + 1}'}: its probe is cut at a backtick and runs only `{cmd.strip()}`",
                                path=path, override="write the probe without backticks; use $(...) for a command substitution"))
     return out
@@ -685,7 +697,8 @@ def check_unit_decisions(root: Path, decs: dict[str, dict], unit: dict) -> list[
         d = decs.get(did)
         if d is None:
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which does not exist", path=unit["_path"]))
-        elif str(d.get("status", "active")) == "proposed" and str(unit.get("status", "")) not in lib.PLANNING_STATUSES:
+        elif str(d.get("status", "active")) == "proposed" and str(unit.get("status", "")) not in (
+                *lib.PLANNING_STATUSES, *lib.TERMINAL_STATUSES, *lib.as_list(lib.load_config(root).get("done_statuses"))):
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which is still proposed: nothing holds the unit until the owner rules",
                                path=unit["_path"], override="wait for the ruling, or hold the unit on a checkpoint whose owner line tests it"))
         elif str(d.get("status", "active")) in ("superseded", "retired"):
@@ -1304,7 +1317,16 @@ class AnchorReport:
 ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|operator[ _-]report[^)]*|inference[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
 # a backticked path: a slash, and a file extension or a trailing slash, so `origin/main` and `and/or` are not paths
-CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]+))`")
+# The extension must hold a letter, so a ratio such as `1/2.0` or a branch such as `release/0.4.22` is not a path.
+CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*))`")
+
+
+def _is_dir(root: Path, rel: str) -> bool:
+    """A file of that name is not the directory a path needs; a path this user may not look at is not here either."""
+    try:
+        return _abs(root, rel).is_dir()
+    except OSError:
+        return False
 
 
 def missing_dirs(root: Path, line: str) -> list[str]:
@@ -1313,20 +1335,22 @@ def missing_dirs(root: Path, line: str) -> list[str]:
     out = []
     for m in CITED_PATH_RE.finditer(line):
         cand = m.group(1)
-        d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
-        if d not in ("", "~") and not _exists(_abs(root, d)):   # `~/.claude` is a file in the home directory
+        norm = posixpath.normpath(cand)
+        d = norm if cand.endswith("/") else posixpath.dirname(norm)
+        if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
             out.append(cand)
     return out
 
 
 def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int, str, int, str]]:
     """Group missing paths by the shallowest directory that is not here: (first line, that directory, count,
-    first path). One line per absent tree keeps the report readable where a document names many paths in it."""
+    first path). One line per absent tree keeps the report readable where a document names many paths in it.
+    Paths are normalised first, so `./analysis/a.md` and `analysis/b.md` share one line."""
     groups: dict[str, list] = {}
     for ln, cand in missing:
-        parts = cand.rstrip("/").split("/")
+        parts = posixpath.normpath(cand).split("/")
         top = next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
-                    if "/".join(parts[:k]) not in ("", "~") and not _exists(_abs(root, "/".join(parts[:k])))), cand)
+                    if "/".join(parts[:k]) not in ("", "~", "..") and not _is_dir(root, "/".join(parts[:k]))), cand)
         g = groups.setdefault(top.rstrip("/") + "/", [ln, 0, cand])
         g[1] += 1
     return [(ln, top, n, first) for top, (ln, n, first) in groups.items()]

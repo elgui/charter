@@ -102,10 +102,15 @@ class ProbeCut(Project):
         self.write(".taskets/u2.md", unit("u2", acceptance="- [ ] AC-1: it greps — probe: `grep -q ` app/health.py`"))
         self.assertIn("cut at a backtick", self.check_staged(".taskets/u2.md"))
 
+    def test_a_cut_that_leaves_an_open_quote_and_a_space_is_cut(self):
+        self.write(".taskets/u2.md", unit("u2", acceptance="- [ ] AC-1: recent — probe: `test \"` date +%Y`\" -gt 2000`"))
+        self.assertIn("cut at a backtick", self.check_staged(".taskets/u2.md"))
+
 
 class ProbeWhole(Project):
     ACC = ("- [ ] AC-1: exists — probe: `test -f app/health.py`\n"
-           "- [ ] AC-2: still there — probe: `test -f app/health.py` (see `app/health.py`).")
+           "- [ ] AC-2: still there — probe: `test -f app/health.py` (see `app/health.py`).\n"
+           "- [ ] AC-3: a stray space — probe: `test -f app/health.py ` (see `app/health.py`).")
 
     def test_a_whole_probe_gives_no_warning(self):
         self.write(".taskets/u2.md", unit("u2", acceptance=self.ACC))
@@ -117,7 +122,7 @@ class ProbeWhole(Project):
         git(self.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "unit")
         r = charter(self.root, "probe", "u2")
         lines = [l for l in r.stdout.splitlines() if l.startswith("- `$ ")]
-        self.assertEqual(lines, ["- `$ test -f app/health.py` → exit 0"] * 2, r.stdout + r.stderr)
+        self.assertEqual(lines, ["- `$ test -f app/health.py` → exit 0"] * 3, r.stdout + r.stderr)
 
 
 # ------------------------------------------------------------------ 2. a cited path that does not exist
@@ -137,6 +142,16 @@ class MissingPath(Project):
         self.write("notes.md", DOC.format(ref="`analysis/2026-11/`"))
         self.assertIn("analysis/2026-11/", charter(self.root, "anchors", "notes.md").stdout)
 
+    def test_a_file_where_a_directory_should_be_is_listed(self):
+        self.write("notes.md", DOC.format(ref="`README.md/child.py`"))
+        self.assertIn("README.md/child.py", charter(self.root, "anchors", "notes.md").stdout)
+
+    def test_one_absent_tree_is_one_line_however_it_is_written(self):
+        self.write("notes.md", DOC.format(ref="`analysis/a.md`") + DOC.format(ref="`./analysis/b.md`"))
+        out = [l for l in charter(self.root, "anchors", "notes.md").stdout.splitlines() if "missing path" in l]
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("1 more", out[0])
+
 
 class MissingPathGuard(Project):
     def test_the_report_does_not_change_the_exit_code(self):
@@ -149,7 +164,8 @@ class MissingPathGuard(Project):
 
     def test_prose_refs_and_existing_paths_are_not_listed(self):
         text = (DOC.format(ref="`app/health.py`") + "Use one and/or the other, from `origin/main` or `owner/repo`, by `app/*.py`.\n"
-                "A new file `app/new_module.py` and a home file `~/.no-such-file-here` are not missing directories.\n")
+                "A new file `app/new_module.py` and a home file `~/.no-such-file-here` are not missing directories.\n"
+                "Neither is a ratio, `1/2.0`, nor a branch, `release/0.4.22`.\n")
         self.write("notes.md", text)
         out = charter(self.root, "anchors", "notes.md").stdout
         self.assertNotIn("missing path", out)
@@ -189,6 +205,13 @@ class ProposedDecisionGuard(Project):
             with self.subTest(status=status):
                 self.write(".taskets/u2.md", unit("u2", status=status, decisions="[open-choice]"))
                 self.assertNotIn("still proposed", self.check_all())
+
+    def test_a_closed_unit_is_not_warned_at_unit_start(self):
+        for status in ("done", "deleted"):
+            with self.subTest(status=status):
+                self.write(".taskets/u2.md", unit("u2", status=status, decisions="[open-choice]"))
+                r = charter(self.root, "unit", "start", "u2")
+                self.assertNotIn("still proposed", r.stdout + r.stderr)
 
     def test_an_active_decision_is_not_warned(self):
         self.write(".taskets/u2.md", unit("u2", status="in-progress", decisions="[retry-limit]"))
