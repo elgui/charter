@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -133,7 +134,7 @@ def check_unit_scope(root: Path, cfg: dict, unit: dict) -> list[Finding]:
             if item["paths"] and lib.matches_any(probe, item["paths"]) and not any(lib.matches_any(probe, lib.as_list(c.get("paths"))) for c in approved.values()):
                 out.append(Finding("scope", "warn", f"unit {unit['_id']} perimeter entry {g} falls under out-of-scope item {xid} ({item['title']})",
                                    path=unit["_path"], override="narrow `perimeter:`, or propose a change request for that path"))
-        if cited_paths and not lib.matches_any(probe, cited_paths):
+        if cited_paths and not probe.startswith(lib.PERIMETER_EXEMPT) and not lib.matches_any(probe, cited_paths):
             out.append(Finding("scope", "warn", f"unit {unit['_id']} perimeter entry {g} is not covered by the paths of {', '.join(cited)}",
                                path=unit["_path"], override="cite the scope item that covers it, or narrow `perimeter:`"))
     return out
@@ -456,6 +457,52 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
                     override="append a dated `## Log` line saying which criterion changed and why, in the same edit")]
 
 
+def _quotes_open(cmd: str) -> bool:
+    """An apostrophe in a `# don't` comment closes nothing. The shell starts a comment only at the start of a word,
+    while shlex starts one at any `#`, so a `#` inside a word is neutralised first; inside quotes shlex ignores it."""
+    try:
+        shlex.split(re.sub(r"(?<=\S)#", "_", cmd), comments=True)
+        return False
+    except ValueError:
+        return True
+
+
+def _unpaired_run(text: str) -> bool:
+    """Markdown closes a run of n backticks only with the next run of exactly n, so `` ` `` holds a literal
+    backtick. A run left without its partner and glued to the text before it is the probe's real end; one standing
+    alone in prose, as in "write `` to start", is a literal."""
+    runs = list(re.finditer(r"`+", text))
+    i = 0
+    while i < len(runs):
+        n = len(runs[i].group(0))
+        close = next((k for k in range(i + 1, len(runs)) if len(runs[k].group(0)) == n), None)
+        if close is None:
+            start = runs[i].start()
+            if start and not text[start - 1].isspace():
+                return True
+            i += 1
+            continue
+        i = close + 1
+    return False
+
+
+def check_probe_cut(text: str, path: str) -> list[Finding]:
+    """`PROBE_RE` stops at the first closing backtick, so a probe holding one runs as a shorter command. A cut leaves
+    another backtick later on the line, and one of three signs: text glued to the closing backtick, a command whose
+    quotes do not close, or a run of backticks left unpaired, one of them the probe's real end. A probe followed by
+    a whole code span, as in `cmd` (see `x`), leaves every run paired and is whole."""
+    _, _, body = lib.split_frontmatter(text)
+    acc = lib.acceptance(body)
+    out = []
+    for i, m in enumerate(PROBE_RE.finditer(acc)):
+        rest, cmd = acc[m.end():].split("\n", 1)[0], m.group(2)
+        glued = rest[:1] and not rest[:1].isspace() and rest[:1] not in ".,;:)!?"
+        if "`" in rest and (glued or _unpaired_run(rest) or _quotes_open(cmd)):
+            out.append(Finding("done", "warn", f"{m.group(1) or f'line {i + 1}'}: its probe is cut at a backtick and runs only `{cmd.strip()}`",
+                               path=path, override="write the probe without backticks; use $(...) for a command substitution"))
+    return out
+
+
 def unit_probes(text: str) -> list[tuple[str, str]]:
     """(criterion id, command) for each `probe: `cmd`` in a unit's acceptance checklist."""
     return [(ac, cmd) for ac, cmd, _ in _probe_lines(text)]
@@ -663,12 +710,17 @@ def check_decisions_text(root: Path, decs: dict[str, dict], rp: str, text: str) 
 
 
 def check_unit_decisions(root: Path, decs: dict[str, dict], unit: dict) -> list[Finding]:
-    """A unit's `decisions:` key names what it relies on; say when one is gone or no longer active."""
+    """A unit's `decisions:` key names what it relies on; say when one is gone, no longer active, or, once the
+    unit is past planning, not yet ruled. Naming a decision holds nothing: a checkpoint holds."""
     out = []
     for did in lib.as_list(unit.get("decisions")):
         d = decs.get(did)
         if d is None:
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which does not exist", path=unit["_path"]))
+        elif str(d.get("status", "active")) == "proposed" and str(unit.get("status", "")) not in (
+                *lib.PLANNING_STATUSES, *lib.TERMINAL_STATUSES, *lib.as_list(lib.load_config(root).get("done_statuses"))):
+            out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which is still proposed: nothing holds the unit until the owner rules",
+                               path=unit["_path"], override="wait for the ruling, or hold the unit on a checkpoint whose owner line tests it"))
         elif str(d.get("status", "active")) in ("superseded", "retired"):
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which is {d.get('status')}; successor: {d.get('superseded_by') or '(none named)'}",
                                path=unit["_path"], override="re-read the unit against the successor and update `decisions:`"))
@@ -1272,6 +1324,7 @@ class AnchorReport:
     admitted: int = 0
     unanchored: list[tuple[int, str]] = field(default_factory=list)
     unresolved: list[tuple[int, str]] = field(default_factory=list)
+    missing: list[tuple[int, str]] = field(default_factory=list)   # a report only: it does not change `ok`
 
     @property
     def ok(self) -> bool:
@@ -1283,6 +1336,46 @@ class AnchorReport:
 # scratch locations; inference is `inference`, `unverified`, `not verified`, `estimate` and `to be confirmed`.
 ADMIT_RE = re.compile(r"\((?:unverified|reported in[^)]*|operator[ _-]report[^)]*|inference[^)]*|not verified|estimate[^)]*|to be confirmed|claim(?:ed)? by[^)]*|(?:in|on|from) the (?:test bed|clone|scratchpad|upstream clone)[^)]*|outside this repository[^)]*)\)", re.I)
 EVIDENCE_REF_RE = re.compile(r"\bE-\d+\b")
+# a backticked path: a slash, and a file extension or a trailing slash, so `origin/main` and `and/or` are not paths
+CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A-Za-z0-9]+))`")
+NUMBER_RE = re.compile(r"[\d.]+")   # a last part made of digits and dots: a ratio `1/2.0`, a branch `release/0.4.22`
+
+
+def _is_dir(root: Path, rel: str) -> bool:
+    """A file of that name is not the directory a path needs; a path this user may not look at is not here either."""
+    try:
+        return _abs(root, rel).is_dir()
+    except OSError:
+        return False
+
+
+def missing_dirs(root: Path, line: str) -> list[str]:
+    """Backticked paths in a line whose directory does not exist here. A file not yet written in an existing
+    directory is not listed: a spec names the files its units will create."""
+    out = []
+    for m in CITED_PATH_RE.finditer(line):
+        cand = m.group(1)
+        if not cand.endswith("/") and NUMBER_RE.fullmatch(cand.rsplit("/", 1)[-1]):
+            continue   # a directory, `x/2026/`, is still checked
+        # the directory as written: `x/../docs` needs `x` to exist, so it is not normalised away
+        d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
+        if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
+            out.append(cand)
+    return out
+
+
+def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int, str, int, str]]:
+    """Group missing paths by the shallowest directory that is not here: (first line, that directory, count,
+    first path). One line per absent tree keeps the report readable where a document names many paths in it.
+    A `./` part is dropped, so `./analysis/a.md` and `analysis/b.md` share one line; `..` is kept."""
+    groups: dict[str, list] = {}
+    for ln, cand in missing:
+        parts = [p for p in cand.rstrip("/").split("/") if p != "."]
+        top = next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
+                    if "/".join(parts[:k]) not in ("", "~", "..") and not _is_dir(root, "/".join(parts[:k]))), cand)
+        g = groups.setdefault(top.rstrip("/") + "/", [ln, 0, cand])
+        g[1] += 1
+    return [(ln, top, n, first) for top, (ln, n, first) in groups.items()]
 
 
 def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False) -> tuple[int, list[str]]:
@@ -1339,6 +1432,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             continue
         if in_code:
             continue
+        rep.missing.extend((i, p) for p in missing_dirs(root, s))
         if "<!-- charter: opinion -->" in s:
             in_opinion = True; flush(); continue
         if "<!-- charter: /opinion -->" in s:

@@ -160,6 +160,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             status = str(lib.split_frontmatter(text)[0].get("status", ""))
             prev_status = str(lib.split_frontmatter(prev or "")[0].get("status", ""))
             rep.add(*checks.check_acceptance_change(prev or "", text, p))
+            rep.add(*checks.check_probe_cut(text, p))
             if status not in done_st or (prev_status == status and not a.strict):
                 continue
             found = checks.check_unit_done(root, cfg, text, p)
@@ -238,6 +239,9 @@ def cmd_anchors(a) -> int:
             print(f"  unanchored L{ln}: {t}")
         for ln, t in rep.unresolved:
             print(f"  unresolved L{ln}: {t}")
+        for ln, top, n, first in checks.missing_roots(root, rep.missing):
+            more = f", and {n - 1} more path(s) under it" if n > 1 else ""
+            print(f"  missing path L{ln}: {first}: {top} does not exist here{more} (a report, not a failure)")
         lib.log_event(root, "cli", "anchors", "ok" if rep.ok else "warn" if warn_only else "block",
                       f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved", path=f, mode="pr" if a.pr else "doc")
         if not rep.ok and not warn_only:

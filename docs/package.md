@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.21. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.22. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -121,6 +121,7 @@ Upgrade notes, by version:
 
 - 0.4.19 adds content contract 1 to each `charter owner --json` item: nullable `why` and `because`, plus consequences for decision, change and rail options. `why` is the first paragraph of Recommendation; `because` is Because for decisions and Why it is outside the scope for change requests. Text is bounded to 500 characters, preferring a complete sentence. Existing keys, ruling argv, JSON schema and the text queue remain compatible (`package/.charter/owner.py`, `tests/test_owner_0_4_8.py`). Consumers can use the content without reading source headings; missing sections remain null. No gate or owner act changes, and no additional upgrade step is needed beyond `docs/install.md` § Upgrade.
 - 0.4.20 adds `readiness: {ready, code, reason}` to proposed decisions and change requests, retaining 0.4.19's contract-1 content. Untracked, staged-only and modified proposals remain listed with a preparation reason; the ruling verbs share the same check. Readiness runs with Git filters/fsmonitor and optional index refresh disabled (`package/.charter/owner.py`, `tests/test_owner_0_4_8.py`). Upgrade through `docs/install.md` § Upgrade; no config change is required.
+- 0.4.22 fixes four defects the spec-step trials found, each a warning or a report, none a new refusal. `charter check` warns on a changed unit whose probe is cut at a backtick. `charter anchors` lists a backticked path whose directory does not exist, without changing its exit code. `charter check` and `charter unit start` warn when a unit past `next` or `later` relies on a `proposed` decision. The scope gate no longer asks for coverage of perimeter entries under the paths the other gates exempt (`docs/gates.md`, `tests/test_spec_step_defects.py`). Upgrade through `docs/install.md` § Upgrade; no config change is required.
 
 ## What must stay true
 
