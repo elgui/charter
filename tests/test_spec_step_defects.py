@@ -159,6 +159,44 @@ class MissingPathGuard(Project):
         self.assertNotIn("missing path", charter(self.root, "anchors", "notes.md").stdout)
 
 
+# ------------------------------------------------------------------ 3. a unit relying on a proposed decision
+
+class ProposedDecision(Project):
+    def setUp(self):
+        super().setUp()
+        self.write("charter/decisions/open-choice.md", PROPOSED)
+
+    def test_check_warns_when_a_started_unit_names_a_proposed_decision(self):
+        self.write(".taskets/u2.md", unit("u2", status="in-progress", decisions="[open-choice]"))
+        out = self.check_all()
+        line = next((l for l in out.splitlines() if "open-choice" in l and "proposed" in l), "")
+        self.assertTrue(line, out)
+        self.assertIn("u2", line)
+
+    def test_unit_start_warns_when_the_unit_names_a_proposed_decision(self):
+        self.write(".taskets/u2.md", unit("u2", status="now", decisions="[open-choice]"))
+        r = charter(self.root, "unit", "start", "u2")
+        self.assertIn("still proposed", r.stdout + r.stderr)
+
+
+class ProposedDecisionGuard(Project):
+    def setUp(self):
+        super().setUp()
+        self.write("charter/decisions/open-choice.md", PROPOSED)
+
+    def test_a_unit_still_in_planning_is_not_warned(self):
+        for status in ("next", "later"):
+            with self.subTest(status=status):
+                self.write(".taskets/u2.md", unit("u2", status=status, decisions="[open-choice]"))
+                self.assertNotIn("still proposed", self.check_all())
+
+    def test_an_active_decision_is_not_warned(self):
+        self.write(".taskets/u2.md", unit("u2", status="in-progress", decisions="[retry-limit]"))
+        out = self.check_all()
+        self.assertNotIn("still proposed", out)
+        self.assertNotIn("relies on decision retry-limit", out)
+
+
 
 
 if __name__ == "__main__":

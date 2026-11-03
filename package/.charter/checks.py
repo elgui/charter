@@ -678,12 +678,16 @@ def check_decisions_text(root: Path, decs: dict[str, dict], rp: str, text: str) 
 
 
 def check_unit_decisions(root: Path, decs: dict[str, dict], unit: dict) -> list[Finding]:
-    """A unit's `decisions:` key names what it relies on; say when one is gone or no longer active."""
+    """A unit's `decisions:` key names what it relies on; say when one is gone, no longer active, or, once the
+    unit is past planning, not yet ruled. Naming a decision holds nothing: a checkpoint holds."""
     out = []
     for did in lib.as_list(unit.get("decisions")):
         d = decs.get(did)
         if d is None:
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which does not exist", path=unit["_path"]))
+        elif str(d.get("status", "active")) == "proposed" and str(unit.get("status", "")) not in lib.PLANNING_STATUSES:
+            out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which is still proposed: nothing holds the unit until the owner rules",
+                               path=unit["_path"], override="wait for the ruling, or hold the unit on a checkpoint whose owner line tests it"))
         elif str(d.get("status", "active")) in ("superseded", "retired"):
             out.append(Finding("decisions", "warn", f"unit {unit['_id']} relies on decision {did}, which is {d.get('status')}; successor: {d.get('superseded_by') or '(none named)'}",
                                path=unit["_path"], override="re-read the unit against the successor and update `decisions:`"))
