@@ -197,6 +197,31 @@ class ProposedDecisionGuard(Project):
         self.assertNotIn("relies on decision retry-limit", out)
 
 
+# ------------------------------------------------------------------ 4. exempt paths in a perimeter
+
+def uncovered(out, entry):
+    return [l for l in out.splitlines() if f"perimeter entry {entry} is not covered" in l]
+
+
+class ExemptPerimeter(Project):
+    def test_an_entry_under_an_exempt_path_raises_no_coverage_warning(self):
+        self.write(".taskets/u2.md", unit("u2", perimeter="[app/health.py, charter/specs/**, .taskets/**, .claude/notes.md]"))
+        out = self.check_all()
+        for entry in ("charter/specs/**", ".taskets/**", ".claude/notes.md"):
+            with self.subTest(entry=entry):
+                self.assertEqual(uncovered(out, entry), [], out)
+
+
+class ExemptPerimeterGuard(Project):
+    def test_an_uncovered_ordinary_path_still_warns(self):
+        self.write(".taskets/u2.md", unit("u2", perimeter="[app/health.py, app/other.py]"))
+        self.assertTrue(uncovered(self.check_all(), "app/other.py"))
+
+    def test_an_out_of_scope_path_still_warns(self):
+        self.write(".taskets/u2.md", unit("u2", perimeter="[app/billing.py]"))
+        out = self.check_all()
+        self.assertTrue(re.search(r"perimeter entry app/billing\.py falls under out-of-scope item X1", out), out)
+
 
 
 if __name__ == "__main__":

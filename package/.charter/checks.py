@@ -133,7 +133,7 @@ def check_unit_scope(root: Path, cfg: dict, unit: dict) -> list[Finding]:
             if item["paths"] and lib.matches_any(probe, item["paths"]) and not any(lib.matches_any(probe, lib.as_list(c.get("paths"))) for c in approved.values()):
                 out.append(Finding("scope", "warn", f"unit {unit['_id']} perimeter entry {g} falls under out-of-scope item {xid} ({item['title']})",
                                    path=unit["_path"], override="narrow `perimeter:`, or propose a change request for that path"))
-        if cited_paths and not lib.matches_any(probe, cited_paths):
+        if cited_paths and not probe.startswith(lib.PERIMETER_EXEMPT) and not lib.matches_any(probe, cited_paths):
             out.append(Finding("scope", "warn", f"unit {unit['_id']} perimeter entry {g} is not covered by the paths of {', '.join(cited)}",
                                path=unit["_path"], override="cite the scope item that covers it, or narrow `perimeter:`"))
     return out
