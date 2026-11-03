@@ -1,15 +1,16 @@
 {
   "reviewed": "2026-11-03",
-  "charter_version": "0.4.21",
+  "charter_version": "0.4.22",
   "revisions": {
-    "charter": "983ad73cf1c595444770659f7779a00a74465b78",
-    "tele-claude": "375f71ed5fa5c07f6c5280205f39cc160f3060ea"
+    "charter": "b2df24eaac0ea16fd330e61502789c02c095c4ff",
+    "tele-claude": "b81dc050c62725580278f45a2ec59e6ce0bca331",
+    "spec_draft": "dee2f42e1feb372a04ebec99d8f0a59532f5c476"
   },
   "sources": [
     {
       "repo": "charter",
       "path": "package/VERSION",
-      "sha256": "ab9c79e91f7231f0338e1508172237d4aecb60174944b4a1502ce1fa4fd58f64"
+      "sha256": "3090ddf7b61b1cb50c979807d3ac5de9ad257e55ae15e503969357dc94d62c66"
     },
     {
       "repo": "charter",
@@ -24,7 +25,7 @@
     {
       "repo": "charter",
       "path": "package/.charter/bin/charter",
-      "sha256": "9109388ed7c88324b298c915e7042ed64548c4635368dec6530fe25cd604dce6"
+      "sha256": "59150a1068790b88c9847033ca842ed6044ef9071ac14f5d893c1a16cf22ed40"
     },
     {
       "repo": "charter",
@@ -64,7 +65,7 @@
     {
       "repo": "tele-claude",
       "path": "docs/OWNER_DESK.md",
-      "sha256": "9e79ddbd03438074256c8ba28da754b78e9812ac145286843c6e17ab34b3fa2d"
+      "sha256": "d6440cbcaaf093892c3037f8884f8d1d2d64682af586b5965df57ebd324a1fb9"
     },
     {
       "repo": "tele-claude",
@@ -84,7 +85,7 @@
     {
       "repo": "tele-claude",
       "path": "services/owner_desk/cli.py",
-      "sha256": "bea2bb3c8f6870ca242a2f32f8fd45874ee7b3830cfe748e36dc72a9f4d6c37f"
+      "sha256": "51fa37928c2607bc44164417f1a274b1fbdf4c224034ae6c62acebaff9dfedfa"
     },
     {
       "repo": "tele-claude",
@@ -100,6 +101,18 @@
       "repo": "tele-claude",
       "path": "docs/OWNER_DESK_ACCEPTANCE.md",
       "sha256": "fcbe77d1981c5c56ccc48fdce2fd3a9b1df93e66c922640e544e1731887ab27a"
+    },
+    {
+      "repo": "charter",
+      "ref": "charter-spec-draft",
+      "path": "package/.claude/skills/charter-spec/SKILL.md",
+      "sha256": "28dd1d94b49d09d62fdb1918176e660ab8c711e6718e3b1da3e364e38e598831"
+    },
+    {
+      "repo": "charter",
+      "ref": "charter-spec-draft",
+      "path": "package/charter/templates/spec.md",
+      "sha256": "270f7e121313865fa138a445a6ebcce21d8a56f52bbd17168ce72dcabd9b6e97"
     }
   ]
 }
