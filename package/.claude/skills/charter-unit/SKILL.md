@@ -21,7 +21,7 @@ description: Start, resume or finish a unit of work under the charter method. US
 
 ## Finish
 
-1. `python3 .charter/bin/charter probe <id>`; check each `- [x] AC-n` only after its probe passed.
+1. `python3 .charter/bin/charter probe <id>`; check each agent-owned `- [x] AC-n` only after its probe passed. Leave owner lines open. Surface their `charter owner --json` acceptance contracts through the configured owner interface, with the exact project, source and criterion; never ask the owner to hunt for or edit a checkbox. Only the owner confirms acceptance; agents never run `charter accept`.
 2. Under `## Evidence`: the commit SHA(s), the `path:line` of the change, and the `$ command` lines `charter probe` printed. A path or a URL alone is refused. If `charter/config.json` sets `review.required`, add `- review: <reviewer and model> — <verdict> — <anchor>` pointing at the independent review.
 3. Set `status: done`. The gate refuses it if a box is unchecked, no commit or run is cited, or an anchor does not resolve; the refusal names what to add. A project with `probes.at_commit` or `probes.in_ci` set re-runs the probes when the unit closes.
 4. Your final message cites the same evidence. A done claim without a commit, a `path:line` or a run is blocked once by the Stop hook.

@@ -33,7 +33,7 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
 - In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
 - Opening or widening a `kind: split` unit.
-- Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner closes it, with `/resume-chain ok` when a chain waits on it.
+- Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner confirms it through the owner desk or `charter accept` using its exported acceptance fingerprint; `/resume-chain ok` remains available when a chain waits on it. Agents never run `charter accept`.
 - Running a waiting chain's acts: `charter owner run` is the owner's command (the hook denies it to an agent). Give the owner the command, never run it.
 - Committing an owner-only change. Leave it staged and run `python3 .charter/bin/charter handover`: it records the handover and prints the owner's one line, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`. Where it says the owner's delegate takes it, run `python3 .charter/bin/charter handover --wait` (a Bash timeout over 300 s) and relay the line only if the delegate hands it back or does not answer. Give the owner that line verbatim (as `! <line>` for a Claude Code prompt); never run it (the hook denies it to an agent).
 - Setting `CHARTER_OWNER` anywhere (the hook denies a Bash command that names it).

@@ -82,6 +82,29 @@ def _substitutions(line: str) -> list[str]:
     return out
 
 
+def accept_act(line: str, depth: int = 0) -> bool:
+    """Protect the owner verb without denying a quoted mention in documentation or git messages."""
+    if depth > 3:
+        return False
+    if any(accept_act(sub, depth + 1) for sub in _substitutions(line)):
+        return True
+    try:
+        commands = list(_commands(line))
+    except ValueError:
+        return bool(re.search(r"charter\b[^\n;&|]*?\saccept\b", line))
+    for words in commands:
+        for i, word in enumerate(words):
+            name, rest = os.path.basename(word), words[i + 1:]
+            if name == "charter" and "accept" in rest:
+                return True
+            if name in SHELLS and "-c" in rest and rest.index("-c") + 1 < len(rest):
+                if accept_act(rest[rest.index("-c") + 1], depth + 1):
+                    return True
+            if name == "eval" and accept_act(" ".join(rest), depth + 1):
+                return True
+    return False
+
+
 def delegate_act(line: str, depth: int = 0) -> bool:
     """Whether a Bash line runs one of the delegate's acts or the watcher (DELEGATE_ACT_RE, WATCHER_RUN_RE): the charter
     CLI by any path, after any wrapper (`env -u X`, `timeout 30`, `python3 -B`), inside `sh -c`, `eval` or a command
@@ -173,6 +196,10 @@ def gate() -> int:
                           "charter: the owner's delegate runs outside Claude Code, from cron, and only the owner sets its level. "
                           "Hand over with `python3 .charter/bin/charter handover` (`--ask`, `--merge`) and wait with `--wait`; "
                           "never run the delegate's acts or the watcher yourself."}}))
+        return 0
+    if ev == "PreToolUse" and accept_act(command):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "permissionDecision": "deny",
+                          "permissionDecisionReason": "charter: accepting an owner criterion is the owner's act; use the owner desk."}}))
         return 0
     m = OWNER_RUN_RE.search(bare) if ev == "PreToolUse" else None
     if m and m.group(1) == "commit":

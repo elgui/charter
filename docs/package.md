@@ -1,6 +1,6 @@
 # The package
 
-Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.20. Python 3 standard library only; no dependency is installed in a project.
+Repository `charter` (named `methodo` until 2026-09-24; decision `package-name` in the report). Version `package/VERSION`, 0.4.21. Python 3 standard library only; no dependency is installed in a project.
 
 ## Layout of this repository
 
@@ -129,3 +129,5 @@ Upgrade notes, by version:
 - Hook scripts run with `python3 -B` and set `sys.dont_write_bytecode`, so they leave no `__pycache__` in the tree (`package/.charter/settings-fragment.json:4`, `package/.charter/hooks/_common.py:5`).
 - Tasket keys the engines read (`status`, `order`, `group`, `group_order`, `priority`, ...) are never renamed or reinterpreted. The package adds `scope`, `perimeter`, `decisions`, `kind`, all optional. Templates keep frontmatter comments on their own lines, which every parser skips (`package/charter/templates/unit.md:1-16`).
 - Skill names `charter-unit`, `charter-decision`, `charter-progress` and agent `charter-reviewer` do not collide with `~/.claude/Skills/` or `~/.claude/commands/` (checked 2026-09-11 against the listing in `docs/session-log.md`).
+
+- 0.4.21 exports an additive `acceptance` contract on owner-line items and adds `charter accept <unit> <AC> --expected <fingerprint> [--note …] [--trailer …] [--dry-run]`. An explicit owner confirmation ticks exactly the unchanged criterion and commits its dated Log receipt. It binds the unit, file, text and branch, refuses dirty/ambiguous targets and agent sessions, never runs the described act or its probe, and preserves other staged paths. The completion contract is separate from `perform`: a desk must not label a checkbox commit as running the described action (`package/.charter/owner.py`, `tests/test_owner_acceptance.py`). Upgrade through `docs/install.md` § Upgrade; no config change. Owner Desk support is a separate Tele-Claude change. Historical desk receipts are not automatically replayed as acceptances.

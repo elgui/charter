@@ -1282,6 +1282,10 @@ def cmd_rail(a) -> int:
     return _owner_verb(a, ownerq.rail, a.id, a.status, note=a.note)
 
 
+def cmd_accept(a) -> int:
+    return _owner_verb(a, ownerq.accept, a.unit, a.criterion, a.expected, note=a.note)
+
+
 def cmd_version(a) -> int:
     root = lib.repo_root(a.root)
     p = root / lib.CHARTER_DIR / "VERSION"
@@ -1392,6 +1396,11 @@ def main(argv=None) -> int:
     ra = sub.add_parser("rail", help="the owner sets a rail's status, in one commit")
     ra.add_argument("id"); ra.add_argument("status"); ra.add_argument("--note", default=None); ra.add_argument("--trailer", **trailer)
     ra.add_argument("--dry-run", action="store_true", help="print the diff and the commit; change nothing"); ra.set_defaults(fn=cmd_rail)
+    acc = sub.add_parser("accept", help="the owner confirms one satisfied acceptance criterion, in one commit")
+    acc.add_argument("unit"); acc.add_argument("criterion")
+    acc.add_argument("--expected", required=True, help="the acceptance fingerprint exported by owner --json")
+    acc.add_argument("--note", default=None); acc.add_argument("--trailer", **trailer)
+    acc.add_argument("--dry-run", action="store_true"); acc.set_defaults(fn=cmd_accept)
     v = sub.add_parser("version"); v.set_defaults(fn=cmd_version)
     a, extra = ap.parse_known_args(argv)
     if a.cmd == "chain":
