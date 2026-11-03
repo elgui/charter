@@ -1,0 +1,95 @@
+{
+  "reviewed": "2026-11-03",
+  "charter_version": "0.4.20",
+  "revisions": {
+    "charter": "0a1ad892534283259e341e2f8d2aaac0261a1d9a",
+    "tele-claude": "5a8e20d06bd6aac1b6f936ea691efc531660883e"
+  },
+  "sources": [
+    {
+      "repo": "charter",
+      "path": "package/VERSION",
+      "sha256": "529684c650a5335731228b9f9f7dc66438a6e00a1afef8d3e7086baee7698292"
+    },
+    {
+      "repo": "charter",
+      "path": "package/.claude/rules/charter.md",
+      "sha256": "bb1129e89ec823f6bb9d28af7a9b7cb48cb62b876c5570807bd018dde115420c"
+    },
+    {
+      "repo": "charter",
+      "path": "package/.charter/owner.py",
+      "sha256": "f2edde965031409724b5eff6c31f2fac312caea944f476ec55858b1268a2eb91"
+    },
+    {
+      "repo": "charter",
+      "path": "package/.charter/bin/charter",
+      "sha256": "af3cd88ba829dd38126ba11c0b68ed191a6ebadbde1f872d73569ffb0b06b7f4"
+    },
+    {
+      "repo": "charter",
+      "path": "package/.charter/delegate.py",
+      "sha256": "ff7a54b0e6a910a249a9e368582c57ce6431f00bdd7fcb028d1824316fd09041"
+    },
+    {
+      "repo": "charter",
+      "path": "bin/charter-pkg",
+      "sha256": "45dd71599b6d96d2e1ba6c0e48614f910dc605ddd734f74a3714260d623f0d81"
+    },
+    {
+      "repo": "charter",
+      "path": "machine/README.md",
+      "sha256": "1ecc5402aaacf1440e3f03c57ee5e1ea40c4e7f0cce654119554eae5953108c6"
+    },
+    {
+      "repo": "charter",
+      "path": "docs/install.md",
+      "sha256": "eb68bd6ac163f0b74afb34bef3c8796dadbb81134cfde62d8310671a09aaa8ab"
+    },
+    {
+      "repo": "charter",
+      "path": "docs/verification.md",
+      "sha256": "51f277501df4cf261d2af330262759d312dbd052fd7522269d4495f2ecdb6be9"
+    },
+    {
+      "repo": "charter",
+      "path": "docs/design/owner-delegate.md",
+      "sha256": "f36a2ba4e83f7cbfa609e07a6b822f762b946a49d3cd5c8b81f7d00a97ba6b77"
+    },
+    {
+      "repo": "charter",
+      "path": "docs/design/continuous-chain.md",
+      "sha256": "62492c668a91fa48f024457d29fd0e92eb6e42d1df97dfe897ed93d993116d5e"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "docs/OWNER_DESK.md",
+      "sha256": "07b91a565c659634fc960c8fd216c57a67e826d5a8796b9ce647c391c4b096ad"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "docs/TASKETS.md",
+      "sha256": "0259f716cd5eff77c0e8ba07e869a44db4c16954a9cd0fa98fb98dc8b6f70c2b"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "services/owner_desk/detectors/charter.py",
+      "sha256": "3cc381ea1a002031cd2d4ffc00e4d1a0800e135bbd8f3fd51ff43ab0225afc06"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "services/owner_desk/runner.py",
+      "sha256": "c1a73655b44a25434fda98b360fbd51e8ed3c05d80bdac402e9ce2d38dd63e32"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "services/owner_desk/cli.py",
+      "sha256": "0abbc4d2e8f14d9b1080243a070b0a8f5bbb6aa090812337878df90b5ed56641"
+    },
+    {
+      "repo": "tele-claude",
+      "path": "services/step_close.py",
+      "sha256": "eee775cdb9a8b3699612efd97942451187a98da2cfa06795c7d2eb58d94734f7"
+    }
+  ]
+}
