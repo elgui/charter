@@ -458,8 +458,10 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
 
 
 def _quotes_open(cmd: str) -> bool:
+    """An apostrophe in a `# don't` comment closes nothing. The shell starts a comment only at the start of a word,
+    while shlex starts one at any `#`, so a `#` inside a word is neutralised first; inside quotes shlex ignores it."""
     try:
-        shlex.split(cmd, comments=True)   # an apostrophe in a `# don't` comment closes nothing
+        shlex.split(re.sub(r"(?<=\S)#", "_", cmd), comments=True)
         return False
     except ValueError:
         return True
@@ -467,13 +469,19 @@ def _quotes_open(cmd: str) -> bool:
 
 def _unpaired_run(text: str) -> bool:
     """Markdown closes a run of n backticks only with the next run of exactly n, so `` ` `` holds a literal
-    backtick. A run left without its partner is text that was meant to sit inside a code span."""
-    runs = [len(r) for r in re.findall(r"`+", text)]
+    backtick. A run left without its partner and glued to the text before it is the probe's real end; one standing
+    alone in prose, as in "write `` to start", is a literal."""
+    runs = list(re.finditer(r"`+", text))
     i = 0
     while i < len(runs):
-        close = next((k for k in range(i + 1, len(runs)) if runs[k] == runs[i]), None)
+        n = len(runs[i].group(0))
+        close = next((k for k in range(i + 1, len(runs)) if len(runs[k].group(0)) == n), None)
         if close is None:
-            return True
+            start = runs[i].start()
+            if start and not text[start - 1].isspace():
+                return True
+            i += 1
+            continue
         i = close + 1
     return False
 
@@ -1347,8 +1355,8 @@ def missing_dirs(root: Path, line: str) -> list[str]:
     out = []
     for m in CITED_PATH_RE.finditer(line):
         cand = m.group(1)
-        if NUMBER_RE.fullmatch(cand.rstrip("/").rsplit("/", 1)[-1]):
-            continue
+        if not cand.endswith("/") and NUMBER_RE.fullmatch(cand.rsplit("/", 1)[-1]):
+            continue   # a directory, `x/2026/`, is still checked
         # the directory as written: `x/../docs` needs `x` to exist, so it is not normalised away
         d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
         if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
