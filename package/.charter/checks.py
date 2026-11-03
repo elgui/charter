@@ -456,6 +456,21 @@ def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Fin
                     override="append a dated `## Log` line saying which criterion changed and why, in the same edit")]
 
 
+def check_probe_cut(text: str, path: str) -> list[Finding]:
+    """`PROBE_RE` stops at the first closing backtick, so a probe holding one runs as a shorter command. The sign is
+    text glued to that backtick, or a command ending in a space with another backtick later on the line."""
+    _, _, body = lib.split_frontmatter(text)
+    acc = lib.acceptance(body)
+    out = []
+    for i, m in enumerate(PROBE_RE.finditer(acc)):
+        rest, cmd = acc[m.end():].split("\n", 1)[0], m.group(2)
+        glued = rest[:1] and not rest[:1].isspace() and rest[:1] not in ".,;:)!?"
+        if glued or (cmd != cmd.rstrip() and "`" in rest):
+            out.append(Finding("done", "warn", f"{m.group(1) or f'line {i + 1}'}: its probe is cut at a backtick and runs only `{cmd.strip()}`",
+                               path=path, override="write the probe without backticks; use $(...) for a command substitution"))
+    return out
+
+
 def unit_probes(text: str) -> list[tuple[str, str]]:
     """(criterion id, command) for each `probe: `cmd`` in a unit's acceptance checklist."""
     return [(ac, cmd) for ac, cmd, _ in _probe_lines(text)]
