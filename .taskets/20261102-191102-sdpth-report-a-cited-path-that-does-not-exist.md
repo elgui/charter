@@ -35,5 +35,6 @@ kind: work
 
 - 2026-11-03: fixed in its own commit; each commit was checked out alone and passed its own test classes. Listed only when the directory is absent, as AC-1 says; an absent file in an existing directory is still not reported.
 - 2026-11-03: a codex review found defects in this fix; answered in 33464e5: the report now checks that the directory is one, skips numeric extensions, and normalises ./.
+- 2026-11-03: two more review passes, the third with no new major defect; answered in 981d2aa and d313a28, which has had no further review.
 
 ## Outside perimeter

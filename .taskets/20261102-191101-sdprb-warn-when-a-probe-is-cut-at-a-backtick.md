@@ -35,5 +35,6 @@ kind: work
 
 - 2026-11-03: fixed in its own commit; each commit was checked out alone and passed its own test classes.
 - 2026-11-03: a codex review found defects in this fix; answered in 33464e5: the cut rule now reads quotes and backtick parity.
+- 2026-11-03: two more review passes; the second found a new major defect in the cut rule, the third none. Answered in 981d2aa and d313a28, which has had no further review.
 
 ## Outside perimeter
