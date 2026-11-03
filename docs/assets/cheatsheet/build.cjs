@@ -10,6 +10,8 @@ const fs = require('node:fs');
   try {
     const page = await browser.newPage();
     await page.goto(pathToFileURL(path.join(docs, 'cheatsheet.html')).href);
+    const exports = await page.locator('svg[data-export]').evaluateAll(nodes => nodes.map(n => { n.setAttribute('width', n.viewBox.baseVal.width); n.setAttribute('height', n.viewBox.baseVal.height); return [n.dataset.export, n.outerHTML]; }));
+    for (const [name, svg] of exports) fs.writeFileSync(path.join(__dirname, `${name}.svg`), svg + '\n');
     await page.emulateMedia({media: 'print'});
     const bounds = await page.locator('.sheet').evaluateAll(nodes => nodes.map(n => ({
       height: n.clientHeight, content: n.scrollHeight,
@@ -36,6 +38,6 @@ const fs = require('node:fs');
         await page.screenshot({path:path.join(process.env.PREVIEW_DIR, `cheatsheet-${width}.png`),fullPage:true});
       }
     }
-    console.log('Built cheatsheet.pdf; two page containers fit; 1200px and 390px layouts fit.');
+    console.log('Built landscape cheatsheet.pdf and four SVG views; two page containers fit; 1200px and 390px layouts fit.');
   } finally { await browser.close(); }
 })().catch(e => {console.error(e); process.exitCode = 1;});
