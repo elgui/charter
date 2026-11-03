@@ -31,7 +31,7 @@ This recipe covers manual sessions and a Run All. A chain does not read `gate:`,
 9. **Later passes.** Have the same reviewer judge each answer and report only new defects. Fixes are where the next errors are, so repeat until a pass finds no new major defect. A pass may be scoped to the last round's changes, and a clean scoped pass covers only that scope. Fix what is left and say it was not re-reviewed. If a fourth pass still finds a major defect, stop and tell the owner: the design may be what is wrong.
 10. **Ready when.** Ask of each unit: could it start and finish without guessing? Write one row per unit, and look one rail past this one: a rail can close with a promise still undeliverable, because a question sits past it with no default. Place each condition (§ The units).
 11. **One ruling.** On the default branch, the proposed decisions reach the owner through `python3 .charter/bin/charter owner`. From an unmerged branch they reach no tool that reads the default branch, so hand them over yourself, in one ask, and name the branch. Give the owner a way to answer each decision on its own when there are more than three. `charter rule` commits where it runs, so a ruling on a branch is a reviewed script the owner runs on that branch. Where the decisions need several owner acts, ask for them together, and say who performs each. An answer is not leave to run an owner verb.
-12. **Close and freeze.** Close the spec unit when the agent's work is done; the checkpoint holds what the owner has not done, so `status: blocked` is not needed. Clearing the checkpoint stamps the ruling in the spec's header (§ The units). From then on the spec is a dated record: live truth is in the decisions, the units and the checkpoint.
+12. **Close and freeze.** Close the spec unit when the agent's work is done; the checkpoint holds what the owner has not done, so `status: blocked` is not needed. When the ruling lands, the agent that prepared it stamps it in the spec's header, even if the checkpoint stays open for other conditions. From then on the spec is a dated record: live truth is in the decisions, the units and the checkpoint.
 
 ## The units
 
@@ -76,7 +76,7 @@ Continue on a Run All clears the stop. It runs no probe and ticks no line, and o
 
 1. Run the line's probe and confirm the condition.
 2. Close the line. At delegate level `strict`, the owner ticks it and commits. Where the level delegates it, the agent stages the tick and runs `python3 .charter/bin/charter handover`, and the delegate commits after rerunning the probe. A probe that only prints stays the owner's.
-3. Add the evidence, stamp the ruling in the spec's header, and set the checkpoint to `done`.
+3. Add the evidence, and set the checkpoint to `done`.
 4. The owner presses Continue.
 
 A manual session has no such stop, and `unit start` does not look at earlier units. Read `python3 .charter/bin/charter owner` before starting a unit of a specced rail.
