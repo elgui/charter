@@ -341,6 +341,7 @@ ACTS = [
     ("a.upgrade", "Commit an upgrade's package files as the installer wrote them", "y", "", "", "", "y", "charter-pkg upgrade, then commit", "`package/.claude/rules/charter.md:32`"),
     ("a.check", "Close an `— owner: check` line whose probe passes on re-run", "", "y", "y", "y", "y", "the watcher reruns the probe", "`package/.claude/rules/charter.md:44`"),
     ("a.settings", "Commit an upgrade's settings change, exactly as the installer writes it", "", "y", "y", "y", "y", "charter handover --wait", "`docs/design/owner-delegate.md` § Levels"),
+    ("a.accept", "Confirm one satisfied owner criterion", "", "", "", "", "y", "charter accept UNIT AC --expected fingerprint", "`accept` in `package/.charter/owner.py`"),
     ("a.ruling", "Transcribe the owner's own ruling: rule, approve, rail", "", "", "y", "y", "y", "charter handover --ask … --quote", "`package/.claude/rules/charter.md:47`"),
     ("a.road", "Edit charter/rails.md or charter/scope.md", "", "", "", "y", "y", "edit, then charter handover", "`package/.claude/rules/charter.md:44`"),
     ("a.merge", "Merge the owner's own reviewed pull request", "", "", "", "y", "y", "/reviewPR, then handover --merge N", "`package/.claude/rules/charter.md:48`"),

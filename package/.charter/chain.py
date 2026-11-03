@@ -61,7 +61,7 @@ SESSION_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSIO
                "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
                "CLAUDE_PID", "CLAUDE_EFFORT", "CHARTER_OWNER", "CHARTER_UNIT")
 # a Bash command that performs an owner act: one of the owner's verbs, or the owner switch set by hand
-OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|rail)\b|\bCHARTER_OWNER\b")
+OWNER_ACT_RE = re.compile(r"\.charter/bin/charter\b[^\n;&|]*?\s(?:rule|approve|rail|accept)\b|\bCHARTER_OWNER\b")
 # where a command starts: the start of a line, a separator, a keyword, `!`, `{`, `$(`, a backquote, `sh -c '`; then the
 # words that run their argument as a command (`env`, `nohup`, `timeout 5`, an assignment). sudo there is a command
 _CMD_AT = (r"(?:^|[;&|()`{!]|\$\(|\b(?:then|do|else|elif|if|while|until|time)\b|-c\s+['\"])"

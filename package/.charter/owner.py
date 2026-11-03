@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import datetime as dt
 import difflib
+import fcntl
+import hashlib
 import json
 import os
 import re
@@ -30,7 +32,7 @@ import rails
 
 CHARTER_BIN = ".charter/bin/charter"
 KINDS = ("decide", "do", "check")
-FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because", "readiness")
+FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because", "readiness", "acceptance")
 # `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
 # tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
 OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
@@ -153,8 +155,85 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
         what = re.split(r"\s[—–]\s*(?:owner|human|probe):", what)[0].strip()
         out.append(_item(key=f"owner-line:{uid}:{ac}", kind=(seg.group(1) or "check").lower() if seg else "check",
                          title=f"{uid} {ac}: {what}"[:200], file=u["_path"], line=lineno,
-                         probe=probe.group(2) if probe else None, marked=bool(seg)))
+                         probe=probe.group(2) if probe else None, marked=bool(seg),
+                         acceptance=acceptance_contract(root, uid, ac, u["_path"], line)))
     return out
+
+
+def acceptance_contract(root: Path, uid: str, ac: str, rp: str, text: str) -> dict:
+    """Bind an owner confirmation to one criterion's words, location and checkout branch.
+
+    Other criteria or Log entries may change without invalidating this confirmation.
+    This contract is a completion verb, never a payload that performs the described act.
+    """
+    branch = lib.git(root, "symbolic-ref", "--quiet", "HEAD").stdout.strip()
+    target = {"unit": uid, "criterion": ac, "file": rp, "text": text, "branch": branch}
+    expected = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+    return dict(target, version=1, expected=expected,
+                perform=perform_argv(root, "accept", uid, ac, "--expected", expected))
+
+
+def accept(root: Path, cfg: dict, uid: str, ac: str, expected: str,
+           note: str | None = None, trailer: str | None = None, dry_run: bool = False) -> int:
+    """The owner confirms a satisfied criterion: one tick and a Log receipt, in one commit.
+
+    Never run the criterion's probe: this is the owner's observation, not an automated test.
+    Refuse dirty targets, ambiguous ids, changed text/branch, symlinks and agent sessions.
+    """
+    if lib.in_claude_code() and not lib.owner_session():
+        raise Refused("acceptance is the owner's act; use the owner desk or the owner's terminal")
+    # Serialize two desk confirmations of separate criteria in the same checkout. Re-read
+    # the source after locking, so their ticks cannot overwrite one another.
+    if dry_run:
+        return _accept(root, cfg, uid, ac, expected, note, trailer, True)
+    lock = lib.git_dir(root) / "charter" / "accept.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        return _accept(root, cfg, uid, ac, expected, note, trailer, False)
+
+
+def _accept(root, cfg, uid, ac, expected, note, trailer, dry_run):
+    units = lib.taskets(root)
+    u = units.get(uid)
+    if u is None:
+        raise Refused(f"no unit {uid}")
+    paths = [p for p in (root / lib.TASKETS_DIR).glob("*.md")
+             if str(lib.read_md(p)[0].get("id") or p.stem) == uid]
+    if len(paths) != 1:
+        raise Refused(f"unit {uid} is ambiguous; expected one tasket file, found {len(paths)}")
+    rp = u["_path"]
+    path = root / rp
+    if not path.resolve().is_relative_to(root.resolve() / lib.TASKETS_DIR) or path.is_symlink():
+        raise Refused("the unit must be a regular tasket file inside the checkout")
+    terminal = set(lib.as_list(cfg.get("done_statuses"))) | set(lib.TERMINAL_STATUSES) | {"closed"}
+    if str(u.get("status", "")).lower() in terminal:
+        raise Refused(f"unit {uid} is already {u.get('status')}")
+    _clean(root, rp)
+    matches = [item for item in owner_lines(root, uid, u, legacy_re(root, cfg))
+               if item["key"] == f"owner-line:{uid}:{ac}"]
+    if len(matches) != 1:
+        raise Refused(f"{uid} {ac}: expected exactly one unchecked owner criterion, found {len(matches)}; refresh the desk")
+    item = matches[0]
+    contract = item["acceptance"]
+    if not contract["branch"] or not expected or contract["expected"] != expected:
+        raise Refused(f"{uid} {ac}: the criterion or branch changed; refresh the desk before confirming")
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    index = item["line"] - 1
+    lines[index] = lines[index].replace("[ ]", "[x]", 1)
+    text = "".join(lines)
+    # Preserve all other source text and record the owner's actual observation, not a probe pass.
+    receipt = (f"- {dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')} "
+               f"owner accepted {ac}" + (f": {note}" if note else "")
+               + (f" ({trailer})" if trailer else ""))
+    log = re.search(r"^## Log[ \t]*$", text, re.M)
+    if log:
+        end = re.search(r"^## ", text[log.end():], re.M)
+        at = log.end() + end.start() if end else len(text)
+        text = text[:at].rstrip("\n") + "\n" + receipt + "\n\n" + text[at:]
+    else:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + receipt + "\n"
+    return _commit(root, {rp: text}, f"unit {uid}: owner accepted {ac}", trailer, dry_run)
 
 
 def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str]) -> list[dict]:
