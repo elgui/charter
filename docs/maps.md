@@ -330,7 +330,7 @@ The picture is `docs/assets/maps/journey.svg`. Availability is part of each step
 |---|---|---|---|---|---|
 | `j.road` | Read the road | RELEASED · records | Rails → units → current sources; next --json · unit show --json | Order and association explain direction; they do not prove dependency readiness. | `package/.charter/rails.py:116`, `package/.charter/bin/charter:669` |
 | `j.spec` | Resolve the gaps | METHOD · draft recipe | Compare sources, code and promises; Specs · decisions · open questions | Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's. | `docs/method.md`, `docs/review/2026-11-03-spec-design-verification.md` |
-| `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:764`, `docs/verification.md` |
+| `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:765`, `docs/verification.md` |
 | `j.plan` | Inspect the selection | INTEGRATION · proposed | Exact revision, units and prerequisites; Plan identity · runner · supervisor | Validate dependency closure and current authority. Existing Road interpretation is not runtime admission. | `docs/design/project-road-control-center.md` |
 | `j.launch` | Launch once | RUNNER · adapter needed | Claim the inspected plan atomically; Supervised group OR compatible chain | Current group runner takes one group; chain ignores human gates. Multi-rail admission is new integration work. | `package/.charter/chain.py:1903`, `docs/design/project-road-control-center.md` |
 | `j.evidence` | Observe evidence | RELEASED + external runner | Commits · probes · independent review; Judged revision · findings · answers | Keep deterministic checking, provider review, human credit and observed delivery distinct. | `docs/verification.md`, `package/.charter/chain_groups.py:86` |
@@ -339,7 +339,7 @@ The picture is `docs/assets/maps/journey.svg`. Availability is part of each step
 
 | Availability | What it means | Source |
 |---|---|---|
-| Released package | 0.4.22 at b2df24e; inspect each project's manifest and opt-ins. Source updates do not upgrade projects. | `package/VERSION:1`, `docs/install.md` |
+| Package in this tree | 0.4.24; inspect each project's manifest and opt-ins. Source updates do not upgrade projects. | `package/VERSION:1`, `docs/install.md` |
 | Implemented, unreleased | Optional charter-spec recipe at dee2f42 on charter-spec-draft. Manual preparation remains possible without installing it. | `docs/review/2026-11-03-spec-design-verification.md` |
 | External integration | Tele-Claude already supplies Road preparation views, supervised groups and step checking; exact multi-rail launch is proposed here. | `docs/design/project-road-control-center.md` |
 | Proposal only | PR #37, merged at 578b282: stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added. | `docs/design/project-road-control-center.md` |

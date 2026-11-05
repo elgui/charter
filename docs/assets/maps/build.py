@@ -386,7 +386,7 @@ JOURNEY = [
     ("j.units", "Make work checkable", "unit", "RELEASED · unit contract",
      "Perimeter · acceptance · dependencies", "probe UNIT --json · baseline checks",
      "Review spec and units together. Judge probe relevance; passing form alone proves no behavior.",
-     "`package/.charter/checks.py:764`, `docs/verification.md`"),
+     "`package/.charter/checks.py:765`, `docs/verification.md`"),
     ("j.plan", "Inspect the selection", "gate", "INTEGRATION · proposed",
      "Exact revision, units and prerequisites", "Plan identity · runner · supervisor",
      "Validate dependency closure and current authority. Existing Road interpretation is not runtime admission.",
@@ -410,7 +410,7 @@ JOURNEY = [
 ]
 
 AVAILABILITY = [
-    ("Released package", "0.4.22 at b2df24e; inspect each project's manifest and opt-ins. Source updates do not upgrade projects.", "`package/VERSION:1`, `docs/install.md`"),
+    ("Package in this tree", f"{VERSION}; inspect each project's manifest and opt-ins. Source updates do not upgrade projects.", "`package/VERSION:1`, `docs/install.md`"),
     ("Implemented, unreleased", "Optional charter-spec recipe at dee2f42 on charter-spec-draft. Manual preparation remains possible without installing it.", "`docs/review/2026-11-03-spec-design-verification.md`"),
     ("External integration", "Tele-Claude already supplies Road preparation views, supervised groups and step checking; exact multi-rail launch is proposed here.", "`docs/design/project-road-control-center.md`"),
     ("Proposal only", "PR #37, merged at 578b282: stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added.", "`docs/design/project-road-control-center.md`"),
