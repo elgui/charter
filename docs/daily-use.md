@@ -148,7 +148,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 |---|---|---|
 | The agent staged an owner-only file (install, upgrade, config) | Commit it | Run the one line the agent handed over, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`, after `!` in the Claude Code prompt or in a terminal; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
 | A decision is `proposed` | Adopt it, or reject it | `python3 .charter/bin/charter rule <id> active` (or `rejected`): status, a `## Ruling` line, the index and the commit in one command; `active` first runs the decision's `check:` (`rule` in `package/.charter/owner.py`) |
-| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
+| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:673`) |
 | A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |
 | The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`); `python3 .charter/bin/charter rail <id> done` closes one in one commit |
@@ -162,7 +162,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
   - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`machine/skills/CharterAdmin/workflows/Migrate.md:25`);
   - `probes.base_must_fail` once the probes reliably fail before the work (`docs/package.md` § Versioning and upgrade, 0.4.1);
-  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:380`);
+  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:381`);
   - `rails.required` once `charter/rails.md` exists and every open unit names a rail (`package/charter/templates/rails.md`).
 - A typo in any of these is refused at the next commit and named in the next banner, so a misspelled opt-in cannot stay off unnoticed (`docs/gates.md` § Config).
 - `python3 .charter/bin/charter synth`, without `--write`, adds the gate activity the written file leaves out (`package/.claude/skills/charter-progress/SKILL.md`).
