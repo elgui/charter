@@ -328,7 +328,7 @@ The picture is `docs/assets/maps/journey.svg`. Availability is part of each step
 
 | id | Step | Availability | Purpose / entry | Boundary | Source |
 |---|---|---|---|---|---|
-| `j.road` | Read the road | RELEASED · records | Rails → units → current sources; next --json · unit show --json | Order and association explain direction; they do not prove dependency readiness. | `package/.charter/rails.py:116`, `package/.charter/bin/charter:669` |
+| `j.road` | Read the road | RELEASED · records | Rails → units → current sources; next --json · unit show --json | Order and association explain direction; they do not prove dependency readiness. | `package/.charter/rails.py:116`, `package/.charter/bin/charter:675` |
 | `j.spec` | Resolve the gaps | METHOD · draft recipe | Compare sources, code and promises; Specs · decisions · open questions | Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's. | `docs/method.md`, `docs/review/2026-11-03-spec-design-verification.md` |
 | `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:765`, `docs/verification.md` |
 | `j.plan` | Inspect the selection | INTEGRATION · proposed | Exact revision, units and prerequisites; Plan identity · runner · supervisor | Validate dependency closure and current authority. Existing Road interpretation is not runtime admission. | `docs/design/project-road-control-center.md` |

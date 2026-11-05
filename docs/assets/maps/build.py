@@ -378,7 +378,7 @@ JOURNEY = [
     ("j.road", "Read the road", "art", "RELEASED · records",
      "Rails → units → current sources", "next --json · unit show --json",
      "Order and association explain direction; they do not prove dependency readiness.",
-     "`package/.charter/rails.py:116`, `package/.charter/bin/charter:669`"),
+     "`package/.charter/rails.py:116`, `package/.charter/bin/charter:675`"),
     ("j.spec", "Resolve the gaps", "art", "METHOD · draft recipe",
      "Compare sources, code and promises", "Specs · decisions · open questions",
      "Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's.",

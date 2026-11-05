@@ -40,7 +40,7 @@ An existing project (paths C to E) starts with the survey (`docs/install.md` ste
 
 1. Path C steps 1 and 2: the install (`docs/install.md`), then the scope and decisions.
 2. Inventory root markdown: for each file decide keep (reference), fold into a decision, fold into a unit's context, or archive under `docs/history/` with a one-line index. Progress and status files are archived, not kept: the synthesis replaces them (`docs/method.md` § Less method, not more). One commit per group. Rollback: revert the group.
-3. Governance size: `charter check --all --size --strict` lists files over the limits; `CLAUDE.md` over 400 lines or 32 KiB is frozen for growth until split (`package/.charter/lib.py:36-38`; the decisions that live in it move out in step 4 of path C).
+3. Governance size: `charter check --all --size --strict` lists files over the limits; `CLAUDE.md` over 400 lines or 32 KiB is frozen for growth until split (`DEFAULT_CONFIG` in `package/.charter/lib.py`; the decisions that live in it move out in step 4 of path C).
 4. Path C steps 3 to 5: triage, decisions, synthesis (the survey's `plan.md` lists them, `bin/charter_plan.py`).
 
 ## What to check after a migration
