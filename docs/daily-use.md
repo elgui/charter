@@ -49,6 +49,8 @@ Codex and other agents get no banner. They read the `AGENTS.md` section the inst
 
 ## 2. Pick or write the unit
 
+When starting from a road rather than a prepared unit, use the [preparation sequence](method.md#prepare-the-road-for-execution). Read `charter next --json` and `charter owner --json`, compare decisions and sources, and resolve what each unit needs to start and finish. These commands report records; neither proves design adequacy nor validates an external runner's dependency selection (`package/.charter/bin/charter:532`, `package/.charter/owner.py`, `docs/design/project-road-control-center.md`).
+
 One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with the ones already started first.
 
 A unit is ready when:
