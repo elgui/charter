@@ -372,7 +372,7 @@ class SessionUnit(Project):
         git(self.root, "add", "app")
         r = charter(self.root, "check", "--staged", env={"CLAUDE_CODE_SESSION_ID": "sess-b"})
         self.assertNotIn("app/billing.py is outside the perimeter", r.stdout)
-        self.assertIn("app/billing.py is staged, but session sess-a edited it and this session did not; "
+        self.assertIn("app/billing.py is staged, but session sess-a has an edit record for it and this session's record does not list it; "
                       "a plain `git commit` charges it to unit u1", r.stdout)
         self.assertIn("git commit -m <message> -- <your paths>", r.stdout)
 

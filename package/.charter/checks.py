@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -317,9 +318,20 @@ def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
 
 # ---------------------------------------------------------------- done (R9)
 
-def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "") -> bool:
+def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "", ref: str | None = None) -> bool:
     if anchor_kind == "sha":
         return lib.git(root, "cat-file", "-e", f"{value}^{{commit}}").returncode == 0
+    if ref is not None and anchor_kind in ("fileline", "path") and not value.startswith(("/", "~/")):
+        r = lib.git(root, "cat-file", "-t", f"{ref}:{value.rstrip('/')}")
+        if r.returncode != 0:
+            return False
+        if anchor_kind == "path":
+            return True
+        if r.stdout.strip() != "blob":
+            return False
+        raw = blob(root, f"{ref}:{value}")
+        lines = 0 if raw is None else raw.count(b"\n") + int(bool(raw) and not raw.endswith(b"\n"))
+        return raw is not None and 1 <= int(extra) <= max(1, lines)
     if anchor_kind == "fileline":
         p = _abs(root, value)
         if not _exists(p, file=True):
@@ -356,11 +368,11 @@ def _abs(root: Path, value: str) -> Path:
     return root / value
 
 
-def classify_anchors(root: Path, text: str) -> dict[str, list[str]]:
+def classify_anchors(root: Path, text: str, ref: str | None = None) -> dict[str, list[str]]:
     """Anchors in a text by kind: sha, fileline, url, path and run resolve; bad do not."""
     k: dict[str, list[str]] = {"sha": [], "fileline": [], "url": [], "path": [], "run": [], "bad": []}
     for m in FILELINE_RE.finditer(text):
-        (k["fileline"] if _resolves(root, "fileline", m.group(1), m.group(2)) else k["bad"]).append(f"{m.group(1)}:{m.group(2)}")
+        (k["fileline"] if _resolves(root, "fileline", m.group(1), m.group(2), ref) else k["bad"]).append(f"{m.group(1)}:{m.group(2)}")
     # a hex run inside a path (a UUID directory, a hash-named file) is part of the path, not a commit
     for m in SHA_RE.finditer(re.sub(r"\S*/\S*", " ", text)):
         v = m.group(0)
@@ -376,15 +388,15 @@ def classify_anchors(root: Path, text: str) -> dict[str, list[str]]:
         cand = m.group(1).rstrip("/.")
         if "*" in cand or not cand or cand.startswith("-"):
             continue
-        if _exists(_abs(root, cand)):
+        if _resolves(root, "path", cand, ref=ref):
             k["path"].append(cand)
     k["run"] = [m.group(0).strip()[:60] for m in RUN_RE.finditer(text)]
     return k
 
 
-def evidence_anchors(root: Path, text: str) -> tuple[list[str], list[str]]:
+def evidence_anchors(root: Path, text: str, ref: str | None = None) -> tuple[list[str], list[str]]:
     """(resolving, unresolved) anchors found in a text."""
-    k = classify_anchors(root, text)
+    k = classify_anchors(root, text, ref)
     return k["fileline"] + k["sha"] + k["url"] + k["path"] + k["run"], k["bad"]
 
 
@@ -501,7 +513,7 @@ def check_decision_reads(root: Path, decs: dict[str, dict], paths: list[str] | N
     commit touches the decision or the missing doc, and warns otherwise, so one decision's stale pointer
     does not stop unrelated commits; `charter check --all` and CI refuse it."""
     out: list[Finding] = []
-    # staged_paths leaves deletions out; a commit that deletes a doc a decision points at touches that doc
+    # Include removals even when a caller supplied only a subset of staged paths.
     gone = set(lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=D").stdout.split()) if paths is not None else set()
     for did, d in decs.items():
         if str(d.get("status", "active")) != "active":
@@ -533,7 +545,7 @@ def review_lines(root: Path, evidence: str) -> list[str]:
 
 def acceptance_items(body: str) -> list[str]:
     """Acceptance lines with the tick normalised, so ticking a box is not a change."""
-    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).splitlines() if CHECKBOX_RE.match(l)]
+    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).split("\n") if CHECKBOX_RE.match(l)]
 
 
 def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Finding]:
@@ -685,20 +697,68 @@ def probe_outcome(cmd: str, code: int) -> str:
     return "failed"
 
 
+def _probe_runner(root: Path, cfg: dict) -> list[str]:
+    runner = list((cfg.get("probes") or {}).get("runner") or [])
+    if runner and "/" in runner[0] and not Path(runner[0]).is_absolute():
+        runner[0] = str(root / runner[0])
+    return runner
+
+
+def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
+               runner: list[str] | None = None) -> subprocess.CompletedProcess:
+    """A probe owns a process group: kill and reap on timeout or interruption, with a bounded final drain."""
+    if runner is None:
+        cfg = lib.load_config(root)
+        if cfg.get(lib.PROBLEMS):
+            return subprocess.CompletedProcess(cmd, 127, "", "probe refused: correct charter/config.json first")
+        runner = _probe_runner(root, cfg)
+    command = [*runner, "/bin/sh", "-c", cmd] if runner else cmd
+    try:
+        proc = subprocess.Popen(command, shell=not runner, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          encoding="utf-8", errors="replace", env=env, start_new_session=True)
+    except OSError as e:
+        return subprocess.CompletedProcess(cmd, 127, "", f"probe runner could not start: {e}")
+    with proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                out, err = proc.communicate(timeout=0.2)
+            except subprocess.TimeoutExpired as e:
+                # A descendant may have left the group while keeping a pipe open.
+                out, err = _stream(e.output), _stream(e.stderr)
+                proc.stdout.close()
+                proc.stderr.close()
+                proc.wait()
+            raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+        except BaseException:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            raise
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
     """Run one probe. (its record, the one-line tail the text line has always shown: the last line of stdout and
     stderr together, cut to 100 characters)."""
     t0 = time.monotonic()
     try:
-        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
-        out, err, code = r.stdout, r.stderr, r.returncode
+        r = _run_probe(root, cmd, timeout)
+        out, err, code = lib.redact_credentials(r.stdout), lib.redact_credentials(r.stderr), r.returncode
         outcome = probe_outcome(cmd, code)
         line = ((out + err).strip().splitlines() or [""])[-1][:100]
     except subprocess.TimeoutExpired as e:
-        out, err, code, outcome = _stream(e.stdout), _stream(e.stderr), None, "timeout"
+        out, err, code, outcome = lib.redact_credentials(_stream(e.stdout)), lib.redact_credentials(_stream(e.stderr)), None, "timeout"
         line = f"timed out after {timeout} s"
     (out_tail, out_n), (err_tail, err_n) = _tail(out), _tail(err)
-    return {"ac": ac, "command": cmd, "outcome": outcome, "exit": code, "duration_s": round(time.monotonic() - t0, 2),
+    return {"ac": ac, "command": lib.redact_credentials(cmd), "outcome": outcome, "exit": code, "duration_s": round(time.monotonic() - t0, 2),
             "stdout_tail": out_tail, "stderr_tail": err_tail, "stdout_lines": out_n, "stderr_lines": err_n}, line
 
 
@@ -713,6 +773,7 @@ def run_probes_recorded(root: Path, text: str, path: str, timeout: int) -> tuple
     for ac, cmd in probes:
         rec, tail = probe_record(root, ac, cmd, timeout)
         records.append(rec)
+        cmd = rec["command"]
         code = rec["exit"]
         lines.append(f"- `$ {cmd}` → " + (f"exit {code}" if code is not None else tail) + (f" ({tail})" if tail and code else ""))
         if code != 0:
@@ -806,11 +867,13 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
         out = []
         for ac, cmd in probes:
             try:
-                code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout, env=env).returncode
+                code = _run_probe(wt, cmd, timeout, env, runner=_probe_runner(root, cfg)).returncode
             except subprocess.TimeoutExpired:
+                cmd = lib.redact_credentials(cmd)
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
                                    override=NOT_RUN_OVERRIDE))
                 continue
+            cmd = lib.redact_credentials(cmd)
             if probe_outcome(cmd, code) == "not-run":
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: exit {code} (not-run), so `{cmd}` does not show it fails without the change", path=path,
                                    override=NOT_RUN_OVERRIDE, exit=code))
@@ -962,7 +1025,7 @@ def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str
             continue
         level = "block" if (at_commit and cfg.get("track") == "client") else "warn"
         if rp in others:
-            out.append(Finding("perimeter", level, f"{rp} is staged, but session {others[rp]} edited it and this session did not; "
+            out.append(Finding("perimeter", level, f"{rp} is staged, but session {others[rp]} has an edit record for it and this session's record does not list it; "
                                f"a plain `git commit` charges it to unit {unit['_id']}", path=rp,
                                override="commit only this session's paths, `git commit -m <message> -- <your paths>`, and leave the other "
                                         f"session's to it; or, if this work is the unit's, add `- {rp}: <why>` under `## Outside perimeter` in {unit['_path']}"))
@@ -1025,6 +1088,8 @@ def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict],
     paths_of: dict[str, set] = {uid: set() for uid in units}
     commits = dict.fromkeys(units, 0)
     seen = {"commits": 0, "untagged": 0, "ambiguous": 0, "several": 0}
+    unavailable = r.returncode != 0
+    shallow = lib.git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     for rec in r.stdout.split("\x1e")[1:] if r.returncode == 0 else []:
         parts = rec.split("\x1f")
         if len(parts) < 3:
@@ -1052,6 +1117,10 @@ def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict],
         fits[uid] = {"commits": commits[uid], "touched": paths, "outside": outside,
                      "outside_noted": [p for p in outside if p in notes or os.path.basename(p) in notes],
                      "entries": per, "untouched_entries": [e for e in per if not any(lib.matches_any(p, [e]) for p in every)]}
+        if unavailable or shallow:
+            fits[uid].update(history="unavailable" if unavailable else "shallow", history_commits=seen["commits"])
+    if unavailable or shallow:
+        seen["history"] = "unavailable" if unavailable else "shallow"
     return fits, seen
 
 
@@ -1061,6 +1130,11 @@ def _names(items: list[str], n: int = 10) -> str:
 
 def fit_text(fit: dict, short: bool = False) -> str:
     """One unit's fit in words: `charter unit show <id>` (short=False) and a `charter synth` line (short=True)."""
+    if fit.get("history") == "unavailable":
+        return "history unavailable; no perimeter measurement"
+    if fit.get("history") == "shallow":
+        return (f"shallow clone: {fit['history_commits']} commit(s) read; missing commits are not measured; "
+                + fit_text({k: v for k, v in fit.items() if k != "history"}, short))
     if not fit["commits"]:
         return "no commit message says `unit <id>` for this unit"
     s = (f"{fit['commits']} commit(s), {len(fit['touched'])} path(s)" if short
@@ -1116,7 +1190,7 @@ def _fm(text: str | None) -> dict:
 
 
 # `— owner: do|check|decide` on an acceptance line: a line only the owner closes (owner.OWNER_SEG_RE names the kind)
-OWNER_MARK_RE = re.compile(r"\s[—–]\s*owner:", re.I)
+OWNER_MARK_RE = lib.OWNER_SEGMENT_RE
 BOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s*(.*)$")
 
 
@@ -1126,13 +1200,13 @@ def acceptance_boxes(text: str) -> list[tuple[int, str, bool, bool]]:
     sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
     base = (text or "").find(sec) if sec else -1
     out, pos = [], 0
-    for l in sec.splitlines(keepends=True) if base >= 0 else []:
+    for l in sec.split("\n") if base >= 0 else []:
         m = BOX_LINE_RE.match(l.rstrip("\n"))
         if m:
             ac = re.match(r"(AC-\d+)\b", m.group(2))
             key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
             out.append((base + pos, key, m.group(1) != " ", bool(OWNER_MARK_RE.search(l))))
-        pos += len(l)
+        pos += len(l) + 1
     return out
 
 
@@ -1283,7 +1357,7 @@ def owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> dict[str, list
 
 # the kind word after `— owner:`: owner.OWNER_SEG_RE, repeated here because owner.py imports this module; a bare
 # `owner:` is a check
-OWNER_KIND_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
+OWNER_KIND_RE = lib.OWNER_SEGMENT_RE
 SCOPE_FILE = lib.CHARTER_DIR + "/scope.md"
 RAILS_FILE = lib.CHARTER_DIR + "/rails.md"
 SETTINGS_FILE = ".claude/settings.json"
@@ -1293,7 +1367,7 @@ def _owner_lines_by_key(text: str) -> dict[str, list[tuple[bool, str, str]]]:
     """key -> [(checked, the line after its box, kind)] for each line of a unit's acceptance marked `— owner:`."""
     sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
     out: dict[str, list[tuple[bool, str, str]]] = {}
-    for l in (sec or "").splitlines():
+    for l in (sec or "").split("\n"):
         m = BOX_LINE_RE.match(l.rstrip("\n"))
         mk = OWNER_KIND_RE.search(l) if m else None
         if not mk:
@@ -1495,15 +1569,18 @@ CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A
 NUMBER_RE = re.compile(r"[\d.]+")   # a last part made of digits and dots: a ratio `1/2.0`, a branch `release/0.4.22`
 
 
-def _is_dir(root: Path, rel: str) -> bool:
+def _is_dir(root: Path, rel: str, ref: str | None = None) -> bool:
     """A file of that name is not the directory a path needs; a path this user may not look at is not here either."""
+    if ref is not None and not rel.startswith(("/", "~/")):
+        r = lib.git(root, "cat-file", "-t", f"{ref}:{rel}")
+        return r.returncode == 0 and r.stdout.strip() == "tree"
     try:
         return _abs(root, rel).is_dir()
     except OSError:
         return False
 
 
-def missing_dirs(root: Path, line: str) -> list[str]:
+def missing_dirs(root: Path, line: str, ref: str | None = None) -> list[str]:
     """Backticked paths in a line whose directory does not exist here. A file not yet written in an existing
     directory is not listed: a spec names the files its units will create."""
     out = []
@@ -1513,7 +1590,7 @@ def missing_dirs(root: Path, line: str) -> list[str]:
             continue   # a directory, `x/2026/`, is still checked
         # the directory as written: `x/../docs` needs `x` to exist, so it is not normalised away
         d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
-        if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
+        if d not in ("", ".", "~") and not _is_dir(root, d, ref):   # `~/.claude` is a file in the home directory
             out.append(cand)
     return out
 
@@ -1532,9 +1609,9 @@ def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int,
     return [(ln, top, n, first) for top, (ln, n, first) in groups.items()]
 
 
-def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False) -> tuple[int, list[str]]:
+def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False, ref: str | None = None) -> tuple[int, list[str]]:
     """Count anchors in text; return (count of resolving anchors, list of unresolved)."""
-    ok, bad = evidence_anchors(root, text)
+    ok, bad = evidence_anchors(root, text, ref)
     for m in EVIDENCE_REF_RE.finditer(text):
         (ok if m.group(0) in evidence_ids else bad).append(m.group(0))
     if issues:   # a pull request's `#123` / `owner/repo#123` points at an issue the reader can open
@@ -1542,7 +1619,7 @@ def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = Fa
     return len(ok), bad
 
 
-def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False) -> AnchorReport:
+def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False, ref: str | None = None) -> AnchorReport:
     rep = AnchorReport()
     lines = text.splitlines()
     # evidence index ids defined in the document: lines starting with "- E-<n>" or "| E-<n>"
@@ -1564,7 +1641,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             para.clear()
             return
         rep.claims += 1
-        n_ok, bad = _anchors_in(root, joined, evidence_ids, issues)
+        n_ok, bad = _anchors_in(root, joined, evidence_ids, issues, ref)
         admitted = ADMIT_RE.search(joined) is not None
         if bad and not admitted:
             rep.unresolved.append((first, ", ".join(bad[:4])))
@@ -1586,7 +1663,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             continue
         if in_code:
             continue
-        rep.missing.extend((i, p) for p in missing_dirs(root, s))
+        rep.missing.extend((i, p) for p in missing_dirs(root, s, ref))
         if "<!-- charter: opinion -->" in s:
             in_opinion = True; flush(); continue
         if "<!-- charter: /opinion -->" in s:
@@ -1652,7 +1729,8 @@ def changed_paths(root: Path, base: str | None) -> list[str] | None:
     b = usable_base(root, base)
     if b is None:
         return None
-    r = lib.git(root, "diff", "--name-only", "--diff-filter=ACMR", b, "HEAD")
+    # Disable rename detection so both the removed source and added destination are judged.
+    r = lib.git(root, "diff", "--name-only", "--no-renames", "--diff-filter=ACMRTD", b, "HEAD")
     if r.returncode != 0:
         return None
     return [p for p in r.stdout.splitlines() if p.strip()]
@@ -1691,7 +1769,7 @@ def rename_sources(root: Path, base: str | None = None) -> dict[str, str]:
 
 
 def staged_paths(root: Path) -> list[str]:
-    r = lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=ACMR")
+    r = lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRTD")
     return [p for p in r.stdout.splitlines() if p.strip()]
 
 

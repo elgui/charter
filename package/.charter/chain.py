@@ -1657,7 +1657,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
                               "kept": [f"{line} ({why})" for line, why in (plan or {}).get("keep", []) if line in set(open_waited_lines(root, chain, n))]})
     save(root, chain)
     event(root, chain["id"], "chain", "resumed", f"by the owner's /{RESUME_CMD}" + (f" in session {by[:8]}" if by else "")
-          + (f"; closed {', '.join(closed)} in {commit[:7]}" if closed else "") + (f"; note: {note[:200]}" if note else ""))
+          + (f"; closed {', '.join(closed)} in {commit[:7]}" if closed else "") + (f"; note: {len(note)} characters" if note else ""))
     if closed:
         print(f"closed {', '.join(closed)} as the owner in {commit[:7]}")
     if outside:

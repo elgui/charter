@@ -36,15 +36,8 @@ TOOLING_GLOBS = (".claude/skills/**", ".claude/commands/**", ".claude/agents/**"
 VENDOR_GLOBS = ("vendor/**", "third_party/**", "third-party/**")
 ARCHIVE_NAME_RE = re.compile(r"(?i)(progress|status|phase[-_ ]?\d|state[-_]of|next[-_]steps|completed|handoff|sprint[-_]|implementation[-_]plan|todo)")
 DECISION_PATH_RE = re.compile(r"(?i)(^|/)(adrs?|decisions)/[^/]+\.md$|(^|/)[^/]*(adr[-_ ]?\d|decision)[^/]*\.md$")
-CREDENTIALS = [
-    ("stripe secret key", r"[sr]k_(test|live)_[A-Za-z0-9]{16,}"), ("stripe webhook secret", r"whsec_[A-Za-z0-9]{16,}"),
-    ("hubspot token", r"pat-(na|eu)[0-9]-[A-Za-z0-9-]{20,}"), ("aws access key", r"AKIA[0-9A-Z]{16}"),
-    ("github token", r"(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"), ("slack token", r"xox[baprs]-[A-Za-z0-9-]{10,}"),
-    ("google api key", r"AIza[0-9A-Za-z_-]{35}"), ("google oauth secret", r"GOCSPX-[A-Za-z0-9_-]{20,}"),
-    ("anthropic key", r"sk-ant-[A-Za-z0-9_-]{20,}"), ("openai-style key", r"sk-(proj-)?[A-Za-z0-9]{32,}"),
-    ("private key block", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), ("age secret key", r"AGE-SECRET-KEY-1[0-9A-Z]{50,}"),
-    ("telegram bot token", r"[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}"),
-]
+CREDENTIALS = lib.CREDENTIALS
+
 # One-file change sets whose effect on each push-triggered workflow the survey reports.
 CHANGESETS = {"ledger fold": ["charter/ledger.jsonl"], "legacy list edit": ["charter/legacy-taskets.txt"],
               "decision record": ["charter/decisions/example.md"], "tasket edit": [".taskets/example.md"]}

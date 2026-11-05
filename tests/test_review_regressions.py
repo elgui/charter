@@ -502,6 +502,11 @@ class SquashedEvidence(Base):
         (a / "app" / "health.py").write_text((a / "app" / "health.py").read_text().replace("MAX_RETRIES}", "MAX_RETRIES}  # reports retries"))
         commit_all(a, "feat: report retries")
         x = self.sha()
+        # Numeric unresolved abbreviations are deliberately read as numbers by the product.
+        # Generate a fixture commit with a letter instead of depending on a random short SHA.
+        while x.isdigit():
+            git(a, "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-q", "-m", "squash evidence fixture")
+            x = self.sha()
         (a / ".taskets" / "u1.md").write_text(done_unit(f"- {x} app/health.py:6"))
         commit_all(a, "u1 done")
         head = git(a, "rev-parse", "HEAD").stdout.strip()
