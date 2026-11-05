@@ -708,14 +708,14 @@ def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str
     t0 = time.monotonic()
     try:
         r = _run_probe(root, cmd, timeout)
-        out, err, code = r.stdout, r.stderr, r.returncode
+        out, err, code = lib.redact_credentials(r.stdout), lib.redact_credentials(r.stderr), r.returncode
         outcome = probe_outcome(cmd, code)
         line = ((out + err).strip().splitlines() or [""])[-1][:100]
     except subprocess.TimeoutExpired as e:
-        out, err, code, outcome = _stream(e.stdout), _stream(e.stderr), None, "timeout"
+        out, err, code, outcome = lib.redact_credentials(_stream(e.stdout)), lib.redact_credentials(_stream(e.stderr)), None, "timeout"
         line = f"timed out after {timeout} s"
     (out_tail, out_n), (err_tail, err_n) = _tail(out), _tail(err)
-    return {"ac": ac, "command": cmd, "outcome": outcome, "exit": code, "duration_s": round(time.monotonic() - t0, 2),
+    return {"ac": ac, "command": lib.redact_credentials(cmd), "outcome": outcome, "exit": code, "duration_s": round(time.monotonic() - t0, 2),
             "stdout_tail": out_tail, "stderr_tail": err_tail, "stdout_lines": out_n, "stderr_lines": err_n}, line
 
 
@@ -730,6 +730,7 @@ def run_probes_recorded(root: Path, text: str, path: str, timeout: int) -> tuple
     for ac, cmd in probes:
         rec, tail = probe_record(root, ac, cmd, timeout)
         records.append(rec)
+        cmd = rec["command"]
         code = rec["exit"]
         lines.append(f"- `$ {cmd}` → " + (f"exit {code}" if code is not None else tail) + (f" ({tail})" if tail and code else ""))
         if code != 0:
@@ -825,9 +826,11 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
             try:
                 code = _run_probe(wt, cmd, timeout, env).returncode
             except subprocess.TimeoutExpired:
+                cmd = lib.redact_credentials(cmd)
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
                                    override=NOT_RUN_OVERRIDE))
                 continue
+            cmd = lib.redact_credentials(cmd)
             if probe_outcome(cmd, code) == "not-run":
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: exit {code} (not-run), so `{cmd}` does not show it fails without the change", path=path,
                                    override=NOT_RUN_OVERRIDE, exit=code))

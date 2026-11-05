@@ -87,6 +87,28 @@ DEFAULT_CONFIG = {
 }
 
 
+CREDENTIALS = [
+    ("stripe secret key", r"[sr]k_(test|live)_[A-Za-z0-9]{16,}"), ("stripe webhook secret", r"whsec_[A-Za-z0-9]{16,}"),
+    ("hubspot token", r"pat-(na|eu)[0-9]-[A-Za-z0-9-]{20,}"), ("aws access key", r"AKIA[0-9A-Z]{16}"),
+    ("github token", r"(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"), ("slack token", r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    ("google api key", r"AIza[0-9A-Za-z_-]{35}"), ("google oauth secret", r"GOCSPX-[A-Za-z0-9_-]{20,}"),
+    ("anthropic key", r"sk-ant-[A-Za-z0-9_-]{20,}"), ("openai-style key", r"sk-(proj-)?[A-Za-z0-9]{32,}"),
+    ("private key block", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), ("age secret key", r"AGE-SECRET-KEY-1[0-9A-Z]{50,}"),
+    ("telegram bot token", r"[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}"),
+]
+
+
+def redact_credentials(text: str) -> str:
+    """Mask the survey's credential shapes before storing or truncating probe diagnostics.
+    This recognises shapes, not every possible secret; it is not a credential scanner.
+    """
+    text = re.sub(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
+                  "[REDACTED private key]", text, flags=re.S)
+    for kind, pattern in CREDENTIALS:
+        text = re.sub(pattern, lambda _: "[REDACTED " + kind + "]", text)
+    return text
+
+
 # ---------------------------------------------------------------- repo & config
 
 def repo_root(start: str | os.PathLike | None = None) -> Path:
