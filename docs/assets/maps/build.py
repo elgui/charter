@@ -411,7 +411,7 @@ AVAILABILITY = [
     ("Released package", "0.4.22 at b2df24e; inspect each project's manifest and opt-ins. Source updates do not upgrade projects.", "`package/VERSION:1`, `docs/install.md`"),
     ("Implemented, unreleased", "Optional charter-spec recipe at dee2f42 on charter-spec-draft. Manual preparation remains possible without installing it.", "`docs/review/2026-11-03-spec-design-verification.md`"),
     ("External integration", "Tele-Claude already supplies Road preparation views, supervised groups and step checking; exact multi-rail launch is proposed here.", "`docs/design/project-road-control-center.md`"),
-    ("Proposal only", "PR #37 (702b5fd): stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added.", "`docs/design/project-road-control-center.md`"),
+    ("Proposal only", "PR #37, merged at 578b282: stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added.", "`docs/design/project-road-control-center.md`"),
 ]
 
 # --------------------------------------------------------------------------------------------
