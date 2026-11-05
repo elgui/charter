@@ -4,7 +4,7 @@ Status: proposed design, 3 November 2026. No runtime enforcement or project upgr
 
 ## Existing seams
 
-- Charter distributes rules, unit templates and CLI checks through its owned package files; the installer also manages a section of each project's AGENTS.md. This is the route to future projects and upgrades (`bin/charter-pkg:35`, `bin/charter-pkg:243`).
+- Charter distributes rules, unit templates and CLI checks through its owned package files; the installer also manages a section of each project's AGENTS.md. This is the route to future projects and upgrades (`bin/charter-pkg:38`, `bin/charter-pkg:179`, `bin/charter-pkg:243`).
 - Charter already exports acceptance identity and a fingerprint, separately from the action a criterion describes. Closing a protected criterion remains an owner act (`docs/design/owner-acceptance.md:5`).
 - Required review currently means an anchored `review:` line, not authenticated reviewer independence. Executing probes is a separate opt-in (`docs/verification.md:13`).
 - Tele-Claude's filed-check validator requires observation instructions but no evidence of prior agent checks or human necessity (`/home/gui/Projects/tele-claude/services/owner_desk/record.py:251`).
