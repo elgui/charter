@@ -658,12 +658,14 @@ def run_probes(wt: Path, item: dict, timeout: int) -> str:
     for p in item.get("probes") or []:
         with tempfile.TemporaryDirectory(prefix="charter-probe-") as home:
             try:
-                r = subprocess.run(p["probe"], shell=True, cwd=str(wt), capture_output=True, encoding="utf-8", errors="replace",
-                                   timeout=timeout, env=probe_env(Path(home)))
+                r = engine_checks._run_probe(wt, p["probe"], timeout, env=probe_env(Path(home)))
             except subprocess.TimeoutExpired:
-                return f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}"
+                return engine_checks.lib.redact_credentials(
+                    f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}")
         if r.returncode != 0:
-            return f"the probe of {p['path']} {p['key']} exits {r.returncode}: {p['probe']}\n{(r.stdout + r.stderr)[-600:]}"
+            output = engine_checks.lib.redact_credentials(r.stdout + r.stderr)[-600:]
+            command = engine_checks.lib.redact_credentials(p['probe'])
+            return f"the probe of {p['path']} {p['key']} exits {r.returncode}: {command}\n{output}"
     return ""
 
 
