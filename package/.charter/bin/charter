@@ -154,6 +154,8 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
         for p in paths:
             if not (p.startswith(lib.TASKETS_DIR + "/") and p.endswith(".md")):
                 continue
+            if a.staged and p not in tracked:
+                continue   # deleted sources have no checklist to edit; owner protection still sees them
             if not a.strict and p not in changed_set:
                 continue   # judged when its status changed; a unit accepted earlier is not judged again
             text, prev = new(p), old(p)

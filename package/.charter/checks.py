@@ -512,7 +512,7 @@ def check_decision_reads(root: Path, decs: dict[str, dict], paths: list[str] | N
     commit touches the decision or the missing doc, and warns otherwise, so one decision's stale pointer
     does not stop unrelated commits; `charter check --all` and CI refuse it."""
     out: list[Finding] = []
-    # staged_paths leaves deletions out; a commit that deletes a doc a decision points at touches that doc
+    # Include removals even when a caller supplied only a subset of staged paths.
     gone = set(lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=D").stdout.split()) if paths is not None else set()
     for did, d in decs.items():
         if str(d.get("status", "active")) != "active":
@@ -1715,7 +1715,7 @@ def changed_paths(root: Path, base: str | None) -> list[str] | None:
     if b is None:
         return None
     # Disable rename detection so both the removed source and added destination are judged.
-    r = lib.git(root, "diff", "--name-only", "--no-renames", "--diff-filter=ACMRD", b, "HEAD")
+    r = lib.git(root, "diff", "--name-only", "--no-renames", "--diff-filter=ACMRTD", b, "HEAD")
     if r.returncode != 0:
         return None
     return [p for p in r.stdout.splitlines() if p.strip()]
@@ -1754,7 +1754,7 @@ def rename_sources(root: Path, base: str | None = None) -> dict[str, str]:
 
 
 def staged_paths(root: Path) -> list[str]:
-    r = lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRD")
+    r = lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRTD")
     return [p for p in r.stdout.splitlines() if p.strip()]
 
 
