@@ -41,4 +41,3 @@ class HistoryAvailability(unittest.TestCase):
         with mock.patch.object(lib, "git", side_effect=run):
             fits, seen = checks.perimeter_fits(root, units)
         self.assertIn("shallow", checks.fit_text(fits["u1"]))
-

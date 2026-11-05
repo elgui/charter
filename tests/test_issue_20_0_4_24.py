@@ -23,4 +23,3 @@ class SessionAttribution(unittest.TestCase):
         f = checks.check_perimeter(root, cfg, unit, ["app/other.py"], True, {"app/other.py": "sibling"})[0]
         self.assertNotIn("this session did not", f.message)
         self.assertIn("record does not list", f.message)
-

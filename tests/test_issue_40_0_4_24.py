@@ -28,4 +28,3 @@ class OwnerSeparators(unittest.TestCase):
             self.assertEqual(checks.owner_line_changes(text, text.replace("[ ] AC-2", "[x] AC-2")), ["AC-2"])
         for line in ("- [ ] AC-2: ask owner: do the work", "Ordinary prose; owner: do", "- [ ] AC-2: ask; owner: does the work"):
             self.assertFalse(owner.OWNER_SEG_RE.search(line), line)
-

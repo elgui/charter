@@ -31,4 +31,3 @@ class ProbeCredentials(unittest.TestCase):
         text = re.sub(r"probe: `[^`]*`", lambda _: "probe: `" + cmd + "`", UNIT)
         findings, lines, records = checks.run_probes_recorded(root, text, "u1.md", 2)
         self.assertNotIn(secret, str((findings, lines, records)))
-

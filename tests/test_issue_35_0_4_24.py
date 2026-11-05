@@ -25,4 +25,3 @@ class ProbeChildren(unittest.TestCase):
         self.assertEqual(rec["outcome"], "timeout")
         time.sleep(2.2)
         self.assertFalse((root / "escaped").exists(), "probe child survived timeout")
-

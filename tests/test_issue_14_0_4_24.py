@@ -31,4 +31,3 @@ class PhysicalLineNumbers(unittest.TestCase):
             queue = owner.owner_lines(root, "u1", u, owner.legacy_re(root, lib.load_config(root)))
             self.assertEqual(queue[0]["line"], rows[1]["line"])
             self.assertIn(char, lib.section(lib.split_frontmatter(text)[2], "Context"))
-

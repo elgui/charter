@@ -31,4 +31,3 @@ class DeletedOwnerFiles(unittest.TestCase):
                 self.assertIn("decides what the gates enforce", result.stdout)
                 commit_all(root, "remove scope for CI test")
                 self.assertIn("charter/scope.md", checks.changed_paths(root, base))
-

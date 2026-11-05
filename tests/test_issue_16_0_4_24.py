@@ -21,4 +21,3 @@ class DuplicateOwnerFields(unittest.TestCase):
         self.assertEqual(lib.split_frontmatter(changed)[0]["status"], "active")
         self.assertEqual(changed.count("status: active"), 2)
         self.assertIn("status: body stays", changed)
-
