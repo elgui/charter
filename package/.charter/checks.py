@@ -1652,7 +1652,8 @@ def changed_paths(root: Path, base: str | None) -> list[str] | None:
     b = usable_base(root, base)
     if b is None:
         return None
-    r = lib.git(root, "diff", "--name-only", "--diff-filter=ACMR", b, "HEAD")
+    # Disable rename detection so both the removed source and added destination are judged.
+    r = lib.git(root, "diff", "--name-only", "--no-renames", "--diff-filter=ACMRD", b, "HEAD")
     if r.returncode != 0:
         return None
     return [p for p in r.stdout.splitlines() if p.strip()]
@@ -1691,7 +1692,7 @@ def rename_sources(root: Path, base: str | None = None) -> dict[str, str]:
 
 
 def staged_paths(root: Path) -> list[str]:
-    r = lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=ACMR")
+    r = lib.git(root, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRD")
     return [p for p in r.stdout.splitlines() if p.strip()]
 
 
