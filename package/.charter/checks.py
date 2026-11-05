@@ -641,7 +641,33 @@ def _stream(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
 
 
-_PYTEST_RE = re.compile(r"(?:^|[\s/;&|(])(?:pytest|py\.test)(?=[\s;&|)]|$)|-m\s+pytest\b")
+_RUNNERS = {"uv": "run", "poetry": "run", "pipenv": "run", "pdm": "run", "hatch": "run", "rye": "run"}
+
+
+def _runs_pytest(cmd: str) -> bool:
+    """Whether some simple command in `cmd` runs pytest: `pytest`/`py.test` (any path) in the command's own position,
+    after `VAR=x`, `env`, `timeout N` or a runner's `run`, or a Python with `-m pytest`. A word `pytest` among a
+    command's arguments (`./check.py --format pytest`) is not pytest running."""
+    import shlex
+    for seg in re.split(r"&&|\|\||[;|&()\n]", cmd):
+        try:
+            w = shlex.split(seg)
+        except ValueError:
+            w = seg.split()
+        while w and (re.fullmatch(r"\w+=\S*", w[0]) or w[0] in ("env", "nice", "time", "command", "exec")):
+            w = w[1:]
+        if w and w[0] == "timeout":
+            w = [x for x in w[1:] if not x.startswith("-")][1:]
+        if len(w) > 1 and _RUNNERS.get(Path(w[0]).name) == w[1]:
+            w = w[2:]
+        if not w:
+            continue
+        exe = Path(w[0]).name
+        if exe in ("pytest", "py.test"):
+            return True
+        if exe.startswith("python") and ("-mpytest" in w or any(a == "-m" and b == "pytest" for a, b in zip(w, w[1:]))):
+            return True
+    return False
 
 
 def probe_outcome(cmd: str, code: int) -> str:
@@ -651,7 +677,7 @@ def probe_outcome(cmd: str, code: int) -> str:
     command's words; none of these proves the probe fails without the change."""
     if code == 0:
         return "passed"
-    if code in (126, 127) or (code in (4, 5) and _PYTEST_RE.search(cmd)):
+    if code in (126, 127) or (code in (4, 5) and _runs_pytest(cmd)):
         return "not-run"
     return "failed"
 

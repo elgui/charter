@@ -160,5 +160,22 @@ class ProbeOutcome(unittest.TestCase):
             self.assertEqual(o(cmd, 4), "failed", cmd)
 
 
+
+class PytestIsTheCommand(unittest.TestCase):
+    """/reviewPR #43: `pytest` counts only where it runs, not as another command's argument."""
+
+    def test_a_word_pytest_among_arguments_is_not_pytest(self):
+        o = checks.probe_outcome
+        for cmd in ("./check.py --format pytest", "echo pytest", "grep pytest setup.cfg"):
+            self.assertEqual(o(cmd, 5), "failed", cmd)
+            self.assertEqual(o(cmd, 4), "failed", cmd)
+
+    def test_other_spellings_of_running_pytest(self):
+        o = checks.probe_outcome
+        for cmd in ("python3 -mpytest t.py", "python3 -m 'pytest' t.py", "timeout 60 pytest t.py", "FOO=1 pytest t.py",
+                    "poetry run pytest t.py"):
+            self.assertEqual(o(cmd, 4), "not-run", cmd)
+
+
 if __name__ == "__main__":
     unittest.main()
