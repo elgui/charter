@@ -139,7 +139,7 @@ After the owner's commit:
 
 | Check | Command (from `$P`) | Expected |
 |---|---|---|
-| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`package/.charter/checks.py:1445`) |
+| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`check_owner_commits` in `package/.charter/checks.py`) |
 | The installed version | `python3 .charter/bin/charter version` | the target version, as in `package/VERSION` |
 | The config reads as written | `python3 .charter/bin/charter config` | `track <track>, opt-ins: none`, exit 0. A `problem:` line names a key, type or track the gates cannot read; the owner corrects it (`cmd_config` in `package/.charter/bin/charter`) |
 | The files match the package | `python3 $M status $P` | `installed: <version>`, `locally modified: 0; missing: 0; differ from package: 0`, and `git core.hooksPath: .charter/githooks` (or `unset` where a framework runs the gate; `do_status` in `bin/charter-pkg`) |
@@ -160,10 +160,10 @@ cd <clone> && python3 .charter/bin/charter setup
 
 Expected, one of:
 
-- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`package/.charter/bin/charter:992`)
-- `git hook already active (core.hooksPath = .charter/githooks)` (`package/.charter/bin/charter:983`)
-- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`package/.charter/bin/charter:985`).
-- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`package/.charter/bin/charter:987`).
+- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`cmd_setup` in `package/.charter/bin/charter`)
+- `git hook already active (core.hooksPath = .charter/githooks)` (`cmd_setup` in `package/.charter/bin/charter`)
+- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`cmd_setup` in `package/.charter/bin/charter`).
+- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`cmd_setup` in `package/.charter/bin/charter`).
 
 `setup` needs no charter checkout. A clone that skips it is still gated by CI. The SessionStart banner says when the hook is missing (`package/.charter/githooks/README.md`).
 
@@ -174,7 +174,7 @@ A new package version reaches a project only by an upgrade; nothing pulls it. Th
 1. Step 0 again: `upgrade` does not check the working tree either (`do_install` in `bin/charter-pkg` runs both).
 2. `git -C $P switch -c charter-<version>`: the upgrade lands on a branch (`machine/skills/CharterAdmin/SKILL.md:72`).
 3. Read the upgrade notes in `docs/package.md` § Versioning and upgrade for every version between the installed one and the target. Some ask for a step after the upgrade.
-4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`do_install` and `Plan.write` in `bin/charter-pkg`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:169`).
+4. `python3 $M upgrade $P --dry-run`. Expected: `upgrade <installed> -> <version> in <project>`, a unified diff for each owned file that would change, then `dry run: <n> change(s); charter <version>` (`do_install` in `bin/charter-pkg`). `nothing installed in <project>; use install` means there is nothing to upgrade (`bin/charter-pkg:169`).
 5. `python3 $M upgrade $P`. It stages what it wrote and ends with a block that says who commits. `Staged <n> file(s) ...; none is an owner-only change, so an agent commits them:` is followed by the command: run it yourself (from 0.4.6, `release_change` in `package/.charter/checks.py`). `Waiting on the owner:` is step 8's block, ending with the owner's line. A line `KEEP (locally modified, use --force to overwrite) <path>` means the project changed a package file. Show the owner the difference; `--force` replaces it, on the owner's word only. `upgrade` never rewrites `charter/config.json`, so new config keys take the package defaults (`docs/package.md` § Versioning and upgrade).
 6. Any step a version's note asks for that writes a file the owner does not own, such as `charter ledger fold` writing `charter/ledger.jsonl`: commit it yourself, apart from the upgrade, since the gate refuses only owner-only changes (`CLI_ONLY_FILES` in `package/.charter/checks.py`). Then commit the upgrade, or hand it over as in step 8 when the block says so. If you committed anything after the installer ran, run `python3 .charter/bin/charter handover` before handing over: it records the handover again from the index and prints the line. The verb refuses a handover that a commit since has overtaken (`handover_stale` in `package/.charter/lib.py`). The report opens with what waits on the owner, if anything, as the owner's line (`! <line>`), then says what the upgrade changed.
 7. Step 9, and the checks the version's note in `docs/package.md` asks for.
