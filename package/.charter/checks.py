@@ -330,7 +330,7 @@ def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "", ref: st
         if r.stdout.strip() != "blob":
             return False
         r = lib.git(root, "show", f"{ref}:{value}")
-        return r.returncode == 0 and 1 <= int(extra) <= max(1, len(r.stdout.splitlines()))
+        return r.returncode == 0 and 1 <= int(extra) <= max(1, lib.line_count(r.stdout))
     if anchor_kind == "fileline":
         p = _abs(root, value)
         if not _exists(p, file=True):
