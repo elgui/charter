@@ -179,7 +179,7 @@ An honest guarantee is: every factual claim in a checked deliverable points at s
 3. **Done and accepted**: units with `status: done`, all acceptance boxes checked and evidence that names a commit or a run and resolves; each line anchored to the unit file and its evidence. A commit the clone cannot resolve, cited by a unit whose done status is committed, is counted as historical (a squash or rebase merge removed it) and named as such.
 4. **Done but not accepted**: the other done units: an unchecked box, no commit or run in `## Evidence`, or an anchor that does not resolve (`cmd_synth` in `package/.charter/bin/charter`).
 5. **Done before charter** (only when there are some): done units the done gate never judged, listed apart from "Done but not accepted" (0.4.4). These are units whose done status was last set before the commit that added `charter/VERSION` and is still the committed status, and units of `charter/legacy-taskets.txt` without `## Acceptance`, which the gate only warns on (`check_unit_done` in `package/.charter/checks.py`). Their missing evidence says nothing about work done under charter.
-6. **In progress**: units with a non-terminal status and at least one log line, with the last log line and date. **Open, not started**: the same without a log line (`_unit_state` in `package/.charter/bin/charter`).
+6. **In progress**: units with `status: in-progress`, with the last log line and date. **Logged (progress not asserted)**: units with another non-terminal status and at least one log line; a log describes work, it never records a start. **Open, not started**: the same without a log line (`_unit_state` in `package/.charter/bin/charter`; `tests/test_logged_state_0_4_23.py`).
 7. **Blocked**: units with `status: blocked` and their stated blocker.
 8. **Perimeter fit** (0.4.15): one line per unit that a commit subject names (`unit <id>`): the commits and files, the files outside its `perimeter:` and how many are noted under `## Outside perimeter`, and the entries no commit touched; a first line counts the commits that name no unit, an id several units share, or several units, which it cannot see into. A report, never a gate (`perimeter_fits` in `package/.charter/checks.py`; `docs/gates.md` § Perimeter).
 9. **Open decisions**: decisions with `status: proposed`, and change requests with `status: proposed`.
@@ -192,7 +192,7 @@ It then runs `charter anchors` on its own output and exits non-zero without writ
 
 - the active unit, and whether every box is checked;
 - the open rails in order, with their units counted by state;
-- the open units on those rails, the started ones first;
+- the open units on those rails, in the order `in-progress` (frontmatter status), `logged` (a Log, no such status), `open`, `blocked` (`_NEXT_RANK` in `package/.charter/bin/charter`);
 - the units off the road;
 - what waits on the owner: proposed decisions and changes, a rail whose units are all finished, owner-only files staged for commit;
 - the gate log over 7 days.

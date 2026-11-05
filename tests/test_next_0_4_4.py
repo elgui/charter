@@ -98,12 +98,34 @@ class Next(unittest.TestCase):
         out = self.next()
         road = section(out, "Road (charter/rails.md):")
         self.assertIn("- r1 [in-progress]: 1 accepted", road)
-        self.assertIn("- r2 [next]: 1 in-progress, 1 open", road)
+        self.assertIn("- r2 [next]: 1 logged, 1 open", road)
         self.assertIn("- r3 [next]: no unit cites it, so none can start", road)
         self.assertIn("- later (1 todo): r4", road)
         self.assertFalse(any(l.startswith("- r0") for l in road))   # a closed rail is not on the road ahead
         ahead = section(out, "Next on the road:")
-        self.assertEqual([l.split(" ")[1] for l in ahead], ["b1", "b2"])   # the unit already started comes first
+        self.assertEqual([l.split(" ")[1] for l in ahead], ["b1", "b2"])   # the unit with a log comes first
+
+    def test_logs_do_not_assert_progress(self):
+        for status in ("later", "next", "in-progress"):
+            for has_log in (False, True):
+                uid = f"{status}-{int(has_log)}"
+                put(self.root, uid, unit(uid, status,
+                    log="- 2026-10-29 prepared evidence, not a start" if has_log else ""))
+        commit_all(self.root, "status and log combinations")
+        out = self.next("--limit", "10")
+        data = json.loads(self.next("--json"))
+        synth = charter(self.root, "synth")
+        self.assertEqual(synth.returncode, 0, synth.stdout + synth.stderr)
+        for status in ("later", "next", "in-progress"):
+            for has_log in (False, True):
+                uid = f"{status}-{int(has_log)}"
+                expected = "in-progress" if status == "in-progress" else "logged" if has_log else "open"
+                with self.subTest(status=status, has_log=has_log):
+                    self.assertIn(f"[{status}, {expected}]", next(l for l in out.splitlines() if l.startswith(f"- {uid} —")))
+                    row = next(u for u in data["open"] if u["id"] == uid)
+                    self.assertEqual(row["state"], expected)
+                    heading = {"in-progress": "In progress", "logged": "Logged (progress not asserted)", "open": "Open, not started"}[expected]
+                    self.assertTrue(any(l.startswith(f"- {uid} —") for l in synth_section(synth.stdout, heading)))
 
     def test_units_off_the_road(self):
         self.road()

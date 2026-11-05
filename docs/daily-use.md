@@ -49,7 +49,7 @@ Codex and other agents get no banner. They read the `AGENTS.md` section the inst
 
 ## 2. Pick or write the unit
 
-One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with the ones already started first.
+One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with units whose status is `in-progress` first, then those that only have a log (`logged`), then the rest (`_NEXT_RANK` in `package/.charter/bin/charter`).
 
 A unit is ready when:
 

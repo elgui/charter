@@ -289,7 +289,9 @@ def _unit_state(root: Path, cfg: dict, u: dict, legacy: set[str] = frozenset(), 
         return "blocked", info
     if status in lib.TERMINAL_STATUSES:
         return "closed", info
-    return ("in-progress" if log else "open"), info
+    if status == "in-progress":
+        return "in-progress", info
+    return ("logged" if log else "open"), info
 
 
 def _done_before_charter(root: Path, cfg: dict) -> set[str]:
@@ -375,7 +377,7 @@ def cmd_synth(a) -> int:
         return f"- {uid} — {u.get('title', '')} [{u.get('status')}]: {info['boxes'] - info['open']}/{info['boxes']} criteria closed; evidence: {ev}{hist}{extra} ({u['_path']})"
 
     for title, want in (("Done and accepted", "accepted"), ("Done but not accepted (evidence or criteria missing)", "done-unaccepted"),
-                        ("In progress", "in-progress"), ("Open, not started", "open"), ("Blocked", "blocked")):
+                        ("In progress", "in-progress"), ("Logged (progress not asserted)", "logged"), ("Open, not started", "open"), ("Blocked", "blocked")):
         rows = [(uid, u) for uid, u in units.items() if states[uid][0] == want]
         L.append(f"## {title}")
         if rows:
@@ -516,7 +518,7 @@ def cmd_synth(a) -> int:
 # ---------------------------------------------------------------- next
 
 # The order open units are offered in: resume what has started before starting something new.
-_NEXT_RANK = {"in-progress": 0, "open": 1, "blocked": 2}
+_NEXT_RANK = {"in-progress": 0, "logged": 1, "open": 2, "blocked": 3}
 FINISHED = ("accepted", "closed", "done-before-charter")
 
 
