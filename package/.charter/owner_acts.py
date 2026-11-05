@@ -666,7 +666,7 @@ def run(root: Path, chain: dict, only: list[int] | None = None, assume_yes: bool
             return 130
     plan = resume_plan(root, chain, n)
     print("\n" + "\n".join(plan_lines(plan)), file=out)
-    print(f"\nNow type `/resume-chain ok` in Claude Code, in the chain's tab or a session of your own in {root}"
+    print(f"\nNow type `/resume-chain ok` in Claude Code, in a session of your own in {root}"
           + ("" if not plan["keep"] else "; the next session gets each failed act's output, so a note is needed only for what it cannot see")
           + f". Run one act again with `{RUN_CMD} --only <n>`.", file=out)
     return 0 if all(r["status"] in OK_STATUSES + ("later",) for r in results.values()) else 1

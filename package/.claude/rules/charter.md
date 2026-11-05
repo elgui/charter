@@ -22,6 +22,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 ## Before you say done
 
 - `done` is refused without: every acceptance box checked, and `## Evidence` naming a commit SHA that resolves or a `$ command` run. A path or a URL alone is not evidence. `python3 .charter/bin/charter probe <id>` runs the probes and prints the `$ command` lines.
+- A unit whose `perimeter:` touches an active decision's `gate_paths:` also needs `## Evidence` matching that decision's `gate_evidence:`. `charter unit start` and the session banner say so, and the decision's `read:` doc says what to run. `waives: [<decision>]` excuses a unit that cannot meet it (one that builds what the gate needs); say why in `## Log`. Done then warns instead of refusing.
 - A final message after a turn that edited files or committed, and that claims completion, cites a commit, a `path:line` or a `$ command` run, or says plainly what is not done. The Stop hook blocks such a message once.
 - Reports and syntheses are checked by `python3 .charter/bin/charter anchors <file>`: every claim line needs an anchor, or a marker that admits it as reported or inference: `(reported in ...)`, `(operator report ...)`, `(inference ...)`, `(unverified)`, `(estimate ...)`. A pull-request description is checked with `--pr`, as a warning.
 
@@ -31,7 +32,7 @@ These are refused to an agent's Edit and Write, and CI checks that the owner aut
 
 - `charter/scope.md`, `charter/rails.md`, `charter/config.json`, `.charter/**`, `.claude/settings.json`, `.claude/settings.local.json`, `.github/workflows/charter.yml`, and adding an id to `charter/legacy-taskets.txt`. An upgrade is the exception: package files exactly as the installer wrote them, matching `.charter/manifest.json`, are yours to commit.
 - In a change request: `status:` other than `proposed`, `approved_by:`, `approved_on:`, and the `paths:` of an approved one.
-- In an existing decision: `status:`, `superseded_by:`, and the `check:` and `binds:` of an active one.
+- In an existing decision: `status:`, `superseded_by:`, and the `check:`, `binds:`, `gate_paths:` and `gate_evidence:` of an active one.
 - Opening or widening a `kind: split` unit.
 - Closing an acceptance line marked `— owner:` (ticking, unmarking or removing it): the owner confirms it through the owner desk or `charter accept` using its exported acceptance fingerprint; `/resume-chain ok` remains available when a chain waits on it. Agents never run `charter accept`.
 - Running a waiting chain's acts: `charter owner run` is the owner's command (the hook denies it to an agent). Give the owner the command, never run it.
@@ -53,6 +54,7 @@ The owner edits these by hand or in a Claude Code session started with `CHARTER_
 ## Decisions and memory
 
 - A design decision that other code depends on goes in `charter/decisions/<slug>.md` (template in `charter/templates/decision.md`), with the case that justified it and when it stops applying. Do not put it in `CLAUDE.md`.
+- A decision can name, in `read:`, the doc that says how to follow it. While the decision is active, every session start points at that doc, and the decisions gate refuses a missing one.
 - A lesson that should bind this project is a decision with `kind: lesson`. Personal auto-memory is for your own habits, never for project rules.
 - Commitments are the owner's alone. A commitment is anything that changes an external obligation: what is sold, price, dates, deployment, production data or schema, purchase or budget, public release, another person's work, widening a permission, merging into main. Propose it and wait for the owner's word; an instruction from the owner in this session is that word. At delegate level `open`, a merge of the owner's own reviewed PR is asked of the delegate (above) instead. For what is sold, price or dates, the proposal is a change request in `charter/changes/`.
 

@@ -119,7 +119,7 @@ class Wait(WaitCase):
         nxt = charter(self.root, "next").stdout
         self.assertIn(f"chain {self.cid} waits on you: 1 act(s) from session 1", nxt)
         self.assertEqual(it[f"chain:{self.cid}"]["title"], f"chain {self.cid} waits on you: 1 act(s) from session 1")
-        self.assertIn("then type `/resume-chain ok` in Claude Code, in the chain's tab once its session has handed over, or a session of your own", nxt)
+        self.assertIn("then type `/resume-chain ok` in Claude Code, in a session of your own", nxt)
         self.assertNotIn("chain resume", nxt)
 
         r = cli(self.root, "start", "--unit", "u1", "--launcher", self.launcher, "--review", "off")

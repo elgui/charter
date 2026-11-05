@@ -7,7 +7,7 @@ What to do once charter is installed (`docs/install.md`), for the owner and for 
 | Word | Meaning |
 |---|---|
 | unit, tasket | One deliverable, as a markdown file in `.taskets/` with its acceptance criteria, evidence and log (`docs/method.md` § The unit of work) |
-| probe | A command that proves one acceptance criterion; it fails before the work and passes after (`package/charter/templates/unit.md:24-26`) |
+| probe | A command that proves one acceptance criterion; it fails before the work and passes after (`package/charter/templates/unit.md:25-27`) |
 | evidence | Under `## Evidence`: a commit SHA, a `path:line` and the `$ command` lines of the probes; a path or a URL alone is refused (`package/.claude/rules/charter.md:24`) |
 | track | `client` when a signed devis (quote) or contract covers the project, `prototype` otherwise (`docs/method.md` § Two tracks) |
 | scope | `charter/scope.md`, the summary of the signed devis; client track only (`docs/method.md:9`) |
@@ -19,14 +19,14 @@ What to do once charter is installed (`docs/install.md`), for the owner and for 
 ## The loop
 
 1. **Open a session.** Read the banner (`package/.charter/hooks/session_start.py`).
-2. **Pick or write the unit**, with probes that fail today (`package/charter/templates/unit.md:24-26`).
+2. **Pick or write the unit**, with probes that fail today (`package/charter/templates/unit.md:25-27`).
 3. **Start it**, and record the failing baseline (`package/.claude/skills/charter-unit/SKILL.md`).
 4. **Work** inside its perimeter; record decisions as they are made (`package/.claude/rules/charter.md:15-19`).
 5. **Commit.** The gate runs on every commit, whoever makes it (`package/.charter/githooks/pre-commit`).
 6. **Close it**: probes pass, boxes checked, evidence cited, `status: done` (`package/.claude/rules/charter.md:24`).
 7. **Report** when someone asks where things stand (`package/.claude/skills/charter-progress/SKILL.md`).
 
-The owner's part runs beside it: commit what only the owner may, approve or refuse what the agent proposed, and once a week read what the gates did (§ What only the owner does, below; `package/.claude/rules/charter.md:28-38`).
+The owner's part runs beside it: commit what only the owner may, approve or refuse what the agent proposed, and once a week read what the gates did (§ What only the owner does, below; `package/.claude/rules/charter.md:29-39`).
 
 ## 1. Open a session
 
@@ -49,13 +49,13 @@ Codex and other agents get no banner. They read the `AGENTS.md` section the inst
 
 ## 2. Pick or write the unit
 
-When starting from a road rather than a prepared unit, use the [preparation sequence](method.md#prepare-the-road-for-execution). Read `charter next --json` and `charter owner --json`, compare decisions and sources, and resolve what each unit needs to start and finish. These commands report records; neither proves design adequacy nor validates an external runner's dependency selection (`package/.charter/bin/charter:532`, `package/.charter/owner.py`, `docs/design/project-road-control-center.md`).
+When starting from a road rather than a prepared unit, use the [preparation sequence](method.md#prepare-the-road-for-execution). Read `charter next --json` and `charter owner --json`, compare decisions and sources, and resolve what each unit needs to start and finish. These commands report records; neither proves design adequacy nor validates an external runner's dependency selection (`package/.charter/bin/charter:542`, `package/.charter/owner.py`, `docs/design/project-road-control-center.md`).
 
 One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with the ones already started first.
 
 A unit is ready when:
 
-- every line under `## Acceptance` names a probe that can be run, and that probe **fails now**. A criterion that protects behaviour which already works says `(guard)` (`package/charter/templates/unit.md:26`);
+- every line under `## Acceptance` names a probe that can be run, and that probe **fails now**. A criterion that protects behaviour which already works says `(guard)` (`package/charter/templates/unit.md:27`);
 - `perimeter:` lists the paths it may touch (`package/charter/templates/unit.md:11`);
 - on the client track, `scope:` names an item of `charter/scope.md` or an approved change (`package/.claude/rules/charter.md:9`);
 - where `charter/rails.md` exists, `rail:` names an open item of it. Work the road does not name waits until the owner adds a rail item, because that is the re-plan (`package/.claude/rules/charter.md:10`).
@@ -81,11 +81,11 @@ That failure is the baseline: it goes into the unit's `## Log` as the session's 
 ## 4. Work
 
 - Stay inside `perimeter:`. A file outside it gets a `- <path>: <why>` line under `## Outside perimeter` before the commit (`package/.claude/rules/charter.md:16`).
-- When a choice is made that other code will depend on, say "record the decision". The `charter-decision` skill writes `charter/decisions/<slug>.md`, and the code cites it as `charter:<slug>` (`package/.claude/skills/charter-decision/SKILL.md`). Project lessons go there too, as `kind: lesson`, not into personal memory (`package/.claude/rules/charter.md:43`).
+- When a choice is made that other code will depend on, say "record the decision". The `charter-decision` skill writes `charter/decisions/<slug>.md`, and the code cites it as `charter:<slug>` (`package/.claude/skills/charter-decision/SKILL.md`). Project lessons go there too, as `kind: lesson`, not into personal memory (`package/.claude/rules/charter.md:44`).
 - A file over the size limit is frozen. Move code out of it into a new file; letting it grow needs a `kind: split` unit the owner opens (`package/.claude/rules/charter.md:17`).
-- Work the client did not buy, or a change to price, dates or what is sold, becomes a change request, not a commit (`package/.claude/rules/charter.md:44`).
+- Work the client did not buy, or a change to price, dates or what is sold, becomes a change request, not a commit (`package/.claude/rules/charter.md:45`).
 - Append a dated `## Log` line whenever something lands or the session stops. The next session resumes from the unit, not from the transcript (`package/.claude/rules/charter.md:19`).
-- Subagents read; the parent session writes (`package/.claude/rules/charter.md:49`).
+- Subagents read; the parent session writes (`package/.claude/rules/charter.md:50`).
 
 In a Claude Code session, the gates act on each Edit, Write and NotebookEdit before it lands: an out-of-scope path, an owner-only file or a growing frozen file is refused with the override named (`docs/gates.md` § Claude Code hooks).
 
@@ -103,7 +103,7 @@ A refusal prints one line per finding, each with its `Override:`. Do what the ov
 
 Use [What verification establishes](verification.md) to distinguish a done record, executed probes, review and the tele-claude checker, and to report their limits (`docs/verification.md:7`).
 
-For an optional later check of whether delivered work helped, see the [hypothetical outcome-review example](examples/outcome-review.md), which uses existing Context, Acceptance, Evidence and Log sections (`package/charter/templates/unit.md:18`).
+For an optional later check of whether delivered work helped, see the [hypothetical outcome-review example](examples/outcome-review.md), which uses existing Context, Acceptance, Evidence and Log sections (`package/charter/templates/unit.md:19`).
 
 To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` § Finish).
 
@@ -111,11 +111,11 @@ To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` 
 2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
 4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
-5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:738`).
+5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:748`).
 
 A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
-The final message of the turn cites the same evidence. A completion claim without a commit, a `path:line` or a `$ command` is blocked once by the Stop hook (`package/.claude/rules/charter.md:25`).
+The final message of the turn cites the same evidence. A completion claim without a commit, a `path:line` or a `$ command` is blocked once by the Stop hook (`package/.claude/rules/charter.md:26`).
 
 ## 7. Report
 
@@ -132,25 +132,25 @@ The synthesis lists scope, done and accepted units with their evidence, work in 
 
 To the agent: `/charter-chain` with the first unit and the instruction, for example `/charter-chain u1 go with unit 1, and keep going while things go well` (`package/.claude/skills/charter-chain/SKILL.md`). The session you type it in starts the chain and monitors it; the work happens in fresh sessions, one after another:
 
-1. `charter chain start` checks that the tree is clean, no chain runs and a launcher exists, creates the branch `chain/<id>` when you are on main, and opens session 1. With the spawn plugin installed it opens as a tab beside yours, titled `[s] chain <id> s01`; otherwise pass `--launcher headless` (`resolve_launcher` in `package/.charter/chain.py`).
+1. `charter chain start` checks that the tree is clean, no chain runs and a launcher exists, creates the branch `chain/<id>` when you are on main, and opens session 1 in the tree you started from, a linked worktree included (`launch` passes the shim `--workspace`; the dry run prints `sessions open in`). With the spawn plugin installed it opens as a tab beside yours, titled `[s] chain <id> s01`; otherwise pass `--launcher headless` (`resolve_launcher` in `package/.charter/chain.py`).
 2. Each session gets the rules from `.charter/chain-rules.md` through the hook, your instruction verbatim, and its predecessor's handoff and verification. It verifies that work first, then works unit after unit, and hands over at 25% of its context window. At 30% the hook refuses everything but the handoff (`docs/gates.md` § Chain budget and hand-over). The check runs before each tool, so one tool's output can still carry a session a little past 30%, and a transcript the hook cannot read leaves the session unchecked.
-3. `charter chain next`, run by the session, refuses a malformed handoff, records what the session committed, re-runs the probes of the units it closed, runs the gates on its change set, and opens the next session with all of that in its briefing. It closes the tab of the session before (`cmd_next` in `package/.charter/chain.py`).
+3. `charter chain next`, run by the session, refuses a malformed handoff, records what the session committed, re-runs the probes of the units it closed, runs the gates on its change set, and opens the next session with all of that in its briefing. A session's tab closes about a minute after it ends, whichever way it ended (hand-over, wait, halt, complete, a stall, a stop), so a finished session holds no memory; its transcript stays, and `claude --resume <session id>` reads it (`close_session` in `package/.charter/chain.py`, `chain.close_delay_s`).
 4. At the end of each group of units (an item of `charter/rails.md`), the chain waits a few minutes for Codex to review the group's commits, in a worktree of its own. If it finds something, the next session answers each finding (fixed, dismissed with evidence, or a halt for you) before the next group starts. Each group is then cleared at a commit you can merge up to (`docs/design/continuous-chain.md` § Groups and their review).
 5. The chain ends on its own: `complete` when the road is finished, `halted` when a session needs you (the reason is the question), `stopped` by `charter chain stop`. Two sessions in a row that land nothing halt it, and so does the session limit (12 by default; `chain` in `lib.DEFAULT_CONFIG`, `package/.charter/lib.py`).
 
-The monitoring session tells you each hand-over in one line (`package/.claude/skills/charter-chain/SKILL.md` § Monitor). When the chain waits on you, the session's last message lists your acts, from the `owner.md` it wrote, each with Codex's note on its risk. Run them all with one command, `! python3 .charter/bin/charter owner run`, in the chain's tab, any session of the project, or a terminal: each `sudo` asks for Touch ID or your password there, and the run records what passed (`run` in `package/.charter/owner_acts.py`). Then type `/resume-chain ok`: it closes the `— owner:` lines whose acts passed, and a failed one stays open, its output passed to the next session. `/resume-chain skip <your note>` goes on with every line open, and any note goes verbatim to the next session. Type it in the chain's tab once its session has handed over, or in a session of your own; a session still at work refuses it. A halt is answered the same way, with `/resume-chain <your note>`. The charter hook performs it, and the prompt never reaches the model. Nobody else can resume the chain: `charter chain resume` refuses, the monitoring session only tells you what to type, and "resume" or "continue" in its chat means it goes on monitoring (`docs/gates.md` § The owner's resume). `charter chain status` shows every session's peak context and what it landed, from any terminal. The commits are on `chain/<id>`: review and merge them as usual (merging is yours). `charter chain status` lists each group with the commit it is cleared at; merge up to one with a merge commit or a fast-forward, not a squash, so the later groups still apply. `charter chain report` prints every group's review and its answers as one comment for the pull request you open (`cmd_report` in `package/.charter/chain_groups.py`).
+The monitoring session tells you each hand-over in one line (`package/.claude/skills/charter-chain/SKILL.md` § Monitor). When the chain waits on you, the session's last message lists your acts, from the `owner.md` it wrote, each with Codex's note on its risk. Run them all with one command, `! python3 .charter/bin/charter owner run`, in a session of your own in the chain's tree, or a terminal: each `sudo` asks for Touch ID or your password there, and the run records what passed (`run` in `package/.charter/owner_acts.py`). Then type `/resume-chain ok`: it closes the `— owner:` lines whose acts passed, and a failed one stays open, its output passed to the next session. `/resume-chain skip <your note>` goes on with every line open, and any note goes verbatim to the next session. Type it in a session of your own, opened in the chain's tree (`cd <tree> && claude`, which `charter owner` prints): the chain's tab has closed, and a session on another branch or worktree is refused; a session still at work refuses it too. A halt is answered the same way, with `/resume-chain <your note>`. The charter hook performs it, and the prompt never reaches the model. Nobody else can resume the chain: `charter chain resume` refuses, the monitoring session only tells you what to type, and "resume" or "continue" in its chat means it goes on monitoring (`docs/gates.md` § The owner's resume). `charter chain status` shows every session's peak context and what it landed, from any terminal. The commits are on `chain/<id>`: review and merge them as usual (merging is yours). `charter chain status` lists each group with the commit it is cleared at; merge up to one with a merge commit or a fast-forward, not a squash, so the later groups still apply. `charter chain report` prints every group's review and its answers as one comment for the pull request you open (`cmd_report` in `package/.charter/chain_groups.py`).
 
 Don't work in the same clone while a chain runs: both sessions would share one active unit (`docs/bugs/2026-10-02-concurrent-sessions-in-one-clone-share-one-active-unit.md`). A folder Claude Code has not trusted stops a new tab at the trust menu; the monitoring session reports `waiting`, and the session starts once you answer it.
 
 ## What only the owner does
 
-The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:28-38`). Where the project's delegate level allows it, the owner's delegate takes the first rows instead and hands back what it will not take, with its reason, by the waiting session and a Telegram message; a daily digest lists what it did, each with a revert line (`docs/design/owner-delegate.md`):
+The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:29-39`). Where the project's delegate level allows it, the owner's delegate takes the first rows instead and hands back what it will not take, with its reason, by the waiting session and a Telegram message; a daily digest lists what it did, each with a revert line (`docs/design/owner-delegate.md`):
 
 | When | What | How |
 |---|---|---|
 | The agent staged an owner-only file (install, upgrade, config) | Commit it | Run the one line the agent handed over, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`, after `!` in the Claude Code prompt or in a terminal; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
 | A decision is `proposed` | Adopt it, or reject it | `python3 .charter/bin/charter rule <id> active` (or `rejected`): status, a `## Ruling` line, the index and the commit in one command; `active` first runs the decision's `check:` (`rule` in `package/.charter/owner.py`) |
-| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:650`) |
+| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:702`) |
 | A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |
 | The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`); `python3 .charter/bin/charter rail <id> done` closes one in one commit |
@@ -164,7 +164,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
   - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`machine/skills/CharterAdmin/workflows/Migrate.md:25`);
   - `probes.base_must_fail` once the probes reliably fail before the work (`docs/package.md` § Versioning and upgrade, 0.4.1);
-  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:380`);
+  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:381`);
   - `rails.required` once `charter/rails.md` exists and every open unit names a rail (`package/charter/templates/rails.md`).
 - A typo in any of these is refused at the next commit and named in the next banner, so a misspelled opt-in cannot stay off unnoticed (`docs/gates.md` § Config).
 - `python3 .charter/bin/charter synth`, without `--write`, adds the gate activity the written file leaves out (`package/.claude/skills/charter-progress/SKILL.md`).

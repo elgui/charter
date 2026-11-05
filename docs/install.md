@@ -15,7 +15,7 @@ Nothing in the installer or the survey depends on where the checkout sits or on 
 ## Rules for the agent
 
 1. **Owner-only files are committed by the owner.** In an installed project these paths are the owner's: `.charter/**`, `charter/config.json`, `charter/scope.md`, `charter/rails.md`, `.claude/settings.json`, `.claude/settings.local.json` and `.github/workflows/charter.yml` (the full list, fields included, is in `package/.claude/rules/charter.md` § What only the owner changes). The pre-commit gate refuses a commit of them made from inside Claude Code (`docs/gates.md` § Owner-only changes). An install always touches them, so **you prepare and stage; the owner commits, with the one line the installer prints** (step 8). An upgrade touches them too, but from 0.4.6 package files exactly as the installer wrote them are not an owner-only change (`release_change` in `package/.charter/checks.py`): the installer's block says who commits, and when it says an agent, you commit. Only a merge into `.claude/settings.json` or a kept local file sends an upgrade to the owner.
-2. **Never set `CHARTER_OWNER`, never pass `--no-verify`, never run `charter owner commit`**, and never work around a refusal by writing the file through Bash. The refusal is the method working, not a fault (`package/.claude/rules/charter.md:36`). The one exception is a throwaway rehearsal clone that the survey made (`--keep-clone`), which is not the project.
+2. **Never set `CHARTER_OWNER`, never pass `--no-verify`, never run `charter owner commit`**, and never work around a refusal by writing the file through Bash. The refusal is the method working, not a fault (`package/.claude/rules/charter.md:37`). The one exception is a throwaway rehearsal clone that the survey made (`--keep-clone`), which is not the project.
 3. **Never push, open or merge a pull request, or deploy.** Those are the owner's acts (`package/.claude/rules/charter.md` § Decisions and memory, "Commitments").
 4. **Facts about an existing project come from the survey** (step 2), measured today, never from memory or another session's notes (`machine/skills/CharterAdmin/workflows/Migrate.md:7`).
 5. **Stop and report** any check that fails (`machine/skills/CharterAdmin/workflows/Migrate.md:10`).
@@ -105,7 +105,7 @@ From 0.4.5 the installer stages what it wrote, by name, and nothing else (`stage
 
 Check: `git -C $P diff --cached --name-only` lists the installer's files and your framework file, and nothing else (34 staged files on a repository with no charter files, in the scratchpad rehearsal of 2026-09-25: `$ git -C $P diff --cached --name-only | wc -l`).
 
-If a draft of `charter/scope.md` is wanted on the client track, write it outside the project (a scratchpad) from `charter/templates/scope.md` and hand it to the owner with the commit. The scope is the owner's file (`package/.claude/rules/charter.md:32`).
+If a draft of `charter/scope.md` is wanted on the client track, write it outside the project (a scratchpad) from `charter/templates/scope.md` and hand it to the owner with the commit. The scope is the owner's file (`package/.claude/rules/charter.md:33`).
 
 ## Step 8: the owner commits
 
@@ -139,7 +139,7 @@ After the owner's commit:
 
 | Check | Command (from `$P`) | Expected |
 |---|---|---|
-| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`package/.charter/checks.py:841`) |
+| Every gate on the tree | `python3 .charter/bin/charter check --all` | `charter check: 0 blocking, ...`. A warning `charter/config.json names no owner` means `owner` is still empty (`package/.charter/checks.py:1021`) |
 | The installed version | `python3 .charter/bin/charter version` | the target version, as in `package/VERSION` |
 | The config reads as written | `python3 .charter/bin/charter config` | `track <track>, opt-ins: none`, exit 0. A `problem:` line names a key, type or track the gates cannot read; the owner corrects it (`cmd_config` in `package/.charter/bin/charter`) |
 | The files match the package | `python3 $M status $P` | `installed: <version>`, `locally modified: 0; missing: 0; differ from package: 0`, and `git core.hooksPath: .charter/githooks` (or `unset` where a framework runs the gate; `bin/charter-pkg:603-616`) |
@@ -160,10 +160,10 @@ cd <clone> && python3 .charter/bin/charter setup
 
 Expected, one of:
 
-- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`package/.charter/bin/charter:811`)
-- `git hook already active (core.hooksPath = .charter/githooks)` (`package/.charter/bin/charter:802`)
-- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`package/.charter/bin/charter:804`).
-- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`package/.charter/bin/charter:806`).
+- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`package/.charter/bin/charter:821`)
+- `git hook already active (core.hooksPath = .charter/githooks)` (`package/.charter/bin/charter:812`)
+- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`package/.charter/bin/charter:814`).
+- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`package/.charter/bin/charter:816`).
 
 `setup` needs no charter checkout. A clone that skips it is still gated by CI. The SessionStart banner says when the hook is missing (`package/.charter/githooks/README.md`).
 

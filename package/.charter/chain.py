@@ -98,7 +98,7 @@ def sudo_asks(cmd: str) -> bool:
 # the owner resumes a paused chain by typing this command; the prompt hook performs it (`owner_prompt`), and nothing else does
 RESUME_CMD = "resume-chain"
 RESUME_RE = re.compile(r"\A\s*/resume-chain(?=\s|\Z)(.*)\Z", re.S)
-RESUME_HOW = "type `/resume-chain ok|skip [note]` in Claude Code in this project: in the chain's tab once its session has handed over, or a session of your own"
+RESUME_HOW = "type `/resume-chain ok|skip [note]` in Claude Code, in a session of your own in the chain's tree: a chain session's tab closes once it has ended"
 # what a closed session may no longer do: write a file, or change the branch's history (the owner-gate re-check, 2026-10-05)
 CLOSED_WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # best effort: a git command at the start of a shell command whose verb changes files, the index or the branch; an alias,
@@ -642,6 +642,21 @@ def resolve_launcher(name: str) -> tuple[str, str]:
     return "", f"launcher {name!r} is not auto, spawn, headless or a command template with {{briefing}}"
 
 
+def untrusted(root: Path) -> bool:
+    """Claude Code's own record says this folder has not been trusted, so a tab opened there stops at the trust menu.
+    Measured on 2.1.316, 2026-11-01: a folder under a trusted one still asks, and answering in a linked worktree records
+    the trust under the main checkout's path. The file is Claude Code's, so an unreadable or absent record says nothing
+    (docs/trials/2026-11-01-chain-close.md)."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR")
+    p = Path(home).expanduser() / ".claude.json" if home else Path.home() / ".claude.json"
+    projects = _read_json(p).get("projects")
+    if not isinstance(projects, dict) or not projects:
+        return False
+    common = lib.git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    keys = [str(root)] + ([str(Path(common).parent)] if common else [])
+    return not any((projects.get(k) or {}).get("hasTrustDialogAccepted") for k in keys)
+
+
 def child_env() -> dict:
     """The environment for a launched session: this session's Claude Code markers removed, so the child is a
     session of its own, and never the owner's flag."""
@@ -656,7 +671,9 @@ def launch(root: Path, chain: dict, n: int, brief: Path) -> dict:
         return {"ok": False, "ready": False, "id": "", "note": detail}
     model, effort = chain.get("model") or "", chain.get("effort") or ""
     if kind == "spawn":
-        cmd = [sys.executable, detail, "create", "--goal", goal, "--briefing-file", str(brief)]
+        # the shim defaults to the caller's registered working_dir, which is not the chain's tree when the chain runs in a
+        # linked worktree, and which a detached review runner has none of (docs/trials/2026-11-01-chain-close.md)
+        cmd = [sys.executable, detail, "create", "--goal", goal, "--briefing-file", str(brief), "--workspace", str(root)]
         cmd += (["--model", model] if model else []) + (["--effort", effort] if effort else [])
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root), timeout=180)
@@ -670,7 +687,7 @@ def launch(root: Path, chain: dict, n: int, brief: Path) -> dict:
             return {"ok": False, "ready": False, "id": "", "note": (r.stderr or r.stdout).strip()[:400] or f"spawn shim exited {r.returncode}"}
         note = j.get("delivery_error") or (j.get("routing_note") if j.get("routing_applied") is False else "") or j.get("note") or ""
         return {"ok": True, "ready": bool(j.get("ready")), "id": str(j["session_id"]), "note": note,
-                "where": j.get("cmux_target") or j.get("tmux_target") or j.get("backend") or ""}
+                "where": j.get("cmux_target") or j.get("tmux_target") or j.get("backend") or "", "backend": j.get("backend") or ""}
     if kind == "headless":
         sid = str(uuid.uuid4())
         cmd = [detail, "-p", brief.read_text(encoding="utf-8"), "--session-id", sid, "-n", goal, "--permission-prompts", "none"]
@@ -693,11 +710,64 @@ def close_tab(chain: dict, rec: dict) -> str:
     kind, detail = resolve_launcher(chain.get("launcher", "auto"))
     if kind != "spawn" or not rec.get("backend_id"):
         return "not a spawned tab"
+    # the backend it was created on: the closer outlives the pane the shim would otherwise detect a parent from
+    backend = (rec.get("launch") or {}).get("backend")
     try:
-        r = subprocess.run([sys.executable, detail, "delete", rec["backend_id"]], capture_output=True, text=True, timeout=60)
+        r = subprocess.run([sys.executable, detail, "delete", rec["backend_id"]] + (["--backend", backend] if backend else []),
+                           capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
         return repr(e)
     return "" if r.returncode == 0 else (r.stderr or r.stdout).strip()[:200]
+
+
+def close_session(root: Path, chain: dict, n: int) -> None:
+    """Free session n's process once it has ended, at every end: hand-over, wait, halt, complete, a stall, a stop. A session
+    cannot delete itself from inside `chain next` (the delete kills the command's own pane), so a detached closer does it
+    after `chain.close_delay_s`, which leaves the session its closing message. Nothing is lost: a closed session changes no
+    file (`on_pre_tool`) and its transcript stays. At most one closer runs per session (docs/trials/2026-11-01-chain-close.md)."""
+    if resolve_launcher(chain.get("launcher", "auto"))[0] != "spawn":
+        return
+    with editing_link(root, chain["id"], n) as rec:
+        if not rec.get("backend_id") or rec.get("tab_closed") or rec.get("close_started"):
+            return
+        rec["close_started"] = now()
+    cmd = [sys.executable, "-B", str(root / lib.TOOL_DIR / "bin" / "charter"), "--root", str(root), "chain", "close-session",
+           chain["id"], str(n)]
+    try:
+        with (link_dir(root, chain["id"], n) / "close.log").open("ab") as log:
+            subprocess.Popen(cmd, cwd=str(root), env=child_env(), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                             start_new_session=True)
+    except OSError as e:
+        with editing_link(root, chain["id"], n) as rec:
+            rec.pop("close_started", None)
+        event(root, chain["id"], f"s{n:02d}", "tab-not-closed", f"the closer could not start: {e!r}")
+
+
+def cmd_close_session(root: Path, a) -> int:
+    """The detached closer: delete session n through the shim. A stall of the session server fails one call, so it tries
+    three times; a tab already gone is closed. What it cannot close it says, and the next hand-over tries again."""
+    chain = load(root, a.id)
+    rec = link(root, chain["id"], a.n)
+    if not rec.get("close_started") or rec.get("tab_closed"):
+        # only the closer `close_session` starts may delete a session: never a live one, never twice
+        print(f"chain {chain['id']} session {a.n}: no close was requested for it" if not rec.get("tab_closed")
+              else f"chain {chain['id']} session {a.n}: already closed")
+        return 2
+    delay = max(0, int((lib.load_config(root).get("chain") or {}).get("close_delay_s", 60)))
+    why = ""
+    for _ in range(3):
+        time.sleep(delay)
+        why = close_tab(chain, link(root, chain["id"], a.n))
+        w = why.lower()
+        if not why or "session not found" in w or "http 404" in w:   # the shim's answer for a tab already gone
+            with editing_link(root, chain["id"], a.n) as rec:
+                rec["tab_closed"] = now()
+            event(root, chain["id"], f"s{a.n:02d}", "tab-closed", "its process is gone, its transcript stays (`claude --resume`)")
+            return 0
+    with editing_link(root, chain["id"], a.n) as rec:
+        rec.pop("close_started", None)
+    event(root, chain["id"], f"s{a.n:02d}", "tab-not-closed", f"its process may still run: {why}")
+    return 1
 
 
 def start_link(root: Path, chain: dict, n: int, prev: tuple[str, str] | None, note: str = "") -> bool:
@@ -723,8 +793,12 @@ def start_link(root: Path, chain: dict, n: int, prev: tuple[str, str] | None, no
     if res["ready"]:
         event(root, chain["id"], who, "launched", f"session {n}{where}" + (f" ({res['note']})" if res["note"] and "output in" not in res["note"] else ""))
     else:
+        # the shim gives a terminal tab its briefing on the command line, so that session starts once the menu is answered; a
+        # pasted briefing (tele-claude) is lost, and nothing sends it again (docs/trials/2026-11-01-chain-close.md)
+        send = (f"; if it then sits idle, send its briefing: `python3 {resolve_launcher(chain.get('launcher', 'auto'))[1]} send {res['id']} "
+                f"--text-file {brief}`") if res["id"] else ""
         event(root, chain["id"], who, "waiting", f"session {n} started{where} but its briefing has not landed: {res['note']}. "
-              "The owner answers the menu in that tab; the session then starts on its own")
+              f"The owner answers the menu in that tab{send}")
         notify(root, chain, f"session {n}'s tab waits at a menu: answer it in that tab")
     return True
 
@@ -746,7 +820,7 @@ def _wait_note(root: Path, chain: dict) -> str:
     k = len(owner_steps(root, chain, n)[0])
     run = f", `{owner_acts.RUN_CMD}` to run them" if owner_acts.load(root, chain["id"], n) is not None else ""
     return (f"{k} act{'s wait' if k != 1 else ' waits'}: run `python3 .charter/bin/charter owner` in {root}{run}, "
-            f"then type /{RESUME_CMD}{' ok' if run else ''} in the chain's tab or a session of your own")
+            f"then type /{RESUME_CMD}{' ok' if run else ''} in a session of your own (`{own_session(root)}`)")
 
 
 NOTIFY_ENV = "CHARTER_NOTIFY"   # `off` silences every notification (the tests set it)
@@ -847,7 +921,8 @@ def owner_steps(root: Path, ch: dict, n: int) -> tuple[list[str], list[str], str
     print the same. With owner.md (0.4.11): its acts with Codex's note on each, the one command that runs them all,
     and `/resume-chain ok`. A wait handed over before 0.4.11: the `## Wait` lines and the commands they give after
     `run:` (0.4.10)."""
-    where = f"in the chain's tab once its session has handed over, or a session of your own (`{own_session(root)}`)"
+    # the chain's tree, not the caller's: `_resume` refuses another worktree, and the chain's tab is gone by now
+    where = f"in a session of your own (`{own_session(Path(ch.get('root') or root))}`)"
     if owner_acts.load(root, ch["id"], n) is not None:
         acts, note = owner_acts.act_lines(root, ch["id"], n)
         how = (f"{note + chr(10) if note else ''}Run them all in {root}: `{owner_acts.RUN_CMD}` (after `!` in Claude Code, or in a terminal), "
@@ -886,7 +961,7 @@ def owner_items(root: Path) -> list[dict]:
         body = lib.split_frontmatter(hp.read_text(encoding="utf-8") if hp.exists() else "")[2]
         asks = [l.strip() for l in lib.section(body, "Halt").splitlines() if l.strip()]
         how = (f"then type in Claude Code: /{RESUME_CMD} <your note>"
-               f"\n(in the chain's tab once its session has handed over, or your own: `{own_session(root)}`)")
+               f"\n(in a session of your own: `{own_session(Path(ch.get('root') or root))}`)")
         return [{"key": f"chain:{cid}", "kind": "decide", "title": f"chain {cid} halted after session {n}: {ch.get('reason', '')}"[:200],
                  "file": where, "line": 1, "ask": "\n".join(asks[:12] + [how]), "resume": True}]
     if ch.get("state") != "running" or not n:
@@ -894,7 +969,7 @@ def owner_items(root: Path) -> list[dict]:
     rec = link(root, cid, n)
     if rec.get("stopped_unclosed"):
         return [{"key": f"chain:{cid}:s{n:02d}", "kind": "do", "file": where, "line": 1, "resume": True,
-                 "title": f"chain {cid}: session {n} ended its turn without handing over; look at its tab, then type /{RESUME_CMD} or stop the chain"}]
+                 "title": f"chain {cid}: session {n} ended its turn without handing over; read it with `claude --resume {rec.get('session_id')}`, then type /{RESUME_CMD} or stop the chain"}]
     if not rec.get("session_id") and (rec.get("launch") or {}).get("ready") is False:
         return [{"key": f"chain:{cid}:s{n:02d}", "kind": "do", "file": where, "line": 1, "resume": False,
                  "title": f"chain {cid}: session {n}'s tab waits at a menu ({(rec.get('launch') or {}).get('note', '')[:100]}); answer it in that tab"}]
@@ -1048,6 +1123,7 @@ def on_stop(root: Path, data: dict) -> dict | None:
         return None
     chain, n, rec = j
     if rec.get("closed_at") or chain.get("state") != "running":
+        close_session(root, chain, n)   # closed: the closer already runs. Open, in a chain that ended: it has nothing left to do
         return None
     with editing_link(root, chain["id"], n) as rec:
         blocks = int(rec.get("stop_blocks") or 0)
@@ -1057,8 +1133,10 @@ def on_stop(root: Path, data: dict) -> dict | None:
             rec["stop_blocks"] = blocks + 1
     if blocks >= 2:
         event(root, chain["id"], f"s{n:02d}", "stalled", f"session {n} ended its turn three times without `chain next`; "
-              "the chain waits: the owner looks at the tab, then types `/resume-chain`, or runs `charter chain stop`")
-        notify(root, chain, f"session {n} stalled without handing over: look at its tab, then /resume-chain or `charter chain stop`")
+              f"the chain waits: its tab closes, the owner reads it with `claude --resume {rec.get('session_id')}`, then types "
+              "`/resume-chain`, or runs `charter chain stop`")
+        notify(root, chain, f"session {n} stalled without handing over: read it with `claude --resume {rec.get('session_id')}`, then /resume-chain or `charter chain stop`")
+        close_session(root, chain, n)
         return None
     p = pct(chain, context_tokens(data.get("transcript_path") or rec.get("transcript")))
     hp = link_dir(root, chain["id"], n) / "handoff.md"
@@ -1166,6 +1244,7 @@ def cmd_start(root: Path, a) -> int:
     new_branch = f"chain/{cid}" if on_default and not a.here else ""
     window = window_for(model, a.window if a.window is not None else int(cc.get("window_tokens", 0)))
     plan = [f"chain {cid}: unit {a.unit}, " + (f"new branch {new_branch} from {branch}" if new_branch else f"on branch {branch}"),
+            f"sessions open in {root}, on branch {new_branch or branch}",
             f"budget: hand over at {wrap}%, cap {cap}% of {window:,} tokens; model {model or '(settings)'}, effort {effort or '(settings)'}",
             f"launcher: {kind} ({detail}); at most {a.max_sessions or int(cc.get('max_sessions', 12))} sessions",
             groups.plan_line(review, review_why, str(cc.get("review_effort", "high")), groups.unit_group(root, a.unit) or ""),
@@ -1173,6 +1252,9 @@ def cmd_start(root: Path, a) -> int:
                                           if owner_acts.review_mode({"owner_review": a.owner_review}, cfg)[0] == "codex" else
                                           f"review {owner_acts.review_mode({'owner_review': a.owner_review}, cfg)[1]}"),
             f"mission: {mission.splitlines()[0][:160]}"]
+    if kind == "spawn" and untrusted(root):
+        plan.append(f"warning: Claude Code has not trusted {root}, so a session's tab stops at the folder-trust menu and its briefing "
+                    f"may not land. Trust it once before the start: `{own_session(root)}`, answer yes, then /exit")
     startup, seen = measured_startup(root, kind)
     line = window * wrap // 100
     if line <= startup:
@@ -1303,10 +1385,8 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
         event(root, chain["id"], f"s{n:02d}", "early", early)
     close_link(root, chain, n, status)
     chain = load(root, chain["id"])
-    if n > 1:
-        why_not = close_tab(chain, link(root, chain["id"], n - 1))
-        if not why_not:
-            event(root, chain["id"], f"s{n - 1:02d}", "tab-closed", "its transcript stays (`claude --resume`)")
+    for k in range(1, n):   # a closer that failed, or a session closed before this release
+        close_session(root, chain, k)
     nums = link(root, chain["id"], n).get("nums") or {}
     broken = (["probes of a unit it closed fail now"] if nums.get("probe_failures") else []) + (
         ["the gates block its change set"] if nums.get("gates_blocked") else [])
@@ -1335,6 +1415,8 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
     else:
         groups.advance(root, chain, n, status, next_unit)
     chain = load(root, chain["id"])
+    # last: the next session was launched above from inside this session's pane, which the close kills
+    close_session(root, chain, n)
     g = groups.current(chain)
     then = (f", the review of group {groups.label(g['key'])} is running and the next session starts when it ends"
             if g and g["state"] == "reviewing" else f", session {n + 1} launched")
@@ -1349,7 +1431,7 @@ def _hand_over(root: Path, cid: str, n: int, status: str, next_unit: str, halt_w
             out += [f"```sh\n{c}\n```" for c in run_commands(a)]
         if owner_acts.load(root, chain["id"], n) is not None:
             # 0.4.11: the owner runs every act of owner.md with one command, then resumes
-            out += ["", f"Run them all with one command in {root}, after `!` in Claude Code (this tab works) or in a terminal:",
+            out += ["", f"Run them all with one command in {root}, after `!` in Claude Code or in a terminal:",
                     f"```sh\n{owner_acts.RUN_CMD}\n```"]
         out += ["", how, "The acts are listed again by `python3 .charter/bin/charter owner`."]
         print("\n".join(out))
@@ -1442,6 +1524,7 @@ def _stop(root: Path, cid: str, a) -> int:
     rec = link(root, chain["id"], int(chain.get("sessions") or 0))
     if rec.get("closed_at") or rec.get("stopped_unclosed") or not rec.get("session_id"):
         halt(root, chain, a.reason or "stopped by the owner", state="stopped")
+        close_session(root, chain, int(chain.get("sessions") or 0))   # a tab that never joined: nothing else would close it
         print(f"chain {chain['id']} stopped")
     else:
         event(root, chain["id"], "chain", "stop-requested", a.reason or "by the owner")
@@ -1545,6 +1628,7 @@ def _resume(root: Path, cid: str, a, refs: list[tuple[str | None, str]] | None =
         after = [c for c in commits_since(root, end, chain["id"]) if c[:7] not in named]   # named once, as closed outside
     if not rec.get("closed_at"):
         close_link(root, chain, n, "abnormal", abnormal=True)   # before the owner's commit, which is not the session's work
+        close_session(root, chain, n)
     commit = ""
     if writes:
         import owner as ownerq
@@ -1765,6 +1849,11 @@ def typed_by_owner(root: Path, sid: str) -> str:
         # nothing types into its tab but the owner, who landed there six times in three chains (the owner, 2026-10-05)
         return (f"this is session {j[1]} of chain {j[0]['id']}, which is still working: its prompts come from the chain. "
                 f"Type it once the session has handed over, or in a session of your own (`{own_session(root)}`)")
+    if j and resolve_launcher(j[0].get("launcher", "auto"))[0] == "spawn":
+        # a spawned session's tab is deleted once it ends (close_session); a resume typed there would launch the next
+        # session from a pane its closer may kill mid-launch (/reviewPR #43, pass B)
+        return (f"this is session {j[1]} of chain {j[0]['id']}, which has ended, and its tab is being closed. "
+                f"Type it in a session of your own (`{own_session(root)}`)")
     return ""
 
 
@@ -1852,6 +1941,8 @@ def main(argv: list[str], root: Path) -> int:
     r.set_defaults(fn=cmd_resume)
     rr = sub.add_parser("review-run", help="(started by `chain next`) review a group, then launch the session that answers it")
     rr.add_argument("id"); rr.add_argument("--group", type=int, required=True); rr.set_defaults(fn=groups.cmd_review_run)
+    cs = sub.add_parser("close-session", help="(started when a session ends) free a finished session's process")
+    cs.add_argument("id"); cs.add_argument("n", type=int); cs.set_defaults(fn=cmd_close_session)
     rp = sub.add_parser("report", help="each group's review and its answers, as one pull-request comment")
     rp.add_argument("id", nargs="?"); rp.set_defaults(fn=groups.cmd_report)
     a = ap.parse_args(argv)

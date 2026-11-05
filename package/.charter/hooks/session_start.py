@@ -66,13 +66,21 @@ def main() -> int:
             last = log[-1].strip() if log else "(no log line yet)"
             out.append(f"Active unit {aid}: {u.get('title', '')} [status {u.get('status')}] scope {u.get('scope', '(none)')}; "
                        f"{open_n}/{len(boxes)} acceptance criteria open; perimeter {per}; last log: {last}")
+            for g in checks.decision_gates(root, u):   # say at the start what done will ask for (0.4.23)
+                out.append(f"Active unit {aid}: " + checks.gate_line(g))
         else:
             out.append("No active unit. Start one with `python3 .charter/bin/charter unit start <tasket-id>` (edits are otherwise unattributed).")
         decs = [(k, v) for k, v in lib.decisions(root).items() if str(v.get("status", "active")) == "active"]
         if decs:
             out.append("Active decisions (cite with charter:<id> in code that depends on them):")
             for k, v in decs[:30]:
-                out.append(f"  - {k}: {v.get('title', '')}" + (f" [check: {v.get('check')}]" if v.get('check') else ""))
+                read = [str(r) for r in lib.as_list(v.get("read")) if str(r).strip()]
+                out.append(f"  - {k}: {v.get('title', '')}" + (f" [check: {v.get('check')}]" if v.get('check') else "")
+                           + (f" [read: {', '.join(read)}]" if read else ""))
+            reads = [(k, str(r).strip()) for k, v in decs for r in lib.as_list(v.get("read")) if str(r).strip()]
+            if reads:   # a decision names the doc that says how to follow it; every session is pointed at it (0.4.23)
+                out.append("Read before working here (named by active decisions): "
+                           + "; ".join(f"{r} ({k})" for k, r in reads[:10]) + (f"; +{len(reads) - 10} more" if len(reads) > 10 else ""))
         props = [(k, v) for k, v in lib.decisions(root).items() if str(v.get("status")) == "proposed"]
         if props:
             out.append("Proposed decisions waiting on the owner: " + ", ".join(k for k, _ in props))
@@ -100,7 +108,7 @@ def main() -> int:
         # (https://code.claude.com/docs/en/hooks, SessionStart decision control)
         seen = [out[0]] + [l if len(l) <= 160 else l[:157] + "..." for l in out[1:]
                            if l.startswith(("charter/config.json", "The charter git hook", "Owner session", "Active unit", "No active unit",
-                                           "Proposed decisions waiting", "Change requests waiting"))
+                                           "Proposed decisions waiting", "Change requests waiting", "Read before working here"))
                            or "not yet in the ledger" in l]
         print(json.dumps({"systemMessage": "\n".join(seen),
                           "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(out)}}))

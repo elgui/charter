@@ -250,8 +250,9 @@ class JsonVerbs(unittest.TestCase):
         self.assertTrue(all(set(u) == RAIL_UNIT_KEYS for u in n["open"]))
         text = section(charter(self.root, "next", "--limit", "100").stdout, "Open units")
         self.assertEqual([u["id"] for u in n["open"]], [l.split(" — ")[0][2:] for l in text])
-        rank = {"in-progress": 0, "open": 1, "blocked": 2}
-        self.assertEqual([u["state"] for u in n["open"]], sorted((u["state"] for u in n["open"]), key=rank.get))   # started first
+        rank = {"in-progress": 0, "logged": 1, "open": 2, "blocked": 3}
+        self.assertIn("logged", [u["state"] for u in n["open"]])
+        self.assertEqual([u["state"] for u in n["open"]], sorted((u["state"] for u in n["open"]), key=rank.get))   # explicit progress, then logged units, then open/blocked
         self.assertNotIn("dn", [u["id"] for u in n["open"]])
         charter(self.root, "unit", "start", "acc")
         n = self.json("next")

@@ -57,6 +57,7 @@ class Finding:
     message: str
     path: str = ""
     override: str = ""   # what a person or agent can do to legitimately pass
+    exit: int | None = None   # a probe finding: the probe's exit code, for the gate log row (0.4.23)
 
     def line(self) -> str:
         p = f" [{self.path}]" if self.path else ""
@@ -421,6 +422,104 @@ def check_unit_done(root: Path, cfg: dict, unit_text: str, path: str) -> list[Fi
     if (cfg.get("review") or {}).get("required") and not review_lines(root, lib.section(body, "Evidence")):
         out.append(Finding("done", "block", "status is done but `## Evidence` has no `review:` line; this project requires an independent review before done", path=path,
                            override="add `- review: <reviewer and model> — <verdict> — <anchor>` naming where the verdict is (a PR comment URL, a commit, a `$ command` run)"))
+    out.extend(check_decision_gates(root, fields, body, uid, path))
+    return out
+
+
+def _gate_problem(d: dict) -> str | None:
+    """What makes an active decision's evidence gate unusable, in words; None when it is whole."""
+    gp = [str(g) for g in lib.as_list(d.get("gate_paths")) if str(g).strip()]
+    ev = str(d.get("gate_evidence") or "").strip()
+    if gp and not ev:
+        return "has `gate_paths:` but no `gate_evidence:`"
+    if ev and not gp:
+        return "has `gate_evidence:` but no `gate_paths:`, so it gates nothing"
+    if ev:
+        try:
+            re.compile(ev)
+        except (re.error, OverflowError, RecursionError, ValueError) as e:   # x{4294967295} raises OverflowError
+            return f"has a `gate_evidence:` that is not a valid regular expression ({e})"
+    return None
+
+
+def decision_gates(root: Path, fields: dict) -> list[dict]:
+    """The active decisions whose `gate_paths:` the unit's `perimeter:` touches (0.4.23).
+    Each: {id, paths (the perimeter entries hit), evidence (the regex), read, waived, problem}.
+    `problem` is set when the gate cannot be judged (no or an invalid `gate_evidence:`): the done gate
+    then refuses, since a gate the owner meant to set fails closed rather than open."""
+    per = lib.as_list(fields.get("perimeter"))
+    if not per:
+        return []
+    waived = set(str(w) for w in lib.as_list(fields.get("waives")))
+    out = []
+    for did, d in lib.decisions(root).items():
+        if str(d.get("status", "active")) != "active":
+            continue
+        gp = [str(g) for g in lib.as_list(d.get("gate_paths")) if str(g).strip()]
+        if not gp:
+            continue
+        hit = [str(p) for p in per if any(lib.globs_overlap(str(p), g) for g in gp)]
+        if hit:
+            out.append({"id": did, "paths": hit, "evidence": str(d.get("gate_evidence") or "").strip(),
+                        "read": [str(r) for r in lib.as_list(d.get("read")) if str(r).strip()],
+                        "waived": did in waived, "problem": _gate_problem(d)})
+    return out
+
+
+def gate_line(g: dict) -> str:
+    """One gate in words, for `charter unit start` and the session banner."""
+    what = ("waived by this unit (a warning at done)" if g["waived"] else
+            f"done is refused: the decision {g['problem']}" if g["problem"] else
+            f"done needs `## Evidence` matching `{g['evidence']}`")
+    read = f"; read {', '.join(g['read'])}" if g["read"] else ""
+    return f"perimeter {', '.join(g['paths'][:3])} is gated by decision `{g['id']}`: {what}{read}"
+
+
+def check_decision_gates(root: Path, fields: dict, body: str, uid: str, path: str) -> list[Finding]:
+    """At done: a unit whose perimeter touches an active decision's `gate_paths:` needs `## Evidence`
+    matching its `gate_evidence:`, or `waives:` naming the decision, which is a warning (0.4.23)."""
+    out: list[Finding] = []
+    evidence = lib.section(body, "Evidence")
+    for g in decision_gates(root, fields):
+        where = ", ".join(g["paths"][:3])
+        if g["waived"]:
+            out.append(Finding("done", "warn", f"unit {uid} waives decision `{g['id']}`'s evidence gate (perimeter {where})", path=path))
+            continue
+        how = f"follow {', '.join(g['read'])}" if g["read"] else f"see the decision `{g['id']}`"
+        if g["problem"]:
+            out.append(Finding("done", "block", f"perimeter {where} is gated by decision `{g['id']}`, which {g['problem']}", path=path,
+                               override=f"the owner completes the decision's gate fields; or add `waives: [{g['id']}]` and say why in `## Log` (a warning)"))
+        elif not re.search(g["evidence"], evidence):
+            out.append(Finding("done", "block", f"perimeter {where} is gated by decision `{g['id']}`: `## Evidence` must match `{g['evidence']}`", path=path,
+                               override=f"{how}, run it and cite the run under `## Evidence`; or add `waives: [{g['id']}]` and say why in `## Log` (a warning)"))
+    return out
+
+
+def check_decision_reads(root: Path, decs: dict[str, dict], paths: list[str] | None = None) -> list[Finding]:
+    """An active decision's `read:` names docs every session is pointed at, and each must exist; its gate
+    fields must make a whole gate (0.4.23). At commit (`paths` given) a problem blocks only when the
+    commit touches the decision or the missing doc, and warns otherwise, so one decision's stale pointer
+    does not stop unrelated commits; `charter check --all` and CI refuse it."""
+    out: list[Finding] = []
+    # staged_paths leaves deletions out; a commit that deletes a doc a decision points at touches that doc
+    gone = set(lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=D").stdout.split()) if paths is not None else set()
+    for did, d in decs.items():
+        if str(d.get("status", "active")) != "active":
+            continue
+        dp = d.get("_path")
+        for r in lib.as_list(d.get("read")):
+            r = str(r).strip()
+            # at commit the index is what lands, not the working tree; a directory is not a doc to read
+            if not r or (blob(root, ":" + r) is not None if paths is not None else (root / r).is_file()):
+                continue
+            mine = paths is None or dp in paths or r in paths or r in gone
+            out.append(Finding("decisions", "block" if mine else "warn", f"decision `{did}` points sessions at {r}, which does not exist", path=dp,
+                               override=f"restore {r}, or change `read:` in {dp} (on an active decision, a superseding decision)"))
+        problem = _gate_problem(d)
+        if problem:
+            mine = paths is None or dp in paths
+            out.append(Finding("decisions", "block" if mine else "warn", f"decision `{did}` {problem}", path=dp,
+                               override="the owner sets both `gate_paths:` and `gate_evidence:` (a Python regular expression), or neither"))
     return out
 
 
@@ -545,6 +644,47 @@ def _stream(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
 
 
+_RUNNERS = {"uv": "run", "poetry": "run", "pipenv": "run", "pdm": "run", "hatch": "run", "rye": "run"}
+
+
+def _runs_pytest(cmd: str) -> bool:
+    """Whether some simple command in `cmd` runs pytest: `pytest`/`py.test` (any path) in the command's own position,
+    after `VAR=x`, `env`, `timeout N` or a runner's `run`, or a Python with `-m pytest`. A word `pytest` among a
+    command's arguments (`./check.py --format pytest`) is not pytest running."""
+    import shlex
+    for seg in re.split(r"&&|\|\||[;|&()\n]", cmd):
+        try:
+            w = shlex.split(seg)
+        except ValueError:
+            w = seg.split()
+        while w and (re.fullmatch(r"\w+=\S*", w[0]) or w[0] in ("env", "nice", "time", "command", "exec")):
+            w = w[1:]
+        if w and w[0] == "timeout":
+            w = [x for x in w[1:] if not x.startswith("-")][1:]
+        if len(w) > 1 and _RUNNERS.get(Path(w[0]).name) == w[1]:
+            w = w[2:]
+        if not w:
+            continue
+        exe = Path(w[0]).name
+        if exe in ("pytest", "py.test"):
+            return True
+        if exe.startswith("python") and ("-mpytest" in w or any(a == "-m" and b == "pytest" for a, b in zip(w, w[1:]))):
+            return True
+    return False
+
+
+def probe_outcome(cmd: str, code: int) -> str:
+    """`passed`, `failed` or `not-run` (0.4.23). Exit 126 and 127 (not executable, not found) mean the shell could not
+    start the command; pytest's 4 (usage error, such as a test file or `-k`/`::` selection that does not exist) and 5
+    (nothing collected) mean no test ran, when the command runs pytest. A deterministic rule on the exit code and the
+    command's words; none of these proves the probe fails without the change."""
+    if code == 0:
+        return "passed"
+    if code in (126, 127) or (code in (4, 5) and _runs_pytest(cmd)):
+        return "not-run"
+    return "failed"
+
+
 def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
     """Run one probe. (its record, the one-line tail the text line has always shown: the last line of stdout and
     stderr together, cut to 100 characters)."""
@@ -552,7 +692,7 @@ def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str
     try:
         r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
         out, err, code = r.stdout, r.stderr, r.returncode
-        outcome = "passed" if code == 0 else "failed"
+        outcome = probe_outcome(cmd, code)
         line = ((out + err).strip().splitlines() or [""])[-1][:100]
     except subprocess.TimeoutExpired as e:
         out, err, code, outcome = _stream(e.stdout), _stream(e.stderr), None, "timeout"
@@ -576,8 +716,9 @@ def run_probes_recorded(root: Path, text: str, path: str, timeout: int) -> tuple
         code = rec["exit"]
         lines.append(f"- `$ {cmd}` → " + (f"exit {code}" if code is not None else tail) + (f" ({tail})" if tail and code else ""))
         if code != 0:
-            out.append(Finding("probe", "block", f"{ac} probe failed: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
-                               override="make the probe pass, or reopen the unit"))
+            what = "could not run" if rec["outcome"] == "not-run" else "failed"
+            out.append(Finding("probe", "block", f"{ac} probe {what}: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
+                               override="make the probe pass, or reopen the unit", exit=code))
     return out, lines, records
 
 
@@ -588,8 +729,9 @@ def failure_lines(records: list[dict]) -> list[str]:
     for r in records:
         if r["outcome"] == "passed":
             continue
-        how = f"exited {r['exit']}" if r["outcome"] == "failed" else "timed out"
-        out.append(f"{r['ac']} failed: `{r['command']}` {how} after {r['duration_s']} s")
+        how = "timed out" if r["outcome"] == "timeout" else f"exited {r['exit']}"
+        what = "could not run" if r["outcome"] == "not-run" else "failed"
+        out.append(f"{r['ac']} {what}: `{r['command']}` {how} after {r['duration_s']} s")
         for stream in ("stdout", "stderr"):
             tail, n = r[f"{stream}_tail"], r[f"{stream}_lines"]
             if not n:
@@ -636,11 +778,16 @@ def unit_base(root: Path, path: str) -> str | None:
     return p.stdout.strip() or None
 
 
+NOT_RUN_OVERRIDE = ("commit the test file or fix the command so that it runs at the base and fails there, or mark a criterion that guards "
+                    "existing behaviour `(guard)`; the unit's new tests run against the old code only in a later release")
+
+
 def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int) -> list[Finding]:
     """A probe that already passes before the unit's work does not test it (method.md § Real tests, point 2).
     Runs each probe in a detached worktree at `unit_base`; a criterion marked `(guard)` protects
     existing behaviour and is expected to pass there. Untracked dependencies (node_modules, a venv)
-    are absent from the worktree, so a probe that fails there for that reason is not reported."""
+    are absent from the worktree, so a probe that fails there for that reason is not reported. A probe that could not
+    run there (`probe_outcome` says `not-run`, or it timed out) is reported: it does not show a failure either (0.4.23)."""
     probes = [(ac, cmd) for ac, cmd, line in _probe_lines(text) if "(guard)" not in line]
     base = unit_base(root, path) if probes else None
     if not base:
@@ -661,8 +808,13 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
             try:
                 code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout, env=env).returncode
             except subprocess.TimeoutExpired:
+                out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
+                                   override=NOT_RUN_OVERRIDE))
                 continue
-            if code == 0:
+            if probe_outcome(cmd, code) == "not-run":
+                out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: exit {code} (not-run), so `{cmd}` does not show it fails without the change", path=path,
+                                   override=NOT_RUN_OVERRIDE, exit=code))
+            elif code == 0:
                 out.append(Finding("probe", level, f"{ac} probe already passes at {base[:10]}, before the unit's work: `{cmd}` does not test the change", path=path,
                                    override="make the probe exercise the new behaviour, or mark a criterion that guards existing behaviour `(guard)`"))
         return out
@@ -1056,9 +1208,11 @@ def owner_only_changes(rp: str, old: str | None, new: str | None, context: str =
             if str(o.get(k) or "") != str(n.get(k) or ""):
                 why.append(f"`{k}:` of an existing decision is changed by the owner; propose a successor instead")
         if str(o.get("status", "active")) == "active":
-            for k in ("check", "binds"):
+            for k in ("check", "binds", "gate_paths"):   # gate_paths since 0.4.23
                 if lib.as_list(o.get(k)) != lib.as_list(n.get(k)):
                     why.append(f"`{k}:` of an active decision is what the gate enforces; supersede the decision instead")
+            if str(o.get("gate_evidence") or "").strip() != str(n.get("gate_evidence") or "").strip():   # a regex: compared whole, not split on commas
+                why.append("`gate_evidence:` of an active decision is what the gate enforces; supersede the decision instead")
     elif rp.startswith(lib.TASKETS_DIR + "/") and rp.endswith(".md"):
         lines = owner_line_changes(old, new)
         if lines:

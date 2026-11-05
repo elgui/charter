@@ -11,6 +11,7 @@ scope: S1
 perimeter: [app/<area>/**, tests/unit/**]
 # decisions: ids of the decisions this unit relies on; `charter check --decisions` warns when one is retired
 decisions: []
+# waives: ids of decisions whose evidence gate (`gate_paths:`) this unit is excused from; say why in ## Log; done warns; optional
 # kind: work | split (a split unit is opened by the owner)
 kind: work
 ---

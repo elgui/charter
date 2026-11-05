@@ -29,4 +29,4 @@ Read the archived brief first, and keep its client detail out of this public rep
 
 ## Log
 
-- 2026-11-05: Filed while reconciling unmerged branches; nothing implemented (operator report, 2026-11-05). The brief's five rehearsal findings were rechecked on `main`: four still open are issues #38 to #41 (`$ gh issue view 38`); the fifth (triaged units shown as in progress) is addressed by the logged unit state on the unreleased branch `release/0.4.23`, PR #43; `main` still reports `in-progress` for any unit with a Log (`package/.charter/bin/charter:292`).
+- 2026-11-05: Filed while reconciling unmerged branches; nothing implemented (operator report, 2026-11-05). The brief's five rehearsal findings were rechecked on `main`: four still open are issues #38 to #41 (`$ gh issue view 38`); the fifth (triaged units shown as in progress) is addressed by the logged unit state of 0.4.23: a Log alone now reports `logged`, not `in-progress` (`package/.charter/bin/charter:302`).

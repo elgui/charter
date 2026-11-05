@@ -65,7 +65,7 @@ def cmd_check(a) -> int:
     sid = lib.session_id()   # a commit made from a session's shell carries its id to the git hook (0.4.15)
     for f in rep.findings:
         lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all",
-                      **({"session": sid} if sid else {}))
+                      **({"session": sid} if sid else {}), **({"exit": f.exit} if f.exit is not None else {}))
     for f in rep.findings:
         print(f.line())
     n_b, n_w = len(rep.blocks), len(rep.warns)
@@ -188,6 +188,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 continue
             rep.add(*checks.check_decisions_text(root, decs, p, text))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "decisions"])
+        rep.add(*checks.check_decision_reads(root, decs, paths if a.staged else None))
         for u in units.values():
             if str(u.get("status", "")) not in done_st and str(u.get("status", "")) not in lib.TERMINAL_STATUSES:
                 rep.add(*checks.check_unit_decisions(root, decs, u))
@@ -221,14 +222,21 @@ def cmd_anchors(a) -> int:
     """Exit 1 on any unanchored claim or unresolved anchor. With --pr (a pull-request description),
     `#123` counts as an anchor and the result is a warning: the method's posture for a check whose
     false positives have not yet been measured. On the prototype track every result is a warning
-    (docs/method.md, Two tracks)."""
+    (docs/method.md, Two tracks). --strict makes findings exit 1 in both cases, for a probe on a
+    deliverable. A path that is not a file exits 2; `-` reads stdin (0.4.23)."""
     root = lib.repo_root(a.root)
-    warn_only = a.pr or lib.load_config(root).get("track") == "prototype"
+    warn_only = not a.strict and (a.pr or lib.load_config(root).get("track") == "prototype")
     rc = 0
     for f in a.files:
         p = Path(f)
-        text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else sys.stdin.read()
-        checks.DOC_DIR = p.resolve().parent if p.exists() else None
+        if f != "-" and not p.is_file():
+            # until 0.4.23 a missing path read stdin, found 0 claims and passed: a probe on a report could not fail
+            print(f"{f}: no such file")
+            lib.log_event(root, "cli", "anchors", "block", "no such file", path=f, mode="pr" if a.pr else "doc")
+            rc = 2
+            continue
+        text = sys.stdin.read() if f == "-" else p.read_text(encoding="utf-8", errors="replace")
+        checks.DOC_DIR = p.resolve().parent if f != "-" else None
         rep = checks.check_anchors(root, text, min_len=a.min_len, issues=a.pr)
         status = "ok" if rep.ok else ("WARN" if warn_only else "FAIL")
         print(f"{f}: {status} — {rep.claims} claim(s), {rep.anchored} anchored, {rep.admitted} admitted unverified, "
@@ -245,7 +253,7 @@ def cmd_anchors(a) -> int:
         lib.log_event(root, "cli", "anchors", "ok" if rep.ok else "warn" if warn_only else "block",
                       f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved", path=f, mode="pr" if a.pr else "doc")
         if not rep.ok and not warn_only:
-            rc = 1
+            rc = max(rc, 1)
     return rc
 
 
@@ -289,7 +297,9 @@ def _unit_state(root: Path, cfg: dict, u: dict, legacy: set[str] = frozenset(), 
         return "blocked", info
     if status in lib.TERMINAL_STATUSES:
         return "closed", info
-    return ("in-progress" if log else "open"), info
+    if status == "in-progress":
+        return "in-progress", info
+    return ("logged" if log else "open"), info
 
 
 def _done_before_charter(root: Path, cfg: dict) -> set[str]:
@@ -375,7 +385,7 @@ def cmd_synth(a) -> int:
         return f"- {uid} — {u.get('title', '')} [{u.get('status')}]: {info['boxes'] - info['open']}/{info['boxes']} criteria closed; evidence: {ev}{hist}{extra} ({u['_path']})"
 
     for title, want in (("Done and accepted", "accepted"), ("Done but not accepted (evidence or criteria missing)", "done-unaccepted"),
-                        ("In progress", "in-progress"), ("Open, not started", "open"), ("Blocked", "blocked")):
+                        ("In progress", "in-progress"), ("Logged (progress not asserted)", "logged"), ("Open, not started", "open"), ("Blocked", "blocked")):
         rows = [(uid, u) for uid, u in units.items() if states[uid][0] == want]
         L.append(f"## {title}")
         if rows:
@@ -516,7 +526,7 @@ def cmd_synth(a) -> int:
 # ---------------------------------------------------------------- next
 
 # The order open units are offered in: resume what has started before starting something new.
-_NEXT_RANK = {"in-progress": 0, "open": 1, "blocked": 2}
+_NEXT_RANK = {"in-progress": 0, "logged": 1, "open": 2, "blocked": 3}
 FINISHED = ("accepted", "closed", "done-before-charter")
 
 
@@ -821,6 +831,8 @@ def cmd_unit(a) -> int:
         cfg = lib.load_config(root)
         for f in checks.check_unit_scope(root, cfg, units[a.id]) + checks.check_unit_decisions(root, checks.decision_index(root), units[a.id]):
             print(f.line())
+        for g in checks.decision_gates(root, units[a.id]):   # say at the start what done will ask for (0.4.23)
+            print("gate: " + checks.gate_line(g))
         env = os.environ.get("CHARTER_UNIT", "").strip()
         if env and env != a.id:
             print(f"note: CHARTER_UNIT={env} in the environment takes precedence over this choice")
@@ -1008,6 +1020,8 @@ def cmd_probe(a) -> int:
     text = (root / u["_path"]).read_text(encoding="utf-8")
     found, lines, records = checks.run_probes_recorded(root, text, u["_path"], a.timeout or int((cfg.get("probes") or {}).get("timeout_s", 120)))
     failed = [r["ac"] for r in records if r["outcome"] != "passed"]
+    exits = {r["ac"]: r["exit"] for r in records if r["outcome"] != "passed"}
+    not_run = [r["ac"] for r in records if r["outcome"] == "not-run"]
     changed = checks.changed_since_base(root, u, u["_path"]) if (failed or a.json) else None
     if a.json:   # the record a tool reads (0.4.15); the text below is unchanged for the tools that parse it
         print(json.dumps({**_schema(root), "unit": a.id, "path": u["_path"], "probes": records, "failed": failed,
@@ -1020,8 +1034,10 @@ def cmd_probe(a) -> int:
             print(f.line(), file=sys.stderr)
     sid = lib.session_id()
     lib.log_event(root, "cli", "probe", "block" if found else "passed",
-                  f"{len(lines)} probe(s) of {a.id}" + (f"; failed: {', '.join(failed)}" if failed else ""), path=u["_path"],
-                  **({"failed": failed} if failed else {}), **({"session": sid} if sid else {}))
+                  f"{len(lines)} probe(s) of {a.id}" + (f"; failed: {', '.join(failed)}" if failed else "")
+                  + (f"; not-run: {', '.join(not_run)}" if not_run else ""), path=u["_path"],
+                  **({"failed": failed, "exits": exits} if failed else {}), **({"not_run": not_run} if not_run else {}),
+                  **({"session": sid} if sid else {}))
     return 1 if found else 0
 
 
@@ -1333,7 +1349,9 @@ def main(argv=None) -> int:
     pr.add_argument("--json", action="store_true", help="each probe's record: exit code, duration, stdout and stderr tails; the paths changed since the unit's base")
     pr.set_defaults(fn=cmd_probe)
     an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40)
-    an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn"); an.set_defaults(fn=cmd_anchors)
+    an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn")
+    an.add_argument("--strict", action="store_true", help="exit 1 on findings even on the prototype track or with --pr (for probes)")
+    an.set_defaults(fn=cmd_anchors)
     s = sub.add_parser("synth"); s.add_argument("--write", action="store_true"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_synth)
     l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None)
     l.add_argument("--human-minutes", type=int, default=None, help="with add: record time a person spent on the unit"); l.add_argument("--note", default=None)
