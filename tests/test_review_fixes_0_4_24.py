@@ -71,6 +71,28 @@ class OwnerReviewRegressions(ProjectCase):
 
 
 class DeletedPathRegressions(ProjectCase):
+    def test_renamed_started_criterion_changes_still_need_a_log_in_commit_and_ci(self):
+        for logged in (False, True):
+            with self.subTest(logged=logged):
+                root = make_project()
+                self.addCleanup(cleanup, root)
+                path = root / '.taskets/u1.md'
+                path.write_text(UNIT.replace('status: next', 'status: in-progress'))
+                commit_all(root, 'fixture: started unit')
+                base = git(root, 'rev-parse', 'HEAD').stdout.strip()
+                git(root, 'mv', '.taskets/u1.md', '.taskets/renamed.md')
+                renamed = root / '.taskets/renamed.md'
+                text = renamed.read_text().replace('retries == 3', 'retries == 4')
+                if logged:
+                    text += '\n- 2026-11-05 criterion revised with the implementation\n'
+                renamed.write_text(text)
+                git(root, 'add', '.taskets/renamed.md')
+                result = charter(root, 'check', '--staged', '--done', '--no-probe')
+                self.assertEqual(result.returncode, 0 if logged else 1, result.stdout + result.stderr)
+                commit_all(root, 'fixture: renamed criterion')
+                result = charter(root, 'check', '--all', '--done', '--base', base, '--no-probe')
+                self.assertEqual(result.returncode, 0 if logged else 1, result.stdout + result.stderr)
+
     def test_deleted_and_renamed_ordinary_units_need_no_impossible_log(self):
         for status in ('in-progress', 'done', 'deleted'):
             for rename in (False, True):
@@ -111,6 +133,7 @@ class DeletedPathRegressions(ProjectCase):
         self.assertIn('AC-2', result.stdout)
 
     def test_owner_only_type_change_reaches_the_gate(self):
+        base = git(self.root, 'rev-parse', 'HEAD').stdout.strip()
         path = self.root / 'charter/scope.md'
         (self.root / 'scope-copy.md').write_text(path.read_text())
         path.unlink()
@@ -119,6 +142,8 @@ class DeletedPathRegressions(ProjectCase):
         self.assertIn('charter/scope.md', checks.staged_paths(self.root))
         result = charter(self.root, 'check', '--staged', '--protected', '--no-probe', env={'CLAUDECODE': '1'})
         self.assertNotEqual(result.returncode, 0, result.stdout)
+        commit_all(self.root, 'fixture: type change for CI')
+        self.assertIn('charter/scope.md', checks.changed_paths(self.root, base))
 
 
 class ProbeCleanupRegressions(ProjectCase):
@@ -127,9 +152,10 @@ class ProbeCleanupRegressions(ProjectCase):
         parent = 'import subprocess,sys; subprocess.Popen([sys.executable,"-c",' + repr(child) + '],start_new_session=True).wait()'
         started = time.monotonic()
         try:
-            record, _ = checks.probe_record(self.root, 'AC-1', shlex.join([sys.executable, '-c', parent]), 0.2)
+            record, _ = checks.probe_record(self.root, 'AC-1', shlex.join([sys.executable, '-c', parent]), 1)
             self.assertEqual(record['outcome'], 'timeout')
-            self.assertLess(time.monotonic() - started, 2)
+            self.assertTrue((self.root / 'escaped.pid').exists(), 'the escaping descendant must start to exercise cleanup')
+            self.assertLess(time.monotonic() - started, 3)
         finally:
             pid = self.root / 'escaped.pid'
             if pid.exists():
@@ -191,19 +217,22 @@ class BoundedAndAnchorRegressions(ProjectCase):
 
     def test_deadline_still_applies_after_both_pipes_close(self):
         marker = self.root / 'late-producer'
-        script = f'import os,time; from pathlib import Path; os.close(1); os.close(2); time.sleep(1); Path({str(marker)!r}).write_text("late")'
-        result = lib.run_bounded([sys.executable, '-c', script], 100, timeout=0.1)
+        ready = self.root / 'producer-ready'
+        script = f'import os,time; from pathlib import Path; Path({str(ready)!r}).write_text("ready"); os.close(1); os.close(2); time.sleep(2); Path({str(marker)!r}).write_text("late")'
+        result = lib.run_bounded([sys.executable, '-c', script], 100, timeout=1)
+        self.assertTrue(ready.exists(), 'the producer must start to exercise pipe EOF')
         self.assertEqual(result.returncode, 124)
         self.assertFalse(marker.exists())
         self.assertFalse(result.truncated)
 
     def test_ref_line_anchors_use_physical_newlines(self):
-        for contents in ('a\u2028b\n', 'a\x0cb'):
+        for contents in ('a\u2028b\n', 'a\x0cb', 'a\rb\n', 'a\rb', 'a\r\nb\r\n'):
             with self.subTest(contents=repr(contents)):
                 (self.root / 'physical.txt').write_text(contents)
                 commit_all(self.root, 'fixture: physical line')
                 self.assertTrue(checks._resolves(self.root, 'fileline', 'physical.txt', '1', ref='HEAD'))
-                self.assertFalse(checks._resolves(self.root, 'fileline', 'physical.txt', '2', ref='HEAD'))
+                expected = contents.count('\n') > 1
+                self.assertEqual(checks._resolves(self.root, 'fileline', 'physical.txt', '2', ref='HEAD'), expected)
 
 
 loader = importlib.machinery.SourceFileLoader('review_probe_watcher', str(REPO / 'bin/charter-delegate'))
@@ -233,6 +262,13 @@ class WatcherProbeRegressions(ProjectCase):
         reason = watcher.run_probes(self.root, self.item('touch should-not-run'), 3)
         self.assertTrue(reason)
         self.assertFalse((self.root / 'should-not-run').exists())
+
+    def test_timeout_reason_masks_the_command(self):
+        secret = 'gh' + 'p_' + 'A' * 36
+        reason = watcher.run_probes(self.root, self.item('sleep 3; printf %s ' + secret), 0.1)
+        self.assertIn('did not finish', reason)
+        self.assertNotIn(secret, reason)
+        self.assertIn('REDACTED', reason)
 
 
 if __name__ == '__main__':

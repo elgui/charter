@@ -158,7 +158,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 continue   # deleted sources have no checklist to edit; owner protection still sees them
             if not a.strict and p not in changed_set:
                 continue   # judged when its status changed; a unit accepted earlier is not judged again
-            text, prev = new(p), old(p)
+            text, prev = new(p), old(renamed.get(p, p))
             status = str(lib.split_frontmatter(text)[0].get("status", ""))
             prev_status = str(lib.split_frontmatter(prev or "")[0].get("status", ""))
             rep.add(*checks.check_acceptance_change(prev or "", text, p))
