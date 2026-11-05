@@ -90,9 +90,13 @@ def _cap(s: str, cut: list | None = None, name: str = "") -> str:
     return b[:DIFF_CAP].decode("utf-8", "ignore") + "\n[... cut at {} bytes]".format(DIFF_CAP)
 
 
-def _git(root: Path, *args: str, env: dict | None = None, input: str | None = None) -> subprocess.CompletedProcess:
+def _git(root: Path, *args: str, env: dict | None = None, input: str | None = None,
+         max_bytes: int | None = None) -> subprocess.CompletedProcess:
     """git as the delegate runs it (SAFE_GIT), paths literal."""
-    return subprocess.run(["git", *SAFE_GIT, "--literal-pathspecs", "-C", str(root), *args], capture_output=True,
+    argv = ["git", *SAFE_GIT, "--literal-pathspecs", "-C", str(root), *args]
+    if max_bytes is not None:
+        return lib.run_bounded(argv, max_bytes, env=env)
+    return subprocess.run(argv, capture_output=True,
                           encoding="utf-8", errors="replace", env=env, input=input)
 
 
@@ -231,7 +235,12 @@ def _plan_commit(root: Path, cfg: dict, rec: dict, lv: dict) -> dict:
     if manual:
         why.append(f"the probe of {', '.join(manual)} only prints: it is a check the owner makes by hand")
     cut: list[str] = []
-    diff = _git(root, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--", *paths).stdout
+    dr = _git(root, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--", *paths, max_bytes=DIFF_CAP)
+    diff = dr.stdout
+    if dr.truncated:
+        cut.append("the diff")
+    elif dr.returncode != 0:
+        why.append("the staged diff could not be read whole")
     units = {rp: _cap(checks.staged_text(root, rp), cut, rp) for rp in kinds if rp.startswith(lib.TASKETS_DIR + "/")}
     diff = _cap(diff, cut, "the diff")
     if cut:

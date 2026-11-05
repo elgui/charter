@@ -49,7 +49,7 @@ Codex and other agents get no banner. They read the `AGENTS.md` section the inst
 
 ## 2. Pick or write the unit
 
-When starting from a road rather than a prepared unit, use the [preparation sequence](method.md#prepare-the-road-for-execution). Read `charter next --json` and `charter owner --json`, compare decisions and sources, and resolve what each unit needs to start and finish. These commands report records; neither proves design adequacy nor validates an external runner's dependency selection (`package/.charter/bin/charter:542`, `package/.charter/owner.py`, `docs/design/project-road-control-center.md`).
+When starting from a road rather than a prepared unit, use the [preparation sequence](method.md#prepare-the-road-for-execution). Read `charter next --json` and `charter owner --json`, compare decisions and sources, and resolve what each unit needs to start and finish. These commands report records; neither proves design adequacy nor validates an external runner's dependency selection (`_next_json` in `package/.charter/bin/charter`, `package/.charter/owner.py`, `docs/design/project-road-control-center.md`).
 
 One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit for <deliverable>". Both load the `charter-unit` skill (`package/.claude/skills/charter-unit/SKILL.md`), which creates a missing unit from `charter/templates/unit.md`. With no unit in mind, `charter next` lists the open units the road names, in its order, with the ones already started first.
 
@@ -111,7 +111,7 @@ To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` 
 2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
 4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
-5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:748`).
+5. `python3 .charter/bin/charter unit stop` (`cmd_unit` in `package/.charter/bin/charter`).
 
 A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
@@ -150,7 +150,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 |---|---|---|
 | The agent staged an owner-only file (install, upgrade, config) | Commit it | Run the one line the agent handed over, `CHARTER_OWNER=1 python3 <root>/.charter/bin/charter owner commit`, after `!` in the Claude Code prompt or in a terminal; `python3 .charter/bin/charter handover` prints it again (`docs/install.md` step 8) |
 | A decision is `proposed` | Adopt it, or reject it | `python3 .charter/bin/charter rule <id> active` (or `rejected`): status, a `## Ruling` line, the index and the commit in one command; `active` first runs the decision's `check:` (`rule` in `package/.charter/owner.py`) |
-| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`package/.charter/checks.py:702`) |
+| A change request is `proposed` | Approve it, or refuse it | `python3 .charter/bin/charter approve <id>` (or `--reject`) sets `status:`, `approved_by:` and `approved_on:` and commits; until all three are set its paths stay refused (`check_changes` in `package/.charter/checks.py`) |
 | A decision is superseded | Retire the old one | `python3 .charter/bin/charter rule <old> superseded --by <new>` sets `status: superseded` and `superseded_by:` (`package/.claude/skills/charter-decision/SKILL.md`) |
 | A frozen file must grow | Open a split unit, or name an exception | A unit with `kind: split` and the file in `perimeter:`, or a `size_exceptions` entry with a budget, `because:` and `expires:` (`docs/gates.md` § Size) |
 | The road changes | Re-plan | Add or reorder items in `charter/rails.md` (`package/charter/templates/rails.md`); `python3 .charter/bin/charter rail <id> done` closes one in one commit |
@@ -164,7 +164,7 @@ The agent prepares these and stops; the owner acts (`package/.claude/rules/chart
 - `python3 .charter/bin/charter config`: the track and opt-ins in force. Turn an opt-in on only when the project can bear it (each is described in `docs/gates.md` § Done needs evidence and § Rails):
   - `probes.at_commit` or `probes.in_ci` once the probes run offline and fast; the survey's `--test-cmd` measures that (`machine/skills/CharterAdmin/workflows/Migrate.md:25`);
   - `probes.base_must_fail` once the probes reliably fail before the work (`docs/package.md` § Versioning and upgrade, 0.4.1);
-  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`package/.charter/checks.py:381`);
+  - `review.required` when an independent reviewer (another model, or a person) checks each unit (`check_unit_done` in `package/.charter/checks.py`);
   - `rails.required` once `charter/rails.md` exists and every open unit names a rail (`package/charter/templates/rails.md`).
 - A typo in any of these is refused at the next commit and named in the next banner, so a misspelled opt-in cannot stay off unnoticed (`docs/gates.md` § Config).
 - `python3 .charter/bin/charter synth`, without `--write`, adds the gate activity the written file leaves out (`package/.claude/skills/charter-progress/SKILL.md`).

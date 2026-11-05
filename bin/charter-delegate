@@ -419,6 +419,13 @@ def find_quote(session: str, quote: str, asked_at: str = "") -> tuple[bool, str]
 # ---------------------------------------------------------------- pull requests
 
 def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    if args[:2] == ("pr", "diff"):
+        result = engine_checks.lib.run_bounded([GH, *args], 120_000, cwd=str(cwd),
+                                             env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH))
+        if result.truncated:
+            result.returncode = 1
+            result.stderr = "diff exceeds 120000 bytes; producer stopped before buffering it whole"
+        return result
     return subprocess.run([GH, *args], capture_output=True, encoding="utf-8", errors="replace", cwd=str(cwd),
                           env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH), timeout=120)
 
@@ -651,12 +658,14 @@ def run_probes(wt: Path, item: dict, timeout: int) -> str:
     for p in item.get("probes") or []:
         with tempfile.TemporaryDirectory(prefix="charter-probe-") as home:
             try:
-                r = subprocess.run(p["probe"], shell=True, cwd=str(wt), capture_output=True, encoding="utf-8", errors="replace",
-                                   timeout=timeout, env=probe_env(Path(home)))
+                r = engine_checks._run_probe(wt, p["probe"], timeout, env=probe_env(Path(home)))
             except subprocess.TimeoutExpired:
-                return f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}"
+                return engine_checks.lib.redact_credentials(
+                    f"the probe of {p['path']} {p['key']} did not finish in {timeout} s: {p['probe']}")
         if r.returncode != 0:
-            return f"the probe of {p['path']} {p['key']} exits {r.returncode}: {p['probe']}\n{(r.stdout + r.stderr)[-600:]}"
+            output = engine_checks.lib.redact_credentials(r.stdout + r.stderr)[-600:]
+            command = engine_checks.lib.redact_credentials(p['probe'])
+            return f"the probe of {p['path']} {p['key']} exits {r.returncode}: {command}\n{output}"
     return ""
 
 

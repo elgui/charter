@@ -12,10 +12,13 @@ import glob
 import json
 import os
 import re
+import selectors
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 CHARTER_DIR = "charter"
@@ -25,6 +28,11 @@ TASKETS_DIR = ".taskets"
 # paths the perimeter gate never judges at commit, and the perimeter fit and the probe record leave out (0.4.15)
 PERIMETER_EXEMPT = (TASKETS_DIR + "/", CHARTER_DIR + "/", TOOL_DIR + "/", ".claude/", ".github/")   # directories: `charter_app/` is judged
 LEGACY_FILE = "charter/legacy-taskets.txt"
+# Existing dash segments may carry a following probe. Plain separators mark only a terminal owner segment.
+OWNER_SEGMENT_RE = re.compile(
+    r"^\s*-\s*\[[ xX]\][^\n]*?(?:\s[—–]\s*|(?:\s-|[;:])\s*"
+    r"(?=owner:\s*(?:(?:decide|do|check)\s*)?$))owner:\s*(?:(decide|do|check)\b|\b|(?=$|[—–]))", re.I)
+
 
 # Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).
 TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "deferred")
@@ -32,7 +40,7 @@ TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "
 PLANNING_STATUSES = ("", "next", "later")
 
 DEFAULT_CONFIG = {
-    "version": "0.4.23",
+    "version": "0.4.24",
     "track": "client",            # "client" | "prototype"
     "owner": "",                  # git author name or email allowed to commit owner-only changes; CI checks it
     "limits": {
@@ -51,6 +59,7 @@ DEFAULT_CONFIG = {
     "done_statuses": ["done"],
     "probes": {                   # re-run acceptance probes of units that close in a change set
         "at_commit": False, "in_ci": False, "timeout_s": 120,
+        "runner": [],             # argv prefix before /bin/sh -c <unchanged probe>, e.g. ["uv", "run", "--"]
         "base_must_fail": False,  # a probe passing before the unit's work: a warning, or refused when true
     },
     # done also needs a `review:` evidence line naming an independent verdict (off by default)
@@ -87,7 +96,82 @@ DEFAULT_CONFIG = {
 }
 
 
+CREDENTIALS = [
+    ("stripe secret key", r"[sr]k_(test|live)_[A-Za-z0-9]{16,}"), ("stripe webhook secret", r"whsec_[A-Za-z0-9]{16,}"),
+    ("hubspot token", r"pat-(na|eu)[0-9]-[A-Za-z0-9-]{20,}"), ("aws access key", r"AKIA[0-9A-Z]{16}"),
+    ("github token", r"(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"), ("slack token", r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    ("google api key", r"AIza[0-9A-Za-z_-]{35}"), ("google oauth secret", r"GOCSPX-[A-Za-z0-9_-]{20,}"),
+    ("anthropic key", r"sk-ant-[A-Za-z0-9_-]{20,}"), ("openai-style key", r"sk-(proj-)?[A-Za-z0-9]{32,}"),
+    ("private key block", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), ("age secret key", r"AGE-SECRET-KEY-1[0-9A-Z]{50,}"),
+    ("telegram bot token", r"[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}"),
+]
+
+
+def redact_credentials(text: str) -> str:
+    """Mask the survey's credential shapes before storing or truncating probe diagnostics.
+    This recognises shapes, not every possible secret; it is not a credential scanner.
+    """
+    text = re.sub(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
+                  "[REDACTED private key]", text, flags=re.S)
+    for kind, pattern in CREDENTIALS:
+        text = re.sub(pattern, lambda _: "[REDACTED " + kind + "]", text)
+    return text
+
+
 # ---------------------------------------------------------------- repo & config
+
+def run_bounded(argv: list[str], max_bytes: int, *, timeout: int = 120, **kw) -> subprocess.CompletedProcess:
+    """Capture at most max_bytes across both streams; stop and reap an over-budget producer.
+    Callers must refuse a truncated result, never submit it to a judge as a complete diff.
+    """
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    size, truncated, expired = 0, False, False
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, **kw) as proc:
+        try:
+            with selectors.DefaultSelector() as sel:
+                sel.register(proc.stdout, selectors.EVENT_READ, "stdout")
+                sel.register(proc.stderr, selectors.EVENT_READ, "stderr")
+                while sel.get_map():
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        expired = True
+                        break
+                    for key, _ in sel.select(left):
+                        chunk = os.read(key.fd, 8192)
+                        if not chunk:
+                            sel.unregister(key.fileobj)
+                            continue
+                        keep = chunk[:max_bytes - size]
+                        buffers[key.data].extend(keep)
+                        size += len(keep)
+                        if len(keep) < len(chunk):
+                            truncated = True
+                            break
+                    if truncated:
+                        break
+            if not truncated and not expired:
+                try:
+                    proc.wait(timeout=max(0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    expired = True
+        except BaseException:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            raise
+        if truncated or expired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        proc.wait()
+    result = subprocess.CompletedProcess(argv, 124 if expired else proc.returncode,
+                                         buffers["stdout"].decode("utf-8", "ignore"), buffers["stderr"].decode("utf-8", "ignore"))
+    result.truncated = truncated
+    return result
 
 def repo_root(start: str | os.PathLike | None = None) -> Path:
     """Root of the git checkout that contains `start` (a worktree counts)."""
@@ -127,7 +211,7 @@ CONFIG_SCHEMA = {
     "governance_files": list, "size_exceptions": list, "exempt_from_size": list,
     "rails": {"required": bool, "keys": list},
     "done_statuses": list,
-    "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
+    "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool, "runner": list},
     "review": {"required": bool},
     "delegate": {"level": str},
     "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str, "close_delay_s": int,
@@ -184,6 +268,8 @@ def config_from(user: dict) -> dict:
                     problems.append(f"`{k}.{sk}` is {json.dumps(sv)}, not a {t[sk].__name__}; left at {json.dumps(cfg[k][sk])}")
                 elif k == "chain" and sk == "close_delay_s" and sv < 0:
                     problems.append(f"`chain.close_delay_s` is {sv}, below 0; left at {json.dumps(cfg[k][sk])}")
+                elif k == "probes" and sk == "runner" and any(not isinstance(a, str) or not a.strip() or "\0" in a for a in sv):
+                    problems.append("`probes.runner` must be an argv list of nonempty strings without NUL; left at []")
                 elif k == "delegate" and sk == "level" and sv not in DELEGATE_LEVELS:
                     problems.append(f"`delegate.level` is {json.dumps(sv)}, not one of {', '.join(DELEGATE_LEVELS)}{_near(sv, DELEGATE_LEVELS)}; read as strict")
                 else:
@@ -673,7 +759,7 @@ def split_frontmatter(text: str) -> tuple[dict, str, str]:
     fields: dict = {}
     current_list_key = None
     blank: set[str] = set()
-    for line in raw.splitlines():
+    for line in raw.split("\n"):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if current_list_key and re.match(r"^\s+-\s+", line):
@@ -914,7 +1000,7 @@ def acceptance(body: str) -> str:
 
 
 def acceptance_span(body: str) -> tuple[str | None, list[int], str]:
-    """(heading, the index in body.splitlines() of each line of the text, text) of the checklist `acceptance` reads;
+    """(heading, the index in body.split("\n") of each line of the text, text) of the checklist `acceptance` reads;
     (None, [], "") without one. `charter unit show --json` numbers the lines from it (0.4.13)."""
     for h in ACCEPTANCE_HEADINGS:
         at, s = _section_at(body, h)
@@ -1002,9 +1088,9 @@ def section(body: str, title: str) -> str:
 
 
 def _section_at(body: str, title: str) -> tuple[list[int], str]:
-    """(the index in body.splitlines() of each line of the text `section` returns; that text). A nested heading that
+    """(the index in body.split("\n") of each line of the text `section` returns; that text). A nested heading that
     starts with `title` again is not in the text, so the lines are not always contiguous in the body."""
-    lines = body.splitlines()
+    lines = body.split("\n")
     out, at, level, on = [], [], None, False
     want = title.lower()
     for i, line in enumerate(lines):
