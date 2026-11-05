@@ -405,10 +405,13 @@ def cmd_synth(a) -> int:
     L.append("## Perimeter fit")   # a report, never a gate (0.4.15)
     fits, seen = checks.perimeter_fits(root, units)
     one = lambda n, word: f"{n} {word}s" if n == 1 else f"{n} {word}"
-    L.append(f"- Read from commit subjects that say `unit <id>`: {seen['commits']} commit(s), {one(seen['untagged'], 'name')} no unit, "
-             f"{one(seen['ambiguous'], 'name')} an id two or more units share, {one(seen['several'], 'name')} two or more units; "
-             "work under no tag or another unit's tag is not seen (`perimeter_fits` in .charter/checks.py)")
-    L += [f"- {uid}: {checks.fit_text(f, short=True)} ({units[uid]['_path']})" for uid, f in fits.items() if f["commits"]]
+    if seen.get("history") == "unavailable":
+        L.append("- History unavailable; no perimeter measurement (`perimeter_fits` in .charter/checks.py)")
+    else:
+        L.append(f"- Read from commit subjects that say `unit <id>`: {seen['commits']} commit(s), {one(seen['untagged'], 'name')} no unit, "
+                 f"{one(seen['ambiguous'], 'name')} an id two or more units share, {one(seen['several'], 'name')} two or more units; "
+                 "work under no tag or another unit's tag is not seen (`perimeter_fits` in .charter/checks.py)")
+        L += [f"- {uid}: {checks.fit_text(f, short=True)} ({units[uid]['_path']})" for uid, f in fits.items() if f["commits"] or f.get("history")]
     L.append("")
 
     L.append("## Open decisions and change requests")

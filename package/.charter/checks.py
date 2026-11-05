@@ -1045,6 +1045,8 @@ def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict],
     paths_of: dict[str, set] = {uid: set() for uid in units}
     commits = dict.fromkeys(units, 0)
     seen = {"commits": 0, "untagged": 0, "ambiguous": 0, "several": 0}
+    unavailable = r.returncode != 0
+    shallow = lib.git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     for rec in r.stdout.split("\x1e")[1:] if r.returncode == 0 else []:
         parts = rec.split("\x1f")
         if len(parts) < 3:
@@ -1072,6 +1074,10 @@ def perimeter_fits(root: Path, units: dict[str, dict]) -> tuple[dict[str, dict],
         fits[uid] = {"commits": commits[uid], "touched": paths, "outside": outside,
                      "outside_noted": [p for p in outside if p in notes or os.path.basename(p) in notes],
                      "entries": per, "untouched_entries": [e for e in per if not any(lib.matches_any(p, [e]) for p in every)]}
+        if unavailable or shallow:
+            fits[uid].update(history="unavailable" if unavailable else "shallow", history_commits=seen["commits"])
+    if unavailable or shallow:
+        seen["history"] = "unavailable" if unavailable else "shallow"
     return fits, seen
 
 
@@ -1081,6 +1087,11 @@ def _names(items: list[str], n: int = 10) -> str:
 
 def fit_text(fit: dict, short: bool = False) -> str:
     """One unit's fit in words: `charter unit show <id>` (short=False) and a `charter synth` line (short=True)."""
+    if fit.get("history") == "unavailable":
+        return "history unavailable; no perimeter measurement"
+    if fit.get("history") == "shallow":
+        return (f"shallow clone: {fit['history_commits']} commit(s) read; missing commits are not measured; "
+                + fit_text({k: v for k, v in fit.items() if k != "history"}, short))
     if not fit["commits"]:
         return "no commit message says `unit <id>` for this unit"
     s = (f"{fit['commits']} commit(s), {len(fit['touched'])} path(s)" if short
