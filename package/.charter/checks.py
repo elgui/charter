@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -685,12 +686,28 @@ def probe_outcome(cmd: str, code: int) -> str:
     return "failed"
 
 
+def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None) -> subprocess.CompletedProcess:
+    """A probe owns a process group: on timeout kill its shell and children, then drain and reap."""
+    with subprocess.Popen(cmd, shell=True, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          encoding="utf-8", errors="replace", env=env, start_new_session=True) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            out, err = proc.communicate()
+            raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
     """Run one probe. (its record, the one-line tail the text line has always shown: the last line of stdout and
     stderr together, cut to 100 characters)."""
     t0 = time.monotonic()
     try:
-        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+        r = _run_probe(root, cmd, timeout)
         out, err, code = r.stdout, r.stderr, r.returncode
         outcome = probe_outcome(cmd, code)
         line = ((out + err).strip().splitlines() or [""])[-1][:100]
@@ -806,7 +823,7 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
         out = []
         for ac, cmd in probes:
             try:
-                code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout, env=env).returncode
+                code = _run_probe(wt, cmd, timeout, env).returncode
             except subprocess.TimeoutExpired:
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
                                    override=NOT_RUN_OVERRIDE))
