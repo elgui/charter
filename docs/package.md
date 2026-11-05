@@ -75,7 +75,7 @@ handover [-m MESSAGE]
 chain start --unit ID [--mission TEXT | --mission-file F] [--model M] [--effort E] [--window N] [--wrap PCT] [--cap PCT]
             [--max-sessions N] [--launcher auto|spawn|headless|TEMPLATE] [--review auto|codex|off|TEMPLATE] [--here] [--dry-run]
 chain next [--session N] [--early WHY] [--check] | join ID N | status [ID] | watch [ID] [--from LINE] | stop [ID]
-      | resume [ID] [--note TEXT | --note-file F] [--more N] [--skip-review] | report [ID] | review-run ID --group K
+      | resume [ID] [--note TEXT | --note-file F] [--more N] [--skip-review] | report [ID] | review-run ID --group K | close-session ID N
 owner [--json]
 rule <decision> active|rejected|superseded [--by ID] [--note TEXT] [--trailer TEXT] [--dry-run]
 approve <change> [approved|rejected] [--reject] [--note TEXT] [--trailer TEXT] [--dry-run]

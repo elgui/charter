@@ -238,7 +238,23 @@ session n+1: briefing has the run (each failed act's output) and the lines left 
 - It does not see a `sudo` inside a script or a probe: `charter probe` and the probes `chain next` re-runs for a closed unit still raise a prompt when they call one (`facts` in `package/.charter/chain.py`). The rules send such a probe to `owner.md`.
 - It removes no Touch ID. A project that wants fewer touches names fixed, root-owned scripts in a NOPASSWD rule, which the owner writes; charter never writes sudoers (chain rules § 5, `package/.charter/chain-rules.md`).
 
+## Where a session opens, and when its process ends (0.4.23)
+
+Measured on 2026-11-01 from a tele-claude session, for a chain to run from a linked worktree on a box short of memory (`docs/trials/2026-11-01-chain-close.md`).
+
+| Requirement | What holds it |
+|---|---|
+| A session opens in the chain's tree, not the caller's | `launch` passes `--workspace` with the chain's root; `chain start` prints `sessions open in` (`package/.charter/chain.py`). The shim's default is the caller's registered row, which it keeps on purpose for `/spawn` (`plugins/spawn/agent-backend/README.md` § Where the child lands in https://github.com/elgui/claude-plugins) |
+| Every end of a session frees its process | `close_session`, called from `close_link` (hand-over, wait, halt, complete, an abnormal close at a resume), from `on_stop` (a stall, a session that ends its turn in a chain that ended) and from `_stop` (a tab that never joined) |
+| A session is not cut off in its closing message | The closer is detached and waits `chain.close_delay_s`, 60 s by default: a session cannot delete itself from inside `chain next`, whose pane the delete kills |
+| A close that fails is seen and tried again | `cmd_close_session` tries three times, a delay apart, and writes `tab-not-closed`; each later hand-over sweeps the sessions before it. A tab already gone counts as closed |
+| The owner hears of a folder Claude Code has not trusted before the start | `untrusted`, in the plan of `chain start` |
+
+This reverses one choice of 0.4.11 (§ The owner's side of a wait): "also in a chain's tab once its session has handed over". The tab is gone within a minute of a wait or a halt, so the owner resumes in a session of their own in the chain's tree. `typed_by_owner` still accepts a tab that has not closed yet. What the session's closing message said is not lost: `charter owner` prints the same acts, and the transcript stays.
+
 ## Trial
+
+`docs/trials/2026-11-01-chain-close.md`: a chain on tele-claude from a linked worktree, where a session's working directory, its close at each end and the memory were measured.
 
 `docs/trials/2026-10-04-chain.md`: three chains on a test bed, headless and in cmux tabs, with what each showed and what it changed.
 

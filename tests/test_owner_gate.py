@@ -141,7 +141,7 @@ class OwnerGate(WaitCase):
         # nothing but the owner types there (0.4.11, the owner's choice of 2026-10-05)
         self.waiting()
         own = f"cd {shlex.quote(str(self.root.resolve()))} && claude"
-        self.assertIn(f"in the chain's tab once its session has handed over, or a session of your own (`{own}`)", charter(self.root, "next").stdout)
+        self.assertIn(f"in a session of your own (`{own}`)", charter(self.root, "next").stdout)
         r = resume(self.root, "ok FileVault is on", sid="s1")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("closed u1 AC-2 as the owner", r.stdout)

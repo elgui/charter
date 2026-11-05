@@ -1,0 +1,48 @@
+---
+id: 20261101-chain-closes-every-session
+title: A chain session opens in the chain's own tree and its process is freed at every end
+status: in-progress
+priority: p1
+created: 2026-11-01
+updated: 2026-11-01
+category: bug
+perimeter:
+  - package/.charter/chain.py
+  - package/.charter/chain_groups.py
+  - package/.charter/owner_acts.py
+  - package/.charter/lib.py
+  - package/.claude/skills/charter-chain/SKILL.md
+  - tests/test_chain_close_0_4_23.py
+  - tests/test_chain_wait.py
+  - tests/test_owner_gate.py
+  - package/VERSION
+  - package/charter/config.json
+  - AGENTS.md
+  - docs/
+---
+
+# A chain session opens in the chain's own tree and its process is freed at every end
+
+## Why
+
+The coordination engine's core conformance unit runs as a chain from a linked worktree, on a VPS whose swap is nearly
+full. Two defects, both measured on 2026-11-01 from a tele-claude session (operator report, 2026-11-01):
+
+- `launch` passes no `--workspace`, and the shim defaults to the calling session's registered `working_dir`. A
+  throwaway `create` run from a scratch repository registered and ran in the caller's checkout, on `main`.
+- `close_tab` runs in one place, `_hand_over`, on session n-1. Session n stays alive for the whole of session n+1; the
+  last session of a chain, and a session that halts, waits or stalls, are never closed.
+
+## Acceptance
+
+- [ ] AC-1: `launch` passes the chain's root as `--workspace`, in the main tree and in a linked worktree, and `chain start --dry-run` names where sessions open: `python3 -B -m unittest test_chain_close_0_4_23.Workspace` from `tests/`
+- [ ] AC-2: a spawned session is deleted after hand-over, wait, halt, complete and stall, and after a stop before it joined: `python3 -B -m unittest test_chain_close_0_4_23.EveryEnd test_chain_close_0_4_23.WaitEnd` from `tests/`
+- [ ] AC-3: a close that fails is retried, reported as an event, and picked up at the next hand-over; a tab already gone counts as closed: `python3 -B -m unittest test_chain_close_0_4_23.CloseFailure` from `tests/`
+- [ ] AC-4: a real chain on tele-claude, in a throwaway repository: sessions open in that repository, and a session's process is gone after it ends (recorded in `docs/trials/2026-11-01-chain-close.md`)
+
+## Evidence
+
+## Log
+
+- 2026-11-01: fix and trial landed; AC-4 evidence is docs/trials/2026-11-01-chain-close.md. Added beyond the first list: the trust warning and the honest menu message, both found by the trial.
+- 2026-11-01: opened. Tests before the fix. This repository runs no `.charter/` of its own (`AGENTS.md`), so this tasket is the record and its probes run from `tests/`.

@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     # {chain}, {project}, {title} and {text}; the review of the owner's acts at a wait (owner_acts.py): auto (codex if
     # on PATH) | codex | off | a command template with {prompt}, {schema} and {out}, its effort and how long it may run
     "chain": {"model": "opus[1m]", "effort": "high", "window_tokens": 0, "wrap_pct": 25, "cap_pct": 30,
-              "max_sessions": 12, "launcher": "auto", "review": "auto", "review_effort": "high", "review_timeout_s": 1800,
+              "max_sessions": 12, "launcher": "auto", "close_delay_s": 60, "review": "auto", "review_effort": "high", "review_timeout_s": 1800,
               "notify": "auto", "notify_command": "",
               "owner_review": "auto", "owner_review_effort": "medium", "owner_review_timeout_s": 300},
     # estimates for the ledger, USD per million tokens; keys are model-id prefixes (the longest match
@@ -130,7 +130,7 @@ CONFIG_SCHEMA = {
     "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
     "review": {"required": bool},
     "delegate": {"level": str},
-    "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str,
+    "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str, "close_delay_s": int,
               "review": str, "review_effort": str, "review_timeout_s": int, "notify": str, "notify_command": str,
               "owner_review": str, "owner_review_effort": str, "owner_review_timeout_s": int},
     "prices_usd_per_mtok": dict,
