@@ -639,7 +639,7 @@ def do_survey(project: Path, a) -> int:
     docs = {"survey.md": charter_plan.report(facts), "plan.md": charter_plan.plan(facts, a.track)}
     rc = 0
     for name, text in docs.items():
-        rep = charter_plan.check(project, text)
+        rep = charter_plan.check(project, text, ref=facts["checkout"]["ref"])
         if not rep.ok:
             rc = 3
             for ln, t in rep.unanchored + rep.unresolved:

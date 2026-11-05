@@ -495,6 +495,6 @@ def plan(s: dict, track: str) -> str:
     return "\n".join(L)
 
 
-def check(root, text: str):
+def check(root, text: str, ref: str | None = None):
     """The anchoring check on a rendered document, read-only (the CLI would also log)."""
-    return checks.check_anchors(root, text)
+    return checks.check_anchors(root, text, ref=ref)

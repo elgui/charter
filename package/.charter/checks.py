@@ -318,9 +318,21 @@ def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
 
 # ---------------------------------------------------------------- done (R9)
 
-def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "") -> bool:
+def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "", ref: str | None = None) -> bool:
     if anchor_kind == "sha":
         return lib.git(root, "cat-file", "-e", f"{value}^{{commit}}").returncode == 0
+    if ref is not None and anchor_kind in ("fileline", "path"):
+        if value.startswith(("/", "~/")):
+            return False   # a surveyed ref cannot establish an external machine's files
+        r = lib.git(root, "cat-file", "-t", f"{ref}:{value.rstrip('/')}")
+        if r.returncode != 0:
+            return False
+        if anchor_kind == "path":
+            return True
+        if r.stdout.strip() != "blob":
+            return False
+        r = lib.git(root, "show", f"{ref}:{value}")
+        return r.returncode == 0 and 1 <= int(extra) <= max(1, len(r.stdout.splitlines()))
     if anchor_kind == "fileline":
         p = _abs(root, value)
         if not _exists(p, file=True):
@@ -357,11 +369,11 @@ def _abs(root: Path, value: str) -> Path:
     return root / value
 
 
-def classify_anchors(root: Path, text: str) -> dict[str, list[str]]:
+def classify_anchors(root: Path, text: str, ref: str | None = None) -> dict[str, list[str]]:
     """Anchors in a text by kind: sha, fileline, url, path and run resolve; bad do not."""
     k: dict[str, list[str]] = {"sha": [], "fileline": [], "url": [], "path": [], "run": [], "bad": []}
     for m in FILELINE_RE.finditer(text):
-        (k["fileline"] if _resolves(root, "fileline", m.group(1), m.group(2)) else k["bad"]).append(f"{m.group(1)}:{m.group(2)}")
+        (k["fileline"] if _resolves(root, "fileline", m.group(1), m.group(2), ref) else k["bad"]).append(f"{m.group(1)}:{m.group(2)}")
     # a hex run inside a path (a UUID directory, a hash-named file) is part of the path, not a commit
     for m in SHA_RE.finditer(re.sub(r"\S*/\S*", " ", text)):
         v = m.group(0)
@@ -377,15 +389,15 @@ def classify_anchors(root: Path, text: str) -> dict[str, list[str]]:
         cand = m.group(1).rstrip("/.")
         if "*" in cand or not cand or cand.startswith("-"):
             continue
-        if _exists(_abs(root, cand)):
+        if _resolves(root, "path", cand, ref=ref):
             k["path"].append(cand)
     k["run"] = [m.group(0).strip()[:60] for m in RUN_RE.finditer(text)]
     return k
 
 
-def evidence_anchors(root: Path, text: str) -> tuple[list[str], list[str]]:
+def evidence_anchors(root: Path, text: str, ref: str | None = None) -> tuple[list[str], list[str]]:
     """(resolving, unresolved) anchors found in a text."""
-    k = classify_anchors(root, text)
+    k = classify_anchors(root, text, ref)
     return k["fileline"] + k["sha"] + k["url"] + k["path"] + k["run"], k["bad"]
 
 
@@ -1526,15 +1538,18 @@ CITED_PATH_RE = re.compile(r"`((?:~/|/)?[\w.~-]+(?:/[\w.~-]+)*(?:/|/[\w.~-]*\.[A
 NUMBER_RE = re.compile(r"[\d.]+")   # a last part made of digits and dots: a ratio `1/2.0`, a branch `release/0.4.22`
 
 
-def _is_dir(root: Path, rel: str) -> bool:
+def _is_dir(root: Path, rel: str, ref: str | None = None) -> bool:
     """A file of that name is not the directory a path needs; a path this user may not look at is not here either."""
+    if ref is not None:
+        r = lib.git(root, "cat-file", "-t", f"{ref}:{rel}")
+        return r.returncode == 0 and r.stdout.strip() == "tree"
     try:
         return _abs(root, rel).is_dir()
     except OSError:
         return False
 
 
-def missing_dirs(root: Path, line: str) -> list[str]:
+def missing_dirs(root: Path, line: str, ref: str | None = None) -> list[str]:
     """Backticked paths in a line whose directory does not exist here. A file not yet written in an existing
     directory is not listed: a spec names the files its units will create."""
     out = []
@@ -1544,7 +1559,7 @@ def missing_dirs(root: Path, line: str) -> list[str]:
             continue   # a directory, `x/2026/`, is still checked
         # the directory as written: `x/../docs` needs `x` to exist, so it is not normalised away
         d = cand.rstrip("/") if cand.endswith("/") else cand.rsplit("/", 1)[0]
-        if d not in ("", ".", "~") and not _is_dir(root, d):   # `~/.claude` is a file in the home directory
+        if d not in ("", ".", "~") and not _is_dir(root, d, ref):   # `~/.claude` is a file in the home directory
             out.append(cand)
     return out
 
@@ -1563,9 +1578,9 @@ def missing_roots(root: Path, missing: list[tuple[int, str]]) -> list[tuple[int,
     return [(ln, top, n, first) for top, (ln, n, first) in groups.items()]
 
 
-def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False) -> tuple[int, list[str]]:
+def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = False, ref: str | None = None) -> tuple[int, list[str]]:
     """Count anchors in text; return (count of resolving anchors, list of unresolved)."""
-    ok, bad = evidence_anchors(root, text)
+    ok, bad = evidence_anchors(root, text, ref)
     for m in EVIDENCE_REF_RE.finditer(text):
         (ok if m.group(0) in evidence_ids else bad).append(m.group(0))
     if issues:   # a pull request's `#123` / `owner/repo#123` points at an issue the reader can open
@@ -1573,7 +1588,7 @@ def _anchors_in(root: Path, text: str, evidence_ids: set[str], issues: bool = Fa
     return len(ok), bad
 
 
-def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False) -> AnchorReport:
+def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False, ref: str | None = None) -> AnchorReport:
     rep = AnchorReport()
     lines = text.splitlines()
     # evidence index ids defined in the document: lines starting with "- E-<n>" or "| E-<n>"
@@ -1595,7 +1610,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             para.clear()
             return
         rep.claims += 1
-        n_ok, bad = _anchors_in(root, joined, evidence_ids, issues)
+        n_ok, bad = _anchors_in(root, joined, evidence_ids, issues, ref)
         admitted = ADMIT_RE.search(joined) is not None
         if bad and not admitted:
             rep.unresolved.append((first, ", ".join(bad[:4])))
@@ -1617,7 +1632,7 @@ def check_anchors(root: Path, text: str, min_len: int = 40, issues: bool = False
             continue
         if in_code:
             continue
-        rep.missing.extend((i, p) for p in missing_dirs(root, s))
+        rep.missing.extend((i, p) for p in missing_dirs(root, s, ref))
         if "<!-- charter: opinion -->" in s:
             in_opinion = True; flush(); continue
         if "<!-- charter: /opinion -->" in s:
