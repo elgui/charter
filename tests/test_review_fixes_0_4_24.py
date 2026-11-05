@@ -71,6 +71,46 @@ class OwnerReviewRegressions(ProjectCase):
 
 
 class DeletedPathRegressions(ProjectCase):
+    def test_imported_done_documents_are_new_closures_in_commit_and_ci(self):
+        for source in ('notes/imported.md', '.taskets/imported.txt'):
+            with self.subTest(source=source):
+                root = make_project()
+                self.addCleanup(cleanup, root)
+                old = root / source
+                old.parent.mkdir(exist_ok=True)
+                old.write_text('---\nid: imported\nstatus: done\n---\n\n## Context\n\nOld notes, not a validated tasket.\n')
+                commit_all(root, 'fixture: non-tasket done document')
+                base = git(root, 'rev-parse', 'HEAD').stdout.strip()
+                git(root, 'mv', source, '.taskets/imported.md')
+                self.assertEqual(checks.rename_sources(root).get('.taskets/imported.md'), source)
+                result = charter(root, 'check', '--staged', '--done', '--no-probe')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('Acceptance', result.stdout)
+                commit_all(root, 'fixture: imported document')
+                result = charter(root, 'check', '--all', '--done', '--base', base, '--no-probe')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('Acceptance', result.stdout)
+
+    def test_heuristic_rename_of_a_different_id_cannot_inherit_done_status(self):
+        path = self.root / '.taskets/u1.md'
+        before = UNIT.replace('id: u1', 'id: previous').replace('status: next', 'status: done')
+        before = before.replace('[ ] AC-1', '[x] AC-1').replace('## Evidence', '## Evidence\n\n- $ echo done')
+        path.write_text(before)
+        commit_all(self.root, 'fixture: valid prior done unit')
+        base = git(self.root, 'rev-parse', 'HEAD').stdout.strip()
+        git(self.root, 'rm', '.taskets/u1.md')
+        after = before.replace('id: previous', 'id: different').replace('[x] AC-1', '[ ] AC-1').replace('- $ echo done', '')
+        (self.root / '.taskets/different.md').write_text(after)
+        git(self.root, 'add', '.taskets/different.md')
+        self.assertEqual(checks.rename_sources(self.root).get('.taskets/different.md'), '.taskets/u1.md')
+        result = charter(self.root, 'check', '--staged', '--done', '--no-probe')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('unchecked', result.stdout)
+        commit_all(self.root, 'fixture: different new done unit')
+        result = charter(self.root, 'check', '--all', '--done', '--base', base, '--no-probe')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('unchecked', result.stdout)
+
     def test_renamed_started_criterion_changes_still_need_a_log_in_commit_and_ci(self):
         for logged in (False, True):
             with self.subTest(logged=logged):

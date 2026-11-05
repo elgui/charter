@@ -158,8 +158,14 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 continue   # deleted sources have no checklist to edit; owner protection still sees them
             if not a.strict and p not in changed_set:
                 continue   # judged when its status changed; a unit accepted earlier is not judged again
-            text, prev = new(p), old(renamed.get(p, p))
-            status = str(lib.split_frontmatter(text)[0].get("status", ""))
+            text = new(p)
+            fields = lib.split_frontmatter(text)[0]
+            source = renamed.get(p, p)
+            prev = old(source) if source.startswith(lib.TASKETS_DIR + "/") and source.endswith(".md") else None
+            prior = lib.split_frontmatter(prev or "")[0]
+            if source != p and str(prior.get("id") or Path(source).stem) != str(fields.get("id") or Path(p).stem):
+                prev = None   # git's similarity heuristic does not establish tasket identity
+            status = str(fields.get("status", ""))
             prev_status = str(lib.split_frontmatter(prev or "")[0].get("status", ""))
             rep.add(*checks.check_acceptance_change(prev or "", text, p))
             rep.add(*checks.check_probe_cut(text, p))
