@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "done_statuses": ["done"],
     "probes": {                   # re-run acceptance probes of units that close in a change set
         "at_commit": False, "in_ci": False, "timeout_s": 120,
+        "runner": [],             # argv prefix before /bin/sh -c <unchanged probe>, e.g. ["uv", "run", "--"]
         "base_must_fail": False,  # a probe passing before the unit's work: a warning, or refused when true
     },
     # done also needs a `review:` evidence line naming an independent verdict (off by default)
@@ -154,7 +155,7 @@ CONFIG_SCHEMA = {
     "governance_files": list, "size_exceptions": list, "exempt_from_size": list,
     "rails": {"required": bool, "keys": list},
     "done_statuses": list,
-    "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool},
+    "probes": {"at_commit": bool, "in_ci": bool, "timeout_s": int, "base_must_fail": bool, "runner": list},
     "review": {"required": bool},
     "delegate": {"level": str},
     "chain": {"model": str, "effort": str, "window_tokens": int, "wrap_pct": int, "cap_pct": int, "max_sessions": int, "launcher": str, "close_delay_s": int,
@@ -211,6 +212,8 @@ def config_from(user: dict) -> dict:
                     problems.append(f"`{k}.{sk}` is {json.dumps(sv)}, not a {t[sk].__name__}; left at {json.dumps(cfg[k][sk])}")
                 elif k == "chain" and sk == "close_delay_s" and sv < 0:
                     problems.append(f"`chain.close_delay_s` is {sv}, below 0; left at {json.dumps(cfg[k][sk])}")
+                elif k == "probes" and sk == "runner" and any(not isinstance(a, str) or not a.strip() or "\0" in a for a in sv):
+                    problems.append("`probes.runner` must be an argv list of nonempty strings without NUL; left at []")
                 elif k == "delegate" and sk == "level" and sv not in DELEGATE_LEVELS:
                     problems.append(f"`delegate.level` is {json.dumps(sv)}, not one of {', '.join(DELEGATE_LEVELS)}{_near(sv, DELEGATE_LEVELS)}; read as strict")
                 else:

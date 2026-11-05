@@ -698,10 +698,28 @@ def probe_outcome(cmd: str, code: int) -> str:
     return "failed"
 
 
-def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None) -> subprocess.CompletedProcess:
+def _probe_runner(root: Path, cfg: dict) -> list[str]:
+    runner = list((cfg.get("probes") or {}).get("runner") or [])
+    if runner and "/" in runner[0] and not Path(runner[0]).is_absolute():
+        runner[0] = str(root / runner[0])
+    return runner
+
+
+def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
+               runner: list[str] | None = None) -> subprocess.CompletedProcess:
     """A probe owns a process group: on timeout kill its shell and children, then drain and reap."""
-    with subprocess.Popen(cmd, shell=True, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          encoding="utf-8", errors="replace", env=env, start_new_session=True) as proc:
+    if runner is None:
+        cfg = lib.load_config(root)
+        if cfg.get(lib.PROBLEMS):
+            return subprocess.CompletedProcess(cmd, 127, "", "probe refused: correct charter/config.json first")
+        runner = _probe_runner(root, cfg)
+    command = [*runner, "/bin/sh", "-c", cmd] if runner else cmd
+    try:
+        proc = subprocess.Popen(command, shell=not runner, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          encoding="utf-8", errors="replace", env=env, start_new_session=True)
+    except OSError as e:
+        return subprocess.CompletedProcess(cmd, 127, "", f"probe runner could not start: {e}")
+    with proc:
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -836,7 +854,7 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
         out = []
         for ac, cmd in probes:
             try:
-                code = _run_probe(wt, cmd, timeout, env).returncode
+                code = _run_probe(wt, cmd, timeout, env, runner=_probe_runner(root, cfg)).returncode
             except subprocess.TimeoutExpired:
                 cmd = lib.redact_credentials(cmd)
                 out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
