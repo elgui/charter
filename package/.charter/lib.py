@@ -12,10 +12,13 @@ import glob
 import json
 import os
 import re
+import selectors
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 CHARTER_DIR = "charter"
@@ -116,6 +119,46 @@ def redact_credentials(text: str) -> str:
 
 
 # ---------------------------------------------------------------- repo & config
+
+def run_bounded(argv: list[str], max_bytes: int, *, timeout: int = 120, **kw) -> subprocess.CompletedProcess:
+    """Capture at most max_bytes across both streams; stop and reap an over-budget producer.
+    Callers must refuse a truncated result, never submit it to a judge as a complete diff.
+    """
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    size, truncated, expired = 0, False, False
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, **kw) as proc:
+        with selectors.DefaultSelector() as sel:
+            sel.register(proc.stdout, selectors.EVENT_READ, "stdout")
+            sel.register(proc.stderr, selectors.EVENT_READ, "stderr")
+            while sel.get_map():
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    expired = True
+                    break
+                for key, _ in sel.select(left):
+                    chunk = os.read(key.fd, 8192)
+                    if not chunk:
+                        sel.unregister(key.fileobj)
+                        continue
+                    keep = chunk[:max_bytes - size]
+                    buffers[key.data].extend(keep)
+                    size += len(keep)
+                    if len(keep) < len(chunk):
+                        truncated = True
+                        break
+                if truncated:
+                    break
+        if truncated or expired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        proc.wait()
+    result = subprocess.CompletedProcess(argv, 124 if expired else proc.returncode,
+                                         buffers["stdout"].decode("utf-8", "ignore"), buffers["stderr"].decode("utf-8", "ignore"))
+    result.truncated = truncated
+    return result
 
 def repo_root(start: str | os.PathLike | None = None) -> Path:
     """Root of the git checkout that contains `start` (a worktree counts)."""

@@ -419,6 +419,13 @@ def find_quote(session: str, quote: str, asked_at: str = "") -> tuple[bool, str]
 # ---------------------------------------------------------------- pull requests
 
 def gh(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    if args[:2] == ("pr", "diff"):
+        result = engine_checks.lib.run_bounded([GH, *args], 120_000, cwd=str(cwd),
+                                             env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH))
+        if result.truncated:
+            result.returncode = 1
+            result.stderr = "diff exceeds 120000 bytes; producer stopped before buffering it whole"
+        return result
     return subprocess.run([GH, *args], capture_output=True, encoding="utf-8", errors="replace", cwd=str(cwd),
                           env=clean_env(GH_PROMPT_DISABLED="1", PATH=SAFE_PATH), timeout=120)
 
