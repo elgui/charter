@@ -4,7 +4,7 @@ title: A chain session opens in the chain's own tree and its process is freed at
 status: done
 priority: p1
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-05
 category: bug
 perimeter:
   - package/.charter/chain.py
@@ -48,6 +48,7 @@ full. Two defects, both measured on 2026-11-01 from a tele-claude session (opera
 
 ## Log
 
+- 2026-11-05: ported onto main (578b282) as e33523d, d4eb108, 956714b, 662708a on branch `port/chain-close`, for release 0.4.23; the commits named above (4ecb010 and the rest) are on branch `chain-closes-every-session`. The 0.4.21 version stamps were left out, since main shipped other work as 0.4.21, and the test module became `tests/test_chain_close_0_4_23.py`, so the probes above name it.
 - 2026-11-01: review after closing: the closer started before the next session's launch, which runs in the pane it kills. Moved to the end of `_hand_over`, with a test that fails before it.
 - 2026-11-01: full suite green at 4ecb010; closed. Merging is the owner's.
 - 2026-11-01: fix and trial landed; AC-4 evidence is docs/trials/2026-11-01-chain-close.md. Added beyond the first list: the trust warning and the honest menu message, both found by the trial.
