@@ -437,7 +437,7 @@ def _gate_problem(d: dict) -> str | None:
     if ev:
         try:
             re.compile(ev)
-        except re.error as e:
+        except (re.error, OverflowError, RecursionError, ValueError) as e:   # x{4294967295} raises OverflowError
             return f"has a `gate_evidence:` that is not a valid regular expression ({e})"
     return None
 
@@ -501,15 +501,18 @@ def check_decision_reads(root: Path, decs: dict[str, dict], paths: list[str] | N
     commit touches the decision or the missing doc, and warns otherwise, so one decision's stale pointer
     does not stop unrelated commits; `charter check --all` and CI refuse it."""
     out: list[Finding] = []
+    # staged_paths leaves deletions out; a commit that deletes a doc a decision points at touches that doc
+    gone = set(lib.git(root, "diff", "--cached", "--name-only", "--diff-filter=D").stdout.split()) if paths is not None else set()
     for did, d in decs.items():
         if str(d.get("status", "active")) != "active":
             continue
         dp = d.get("_path")
         for r in lib.as_list(d.get("read")):
             r = str(r).strip()
-            if not r or (root / r).exists():
+            # at commit the index is what lands, not the working tree; a directory is not a doc to read
+            if not r or (blob(root, ":" + r) is not None if paths is not None else (root / r).is_file()):
                 continue
-            mine = paths is None or dp in paths or r in paths
+            mine = paths is None or dp in paths or r in paths or r in gone
             out.append(Finding("decisions", "block" if mine else "warn", f"decision `{did}` points sessions at {r}, which does not exist", path=dp,
                                override=f"restore {r}, or change `read:` in {dp} (on an active decision, a superseding decision)"))
         problem = _gate_problem(d)

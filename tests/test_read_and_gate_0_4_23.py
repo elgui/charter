@@ -255,5 +255,39 @@ class AnchorsMissingFile(Base):
         self.assertEqual(charter(self.root, "anchors", "--strict", "docs/report.md").returncode, 1)
 
 
+
+class ReviewOf43(Base):
+    """/reviewPR #43, pass B and pass A (gpt-6.1-sol)."""
+
+    def test_a_regex_that_overflows_refuses_done(self):
+        (self.root / "charter" / "decisions" / "prove-first.md").write_text(
+            GATED.replace('"prove\\.sh --unit .*exit 0"', '"x{4294967295}"'))
+        (self.root / "docs").mkdir(exist_ok=True)
+        (self.root / "docs" / "PROVE.md").write_text("# Prove\n")
+        commit_all(self.root, "gate")
+        d, out = self.gate(gated_done("- `$ make test` → exit 0"))
+        self.assertEqual(d, "deny", out)
+        self.assertIn("not a valid regular expression", out)
+
+    def test_a_directory_is_not_a_doc_to_read(self):
+        self.add_gate(with_doc=False)
+        (self.root / "docs").mkdir(exist_ok=True)
+        (self.root / "docs" / "PROVE.md").mkdir()
+        (self.root / "docs" / "PROVE.md" / "x.txt").write_text("x\n")
+        commit_all(self.root, "a directory where the doc should be")
+        r = charter(self.root, "check", "--all")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("points sessions at docs/PROVE.md, which does not exist", r.stdout)
+
+    def test_at_commit_the_index_decides_not_the_working_tree(self):
+        import subprocess
+        self.add_gate()
+        subprocess.run(["git", "rm", "-q", "--cached", "docs/PROVE.md"], cwd=self.root, check=True)
+        self.assertTrue((self.root / "docs" / "PROVE.md").is_file())
+        r = charter(self.root, "check", "--staged")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("points sessions at docs/PROVE.md, which does not exist", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
