@@ -15,7 +15,7 @@ Charter 0.4.23 (`package/VERSION`). The agent edition of `docs/maps.html`; the s
 |---|---|---|---|
 | `owner` | Owner | The one person who signs, rules and merges, and holds the files that define the gates | `package/.claude/rules/charter.md` § What only the owner changes |
 | `agent` | Agent session | Claude Code, Codex or pi; works one unit at a time and proposes what it cannot settle | `docs/method.md` § Artifacts and their owners |
-| `reviewer` | Independent reviewer | A party that wrote neither side, meant to be another model family (Codex) or a person | `package/.claude/agents/charter-reviewer.md`, `docs/method.md` § The rules (R2) |
+| `reviewer` | Independent reviewer | A party that wrote neither side; check the actual author/reviewer providers before claiming independence | `package/.claude/agents/charter-reviewer.md`, `docs/method.md` § The rules (R2) |
 | `delegate` | Owner's delegate | A watcher run by cron outside Claude Code; takes the owner acts that the owner's level allows | `bin/charter-delegate`, `docs/design/owner-delegate.md` |
 | `machines` | The gates | Claude Code hooks, the git hook and CI, all running one engine | `package/.charter/checks.py`, `docs/gates.md` |
 | `client` | Client | Signs the devis that the scope summarises; reads the accepted units | `docs/daily-use.md` § 7. Report |
@@ -27,11 +27,11 @@ Seven capabilities. One sits outside any project (`cap.fleet`); the other six ru
 | id | Capability | Promise | Who acts | Source |
 |---|---|---|---|---|
 | `cap.agree` | 1. Write down what is agreed | What is sold, the road and every design choice live in the repository, one file each, where a machine can check them. | Owner, Agent session | `docs/method.md` § Artifacts and their owners |
-| `cap.unit` | 2. Work in units that prove themselves | Each deliverable is one file that says what it may touch, how it will be checked, and what happened. | Agent session | `docs/daily-use.md` § The loop |
-| `cap.gate` | 3. Check every change, three times | One engine judges each change as the agent edits, at commit, and in CI from a clean clone. | The gates, Agent session | `docs/gates.md` |
+| `cap.unit` | 2. Make each unit reviewable | Each deliverable is one file that says what it may touch, how it will be checked, and what happened. | Agent session | `docs/daily-use.md` § The loop |
+| `cap.gate` | 3. Check changes at three boundaries | One engine checks session edits, commits and CI changes where those boundaries are enabled. | The gates, Agent session | `docs/gates.md` |
 | `cap.owner` | 4. Keep the owner in charge | The files and fields that define the gates are the owner's. Agents propose; the owner rules in one command. | Owner, Owner's delegate, Agent session | `package/.claude/rules/charter.md:29-52` |
 | `cap.report` | 5. Say what is true, and what it cost | Progress, acceptance and cost are computed from the repository, and every claim points at something a reader can open. | Agent session, Owner, Client | `docs/method.md` § The progress synthesis, § Accepted results, § Cost per accepted result at this scale |
-| `cap.chain` | 6. Run the road unattended | A chain of fresh sessions works the road unit after unit, each checking the last, reviewed group by group. | Agent session, Independent reviewer, Owner | `docs/daily-use.md` § Running units in a chain |
+| `cap.chain` | 6. Run the road unattended | Fresh sessions work the road with validated handoffs, probe reruns and optional group review. | Agent session, Independent reviewer, Owner | `docs/daily-use.md` § Running units in a chain |
 | `cap.fleet` | 7. Install, upgrade and oversee projects | One checkout of this repository installs the package into any project, keeps it current and watches the fleet. | Owner, Agent session | `docs/install.md` |
 
 How they connect (`docs/assets/maps/functional.svg`): units cite what is agreed (`cap.agree` → `cap.unit`); each change a unit makes crosses the gates (`cap.unit` → `cap.gate`); the gates log every finding and the units carry the evidence that reports are computed from (→ `cap.report`); a chain runs units one after another and waits on the owner (`cap.chain`); the owner signs and rules what is agreed and holds the keys that define the gates (`cap.owner`); the fleet tooling installs all of it (`cap.fleet`) (`docs/method.md` § The method on one page).
@@ -50,7 +50,7 @@ What is sold, the road and every design choice live in the repository, one file 
 - **Rests on the concepts:** `c.track` Track, `c.scope` Scope, `c.change` Change request, `c.rails` Rails, `c.decision` Decision, `c.owner` Owner, `c.agent` Agent session (section 3, `docs/maps.md`).
 - **Read more:** `docs/method.md`, `docs/gates.md`.
 
-### `cap.unit` 2. Work in units that prove themselves
+### `cap.unit` 2. Make each unit reviewable
 
 Each deliverable is one file that says what it may touch, how it will be checked, and what happened. A unit (a tasket in `.taskets/`) cites a scope item or a rail, declares its `perimeter:`, and lists acceptance criteria, each a probe that fails before the work and passes after. `## Evidence` names a commit or a `$ command` run, and the dated `## Log` is what the next session resumes from. `charter next` says what comes next; `charter unit start` attributes the session's edits and cost to the unit. (`docs/daily-use.md` § The loop; `package/charter/templates/unit.md`)
 
@@ -64,9 +64,9 @@ Each deliverable is one file that says what it may touch, how it will be checked
 - **Rests on the concepts:** `c.unit` Unit, `c.perimeter` Perimeter, `c.acceptance` Acceptance, `c.probe` Probe, `c.evidence` Evidence, `c.log` Log, `c.accepted` Accepted, `c.agent` Agent session (section 3, `docs/maps.md`).
 - **Read more:** `docs/daily-use.md`, `package/charter/templates/unit.md`.
 
-### `cap.gate` 3. Check every change, three times
+### `cap.gate` 3. Check changes at three boundaries
 
-One engine judges each change as the agent edits, at commit, and in CI from a clean clone. Claude Code hooks refuse an edit before it lands; the git pre-commit hook judges what is staged, whoever commits; CI runs the same checks at merge. A hard gate refuses and names its override, the honest way past it. Everything else warns and goes to the gate log, the evidence for turning a warning into a gate. A gate fails open on its own errors, except a config it cannot read, which is refused. (`docs/gates.md`; `package/.charter/checks.py`)
+One engine checks session edits, commits and CI changes where those boundaries are enabled. Claude Code hooks refuse an edit before it lands; the git pre-commit hook judges what is staged, whoever commits; CI runs the same checks at merge. A hard gate refuses and names its override, the honest way past it. Everything else warns and goes to the gate log, the evidence for turning a warning into a gate. A gate fails open on its own errors, except a config it cannot read, which is refused. (`docs/gates.md`; `package/.charter/checks.py`)
 
 - **Who acts:** `machines`, `agent` (section 1, `docs/maps.md`).
 - **Entry points:**
@@ -110,7 +110,7 @@ Progress, acceptance and cost are computed from the repository, and every claim 
 
 ### `cap.chain` 6. Run the road unattended
 
-A chain of fresh sessions works the road unit after unit, each checking the last, reviewed group by group. `/charter-chain` starts a chain, on a new branch `chain/<id>` when run from main. Each session receives the chain rules verbatim, verifies its predecessor, works, and hands over before 25% of its context window; past 30% the hook refuses every tool but the handoff, the unit files, git and the charter CLI. `charter chain next` validates the handoff, re-runs the probes and opens the next session. At the end of each group (a rail item) Codex reviews its commits and the next session answers every finding. When the road needs the owner, the chain waits with every act in `owner.md`; the owner runs them with `charter owner run` and types `/resume-chain ok`. (`docs/daily-use.md` § Running units in a chain; `docs/design/continuous-chain.md`)
+Fresh sessions work the road with validated handoffs, probe reruns and optional group review. `/charter-chain` starts a chain, on a new branch `chain/<id>` when run from main. Each session receives the chain rules verbatim, verifies its predecessor, works, and hands over before 25% of its context window; past 30% the hook refuses every tool but the handoff, the unit files, git and the charter CLI. `charter chain next` validates the handoff, re-runs the probes and opens the next session. At the end of each group (a rail item), when review is enabled, Codex or a configured command reviews its commits and the next session answers every finding. Auto review is off without Codex; check provider independence. A chain does not enforce human gates or a selected rail list. When the road needs the owner, the chain waits with every act in `owner.md`; the owner runs them with `charter owner run` and types `/resume-chain ok`. (`docs/daily-use.md` § Running units in a chain; `docs/design/continuous-chain.md`)
 
 - **Who acts:** `agent`, `reviewer`, `owner` (section 1, `docs/maps.md`).
 - **Entry points:**
@@ -155,10 +155,10 @@ Twenty-five concepts in six clusters. The picture is `docs/assets/maps/concepts.
 | `c.unit` | Unit | The unit of work | One deliverable as a tasket: cites a scope item or a rail, declares a perimeter, lists acceptance, carries evidence and a log. One session owns it. | `docs/method.md` § The unit of work; `package/charter/templates/unit.md` |
 | `c.perimeter` | Perimeter | The unit of work | The paths a unit may touch. A file outside it needs a `- path: why` line under `## Outside perimeter` before the commit. | `package/.claude/rules/charter.md:16`; `check_perimeter` in `package/.charter/checks.py` |
 | `c.acceptance` | Acceptance | The unit of work | Checkbox lines, one binary probe each. `(guard)` marks one that protects behaviour that already works; `— owner:` one that only the owner may close. | `docs/method.md` § The unit of work; `package/.claude/rules/charter.md:37` |
-| `c.probe` | Probe | The unit of work | The command that answers one criterion yes or no. It fails before the work and passes after; with an opt-in the gates run it again, also at the unit's base. | `docs/daily-use.md` § Words used here; `run_probes_at_base` in `package/.charter/checks.py` |
+| `c.probe` | Probe | The unit of work | A command intended to test one criterion. Guards protect existing behavior; base-failure enforcement and commit/CI reruns are explicit opt-ins. Relevance needs review. | `docs/daily-use.md` § Words used here; `run_probes_at_base` in `package/.charter/checks.py` |
 | `c.evidence` | Evidence | The unit of work | A commit SHA that resolves, a `path:line`, and the `$ command` lines of the probes. A path or a URL alone is refused. | `package/.claude/rules/charter.md:24` |
 | `c.log` | Log | The unit of work | Dated lines appended when something lands or the session stops. A resumed session reads the unit, not the transcript. | `package/.claude/rules/charter.md:19` |
-| `c.accepted` | Accepted | The unit of work | Done means accepted: every box checked and evidence that resolves. A done flip without it is refused; the synthesis lists done and accepted apart from the rest. | `docs/method.md` § The rules (R9); `check_unit_done` in `package/.charter/checks.py` |
+| `c.accepted` | Accepted | The unit of work | Structurally accepted: every box checked and evidence that resolves. This does not prove relevance, independent review or delivery; probe execution is separately enabled. | `docs/method.md` § The rules (R9); `check_unit_done` in `package/.charter/checks.py` |
 | `c.keys` | Owner-only keys | The gates | The files and fields that define the gates: scope, rails, config, the engine, settings, the CI workflow, approval and ruling fields, split units, `— owner:` lines. Refused to an agent's edit. | `docs/gates.md` § Owner-only changes; `owner_only_changes` in `package/.charter/checks.py` |
 | `c.gate` | Gate | The gates | A check that refuses (hard) or warns. Hard: scope, size, done, decisions in their retired and failing forms, anchors in CI, owner-only changes. The rest warns and is logged. | `docs/method.md` § The rules |
 | `c.line` | Three lines | The gates | Where the same gate runs: in the session (Claude Code hooks), at commit (git pre-commit, any agent), at merge (CI from a clean clone). Each catches what the one before can miss. | `docs/gates.md` (introduction) |
@@ -299,8 +299,8 @@ The picture is `docs/assets/maps/chain.svg` (`docs/daily-use.md` § Running unit
 1. `/charter-chain <unit> <instruction>` starts a chain; `charter chain start` creates `chain/<id>` when run on main and opens session 1 (`resolve_launcher` in `package/.charter/chain.py`).
 2. Each session receives `.charter/chain-rules.md` verbatim, verifies its predecessor's work, works unit after unit, and hands over at 25% of its context window; past 30% the hook refuses every tool but writing the handoff or a unit file, `git` and the charter CLI (`docs/gates.md` § Chain budget and hand-over (0.4.9)).
 3. `charter chain next` refuses a malformed handoff, records what the session committed, re-runs the probes of the units it closed, runs the gates on its change set, and opens the next session (`cmd_next` in `package/.charter/chain.py`).
-4. A group is the units of one rail item. When it ends, Codex reviews its commits in a worktree; the next session answers each finding as fixed or dismissed before the next group starts, and the group is cleared at a commit the owner can merge up to (`package/.charter/chain_groups.py`).
-5. When the road needs the owner, the session writes every act into `owner.md` and waits; Codex reads the acts and sends back what an agent could do; the owner runs them with `charter owner run` and types `/resume-chain ok`, which closes the lines whose acts passed (`package/.charter/owner_acts.py`).
+4. With review enabled, a group is the units of one rail item (or a tasket group without rails). Codex or a configured command reviews its committed range in a detached worktree; the next session answers each finding before the next group starts. Auto review becomes off without Codex; off omits group boundaries. Fix-answer form is checked, but fixes are not automatically re-reviewed (`package/.charter/chain_groups.py:65`, `package/.charter/chain_groups.py:86`, `docs/verification.md`).
+5. When the road needs the owner, the session writes every act into `owner.md` and waits. Review of the acts is separately configurable; the owner runs them with `charter owner run` and types `/resume-chain ok`, which closes the lines whose acts passed (`package/.charter/owner_acts.py`).
 
 | State | Meaning | Source |
 |---|---|---|
@@ -308,7 +308,7 @@ The picture is `docs/assets/maps/chain.svg` (`docs/daily-use.md` § Running unit
 | `waiting` | a session needs the owner; every act is in owner.md | `docs/gates.md` § Chain budget and hand-over (0.4.9) |
 | `halted` | a session asked a question, or a review could not run | `docs/daily-use.md` § Running units in a chain |
 | `stalled` | two sessions in a row landed nothing | `docs/gates.md` § Chain budget and hand-over (0.4.9) |
-| `stopped` | the owner ran charter chain stop | `docs/daily-use.md` § Running units in a chain |
+| `stopped` | charter chain stop requested an end | `package/.charter/chain.py:1498` |
 | `complete` | the road is finished, on a clean tree | `docs/daily-use.md` § Running units in a chain |
 
 ## 8. Where the gates stop
@@ -318,3 +318,28 @@ The picture is `docs/assets/maps/chain.svg` (`docs/daily-use.md` § Running unit
 - A gate that crashes lets the change through and logs `decision=error`; `--no-verify` skips the git hook, and CI runs the checks again (`docs/method.md` § The hard gates and why a warning would not do).
 - A merge, a deployment, a push and a purchase are actions, not files: no gate sees them, the rules file carries them (`docs/gates.md` § What a gate cannot see).
 - The lock that holds against an agent acting as the owner is outside the repository: branch protection and code owners (`docs/gates.md` § Owner-only changes).
+- Road order and `charter next` are not dependency admission; a chain takes a starting unit and mission, not an exact selected rail set (`package/.charter/rails.py:116`, `package/.charter/chain.py:1891`).
+- Probe execution and required review are opt-ins; an anchored review line does not authenticate the reviewer. Chain auto review can be off (`docs/verification.md`, `package/.charter/chain_groups.py:86`).
+- The optional spec recipe is implemented but unreleased; it excludes chains because they do not enforce its human checkpoint. Stronger verification receipts remain proposed (`docs/design/project-road-control-center.md`).
+
+## 9. From a road to evidence
+
+The picture is `docs/assets/maps/journey.svg`. Availability is part of each step: this is a journey across Charter records, external runners and proposed integration, not a claim that Charter launches a selected set of rails (`docs/design/project-road-control-center.md`).
+
+| id | Step | Availability | Purpose / entry | Boundary | Source |
+|---|---|---|---|---|---|
+| `j.road` | Read the road | RELEASED · records | Rails → units → current sources; next --json · unit show --json | Order and association explain direction; they do not prove dependency readiness. | `package/.charter/rails.py:116`, `package/.charter/bin/charter:664` |
+| `j.spec` | Resolve the gaps | METHOD · draft recipe | Compare sources, code and promises; Specs · decisions · open questions | Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's. | `docs/method.md`, `docs/review/2026-11-03-spec-design-verification.md` |
+| `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:676`, `docs/verification.md` |
+| `j.plan` | Inspect the selection | INTEGRATION · proposed | Exact revision, units and prerequisites; Plan identity · runner · supervisor | Validate dependency closure and current authority. Existing Road interpretation is not runtime admission. | `docs/design/project-road-control-center.md` |
+| `j.launch` | Launch once | RUNNER · adapter needed | Claim the inspected plan atomically; Supervised group OR compatible chain | Current group runner takes one group; chain ignores human gates. Multi-rail admission is new integration work. | `package/.charter/chain.py:1891`, `docs/design/project-road-control-center.md` |
+| `j.evidence` | Observe evidence | RELEASED + external runner | Commits · probes · independent review; Judged revision · findings · answers | Keep deterministic checking, provider review, human credit and observed delivery distinct. | `docs/verification.md`, `package/.charter/chain_groups.py:86` |
+| `j.recover` | Pause and recover | RUNNER · specific semantics | Durable run state and exact next step; Failed · unknown · interrupted · held | Preserve work and reconcile before retry. A chain resume remains an owner act; no timeout supplies approval. | `package/.charter/chain.py:1528`, `docs/design/project-road-control-center.md` |
+| `j.owner` | Show what remains | RELEASED · owner boundary | Only the remaining judgment or authority; owner --json · bound confirmation | Agent checks and review precede handoff. Execution, acceptance, merge and deployment remain distinct. | `package/.charter/owner.py:163`, `docs/design/owner-acceptance.md` |
+
+| Availability | What it means | Source |
+|---|---|---|
+| Released package | 0.4.22 at b2df24e; inspect each project's manifest and opt-ins. Source updates do not upgrade projects. | `package/VERSION:1`, `docs/install.md` |
+| Implemented, unreleased | Optional charter-spec recipe at dee2f42 on charter-spec-draft. Manual preparation remains possible without installing it. | `docs/review/2026-11-03-spec-design-verification.md` |
+| External integration | Tele-Claude already supplies Road preparation views, supervised groups and step checking; exact multi-rail launch is proposed here. | `docs/design/project-road-control-center.md` |
+| Proposal only | PR #37, merged at 578b282: stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added. | `docs/design/project-road-control-center.md` |

@@ -40,6 +40,8 @@ The example illustrates the flow; use the [unit template](package/charter/templa
 
 ## Start a project
 
+For an existing project's road, start with [preparing work for execution](docs/method.md#prepare-the-road-for-execution) and the [road-to-evidence map](docs/maps.html#journey). Rails keep the agreed direction visible; units make each deliverable checkable; probes, review and chain handoffs carry evidence forward. Their distinct limits and opt-ins are in [verification](docs/verification.md). A road view can connect these pieces, but a displayed candidate is not permission or proof that a runner can start it ([integration contract](docs/design/project-road-control-center.md)).
+
 The [installation guide](docs/install.md) is the single procedure for installing, setting up, upgrading, or removing Charter. It covers two tracks:
 
 - **Client:** scope is tied to a signed quote or contract; paths explicitly marked out of scope need an owner approved change request. [Scope gate](docs/gates.md#scope-r6)

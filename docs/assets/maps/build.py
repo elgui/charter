@@ -30,7 +30,7 @@ ACTORS = [
      "Claude Code, Codex or pi; works one unit at a time and proposes what it cannot settle",
      "`docs/method.md` § Artifacts and their owners"),
     ("reviewer", "Independent reviewer", "R",
-     "A party that wrote neither side, meant to be another model family (Codex) or a person",
+     "A party that wrote neither side; check the actual author/reviewer providers before claiming independence",
      "`package/.claude/agents/charter-reviewer.md`, `docs/method.md` § The rules (R2)"),
     ("delegate", "Owner's delegate", "D",
      "A watcher run by cron outside Claude Code; takes the owner acts that the owner's level allows",
@@ -66,7 +66,7 @@ CAPS = [
         sources="`docs/method.md` § Artifacts and their owners; `check_scope` in `package/.charter/checks.py`; `package/.charter/rails.py`",
         more=["docs/method.md", "docs/gates.md"]),
     dict(
-        id="cap.unit", n=2, hue="unit", title="Work in units that prove themselves",
+        id="cap.unit", n=2, hue="unit", title="Make each unit reviewable",
         promise="Each deliverable is one file that says what it may touch, how it will be checked, and what happened.",
         what=("A unit (a tasket in `.taskets/`) cites a scope item or a rail, declares its `perimeter:`, and lists acceptance "
               "criteria, each a probe that fails before the work and passes after. `## Evidence` names a commit or a `$ command` run, "
@@ -82,8 +82,8 @@ CAPS = [
         sources="`docs/daily-use.md` § The loop; `package/charter/templates/unit.md`",
         more=["docs/daily-use.md", "package/charter/templates/unit.md"]),
     dict(
-        id="cap.gate", n=3, hue="gate", title="Check every change, three times",
-        promise="One engine judges each change as the agent edits, at commit, and in CI from a clean clone.",
+        id="cap.gate", n=3, hue="gate", title="Check changes at three boundaries",
+        promise="One engine checks session edits, commits and CI changes where those boundaries are enabled.",
         what=("Claude Code hooks refuse an edit before it lands; the git pre-commit hook judges what is staged, whoever commits; "
               "CI runs the same checks at merge. A hard gate refuses and names its override, the honest way past it. Everything "
               "else warns and goes to the gate log, the evidence for turning a warning into a gate. A gate fails open on its own "
@@ -133,11 +133,12 @@ CAPS = [
         more=["docs/method.md"]),
     dict(
         id="cap.chain", n=6, hue="chain", title="Run the road unattended",
-        promise="A chain of fresh sessions works the road unit after unit, each checking the last, reviewed group by group.",
+        promise="Fresh sessions work the road with validated handoffs, probe reruns and optional group review.",
         what=("`/charter-chain` starts a chain, on a new branch `chain/<id>` when run from main. Each session receives the chain rules verbatim, verifies "
               "its predecessor, works, and hands over before 25% of its context window; past 30% the hook refuses every tool but the "
               "handoff, the unit files, git and the charter CLI. `charter chain next` validates the handoff, re-runs the probes and opens the next session. At the end of each "
-              "group (a rail item) Codex reviews its commits and the next session answers every finding. When the road needs the owner, "
+              "group (a rail item), when review is enabled, Codex or a configured command reviews its commits and the next session answers every finding. "
+              "Auto review is off without Codex; check provider independence. A chain does not enforce human gates or a selected rail list. When the road needs the owner, "
               "the chain waits with every act in `owner.md`; the owner runs them with `charter owner run` and types `/resume-chain ok`."),
         actors=["agent", "reviewer", "owner"],
         entry=[("/charter-chain", "start a chain from a unit and an instruction", "`package/.claude/skills/charter-chain/SKILL.md`"),
@@ -217,7 +218,7 @@ CONCEPTS = [
      "Checkbox lines, one binary probe each. `(guard)` marks one that protects behaviour that already works; `— owner:` one that only the owner may close.",
      "`docs/method.md` § The unit of work; `package/.claude/rules/charter.md:37`"),
     ("c.probe", "Probe", "unit", "unit", "charter probe <id>",
-     "The command that answers one criterion yes or no. It fails before the work and passes after; with an opt-in the gates run it again, also at the unit's base.",
+     "A command intended to test one criterion. Guards protect existing behavior; base-failure enforcement and commit/CI reruns are explicit opt-ins. Relevance needs review.",
      "`docs/daily-use.md` § Words used here; `run_probes_at_base` in `package/.charter/checks.py`"),
     ("c.evidence", "Evidence", "unit", "unit", "## Evidence · sha · $ cmd",
      "A commit SHA that resolves, a `path:line`, and the `$ command` lines of the probes. A path or a URL alone is refused.",
@@ -225,8 +226,8 @@ CONCEPTS = [
     ("c.log", "Log", "unit", "unit", "## Log · dated, append-only",
      "Dated lines appended when something lands or the session stops. A resumed session reads the unit, not the transcript.",
      "`package/.claude/rules/charter.md:19`"),
-    ("c.accepted", "Accepted", "unit", "pass", "done = accepted",
-     "Done means accepted: every box checked and evidence that resolves. A done flip without it is refused; the synthesis lists done and accepted apart from the rest.",
+    ("c.accepted", "Accepted", "unit", "pass", "boxes + evidence present",
+     "Structurally accepted: every box checked and evidence that resolves. This does not prove relevance, independent review or delivery; probe execution is separately enabled.",
      "`docs/method.md` § The rules (R9); `check_unit_done` in `package/.charter/checks.py`"),
     ("c.keys", "Owner-only keys", "gate", "owner", "config · engine · settings · CI",
      "The files and fields that define the gates: scope, rails, config, the engine, settings, the CI workflow, approval and ruling fields, split units, `— owner:` lines. Refused to an agent's edit.",
@@ -357,7 +358,7 @@ CHAIN_STATES = [
     ("waiting", "a session needs the owner; every act is in owner.md", "`docs/gates.md` § Chain budget and hand-over (0.4.9)"),
     ("halted", "a session asked a question, or a review could not run", "`docs/daily-use.md` § Running units in a chain"),
     ("stalled", "two sessions in a row landed nothing", "`docs/gates.md` § Chain budget and hand-over (0.4.9)"),
-    ("stopped", "the owner ran charter chain stop", "`docs/daily-use.md` § Running units in a chain"),
+    ("stopped", "charter chain stop requested an end", "`package/.charter/chain.py:1498`"),
     ("complete", "the road is finished, on a clean tree", "`docs/daily-use.md` § Running units in a chain"),
 ]
 
@@ -367,6 +368,52 @@ LIMITS = [
     "A gate that crashes lets the change through and logs `decision=error`; `--no-verify` skips the git hook, and CI runs the checks again (`docs/method.md` § The hard gates and why a warning would not do).",
     "A merge, a deployment, a push and a purchase are actions, not files: no gate sees them, the rules file carries them (`docs/gates.md` § What a gate cannot see).",
     "The lock that holds against an agent acting as the owner is outside the repository: branch protection and code owners (`docs/gates.md` § Owner-only changes).",
+    "Road order and `charter next` are not dependency admission; a chain takes a starting unit and mission, not an exact selected rail set (`package/.charter/rails.py:116`, `package/.charter/chain.py:1891`).",
+    "Probe execution and required review are opt-ins; an anchored review line does not authenticate the reviewer. Chain auto review can be off (`docs/verification.md`, `package/.charter/chain_groups.py:86`).",
+    "The optional spec recipe is implemented but unreleased; it excludes chains because they do not enforce its human checkpoint. Stronger verification receipts remain proposed (`docs/design/project-road-control-center.md`).",
+]
+
+# The same journey is drawn and rendered as text/table. Status is written, never color alone.
+JOURNEY = [
+    ("j.road", "Read the road", "art", "RELEASED · records",
+     "Rails → units → current sources", "next --json · unit show --json",
+     "Order and association explain direction; they do not prove dependency readiness.",
+     "`package/.charter/rails.py:116`, `package/.charter/bin/charter:664`"),
+    ("j.spec", "Resolve the gaps", "art", "METHOD · draft recipe",
+     "Compare sources, code and promises", "Specs · decisions · open questions",
+     "Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's.",
+     "`docs/method.md`, `docs/review/2026-11-03-spec-design-verification.md`"),
+    ("j.units", "Make work checkable", "unit", "RELEASED · unit contract",
+     "Perimeter · acceptance · dependencies", "probe UNIT --json · baseline checks",
+     "Review spec and units together. Judge probe relevance; passing form alone proves no behavior.",
+     "`package/.charter/checks.py:676`, `docs/verification.md`"),
+    ("j.plan", "Inspect the selection", "gate", "INTEGRATION · proposed",
+     "Exact revision, units and prerequisites", "Plan identity · runner · supervisor",
+     "Validate dependency closure and current authority. Existing Road interpretation is not runtime admission.",
+     "`docs/design/project-road-control-center.md`"),
+    ("j.launch", "Launch once", "chain", "RUNNER · adapter needed",
+     "Claim the inspected plan atomically", "Supervised group OR compatible chain",
+     "Current group runner takes one group; chain ignores human gates. Multi-rail admission is new integration work.",
+     "`package/.charter/chain.py:1891`, `docs/design/project-road-control-center.md`"),
+    ("j.evidence", "Observe evidence", "rec", "RELEASED + external runner",
+     "Commits · probes · independent review", "Judged revision · findings · answers",
+     "Keep deterministic checking, provider review, human credit and observed delivery distinct.",
+     "`docs/verification.md`, `package/.charter/chain_groups.py:86`"),
+    ("j.recover", "Pause and recover", "chain", "RUNNER · specific semantics",
+     "Durable run state and exact next step", "Failed · unknown · interrupted · held",
+     "Preserve work and reconcile before retry. A chain resume remains an owner act; no timeout supplies approval.",
+     "`package/.charter/chain.py:1528`, `docs/design/project-road-control-center.md`"),
+    ("j.owner", "Show what remains", "owner", "RELEASED · owner boundary",
+     "Only the remaining judgment or authority", "owner --json · bound confirmation",
+     "Agent checks and review precede handoff. Execution, acceptance, merge and deployment remain distinct.",
+     "`package/.charter/owner.py:163`, `docs/design/owner-acceptance.md`"),
+]
+
+AVAILABILITY = [
+    ("Released package", "0.4.22 at b2df24e; inspect each project's manifest and opt-ins. Source updates do not upgrade projects.", "`package/VERSION:1`, `docs/install.md`"),
+    ("Implemented, unreleased", "Optional charter-spec recipe at dee2f42 on charter-spec-draft. Manual preparation remains possible without installing it.", "`docs/review/2026-11-03-spec-design-verification.md`"),
+    ("External integration", "Tele-Claude already supplies Road preparation views, supervised groups and step checking; exact multi-rail launch is proposed here.", "`docs/design/project-road-control-center.md`"),
+    ("Proposal only", "PR #37, merged at 578b282: stronger agent-verification and independent-review receipts before owner work; no runtime enforcement added.", "`docs/design/project-road-control-center.md`"),
 ]
 
 # --------------------------------------------------------------------------------------------
@@ -927,11 +974,11 @@ def authority_svg(standalone: bool) -> str:
 # ---- the chain -------------------------------------------------------------------------------
 
 def chain_svg(standalone: bool) -> str:
-    W, H = 1400, 630
+    W, H = 1400, 675
     P = "chain"
     b = []
     b.append(text(24, 40, "A chain of sessions over the road", "serif", 22))
-    b.append(text(24, 64, "/charter-chain starts it; every session checks the one before; Codex reviews each group; the owner answers a wait with one command and two words.", "sub", 13))
+    b.append(text(24, 64, "Shown with group review enabled: fresh sessions, checked handoffs and an explicit owner wait. Inspect the actual launcher and review mode.", "sub", 13))
     # group bands
     b.append(f'<rect x="150" y="96" width="560" height="196" rx="12" class="bg-art cl cl-art" stroke-dasharray="5 4"/>' + text(166, 116, "GROUP 1 = RAIL ITEM r1", "cap t-art", 11))
     b.append(f'<rect x="850" y="96" width="530" height="196" rx="12" class="bg-art cl cl-art" stroke-dasharray="5 4"/>' + text(866, 116, "GROUP 2 = RAIL ITEM r2", "cap t-art", 11))
@@ -992,13 +1039,41 @@ def chain_svg(standalone: bool) -> str:
         x = 24 + k * 228
         b.append(f'<rect x="{x}" y="{ey + 10}" width="218" height="60" rx="8" class="{"bg-pass cl cl-pass" if st == "complete" else "chip"}"/>'
                  + text(x + 10, ey + 29, st, "mono b", 12.5) + lines_text(x + 10, ey + 46, wrap(what, 196, 11.5)[:2], 14, "sub", 11.5))
+    b.append(text(24, 642, "Limits: auto review is off without Codex; fixes are not automatically re-reviewed; human gates and selected rail sets are not enforced.", "sub", 12))
+    b.append(text(24, 661, "Context limits use Claude Code hooks. Review of owner acts is separately configurable. See verification.md and the road-to-evidence view.", "sub", 12))
     return svg_doc("chain", W, H, f"A chain of sessions (charter {VERSION})",
                    "A continuous chain: sessions s01, s02 and on, each with a context gauge that hands over at 25% and is capped at 30%; "
                    "a Codex review at the end of each group; and the owner's side of a wait: owner.md, charter owner run, /resume-chain ok.",
                    "".join(b), standalone, 80)
 
 
-VIEWS = [("functional", functional_svg), ("concepts", concepts_svg), ("gates", gates_svg), ("authority", authority_svg), ("chain", chain_svg)]
+def journey_svg(standalone: bool) -> str:
+    """The preparation/execution journey, with availability and boundaries in the picture."""
+    b = [text(24, 38, "From a road to evidence", "serif", 24),
+         text(24, 64, "Read left to right across each row. Charter records, external execution and proposed integration have different guarantees.", "sub", 13)]
+    for i, (jid, title, hue, status, purpose, command, limit, source) in enumerate(JOURNEY):
+        x, y = 24 + (i % 4) * 344, 96 + (i // 4) * 278
+        b.append(f'<g id="{jid}">' + tooltip(f"{title}. {status}. {limit} Source: {plain(source)}"))
+        b.append(f'<rect x="{x}" y="{y}" width="320" height="248" rx="10" class="cl cl-{hue} bg-{hue}"/>')
+        b.append(f'<rect x="{x}" y="{y}" width="6" height="248" rx="3" class="f-{hue}"/>')
+        b.append(text(x + 16, y + 25, f"{i + 1:02d}  {title}", f"serif t-{hue}", 19))
+        b.append(text(x + 16, y + 49, status, "cap t-muted", 10))
+        b.append(lines_text(x + 16, y + 78, wrap(purpose, 286, 13), 17, "b", 13))
+        b.append(lines_text(x + 16, y + 122, wrap(command, 286, 12), 17, "mono", 12))
+        b.append(lines_text(x + 16, y + 170, wrap(limit, 286, 12), 16, "sub", 12))
+        b.append("</g>")
+        if i % 4 < 3:
+            b.append(edge("journey", f"j-edge-{i}", [(x + 320, y + 124), (x + 344, y + 124)], "flow"))
+    b.append(text(24, 363, "04 → 05: admission binds what was inspected to what will execute; a preview never launches work.", "sub", 12))
+    b.append(text(24, 650, "Agent work: investigate, implement, check, review and correct. Owner work: remaining sensitive judgment and reserved authority.", "b", 13))
+    b.append(text(24, 674, "Availability and sources: maps.md §9 · method.md · verification.md · design/project-road-control-center.md", "sub", 12))
+    return svg_doc("journey", 1400, 700, f"Road to evidence (charter {VERSION})",
+                   "Eight stages from road and specification to selection, launch, evidence, recovery and remaining owner work. "
+                   "Released records, draft recipe, external runners and proposed integration are explicitly labelled.",
+                   "".join(b), standalone)
+
+
+VIEWS = [("functional", functional_svg), ("concepts", concepts_svg), ("gates", gates_svg), ("authority", authority_svg), ("chain", chain_svg), ("journey", journey_svg)]
 
 # --------------------------------------------------------------------------------------------
 # The agent edition
@@ -1130,8 +1205,8 @@ def markdown() -> str:
     w("1. `/charter-chain <unit> <instruction>` starts a chain; `charter chain start` creates `chain/<id>` when run on main and opens session 1 (`resolve_launcher` in `package/.charter/chain.py`).")
     w("2. Each session receives `.charter/chain-rules.md` verbatim, verifies its predecessor's work, works unit after unit, and hands over at 25% of its context window; past 30% the hook refuses every tool but writing the handoff or a unit file, `git` and the charter CLI (`docs/gates.md` § Chain budget and hand-over (0.4.9)).")
     w("3. `charter chain next` refuses a malformed handoff, records what the session committed, re-runs the probes of the units it closed, runs the gates on its change set, and opens the next session (`cmd_next` in `package/.charter/chain.py`).")
-    w("4. A group is the units of one rail item. When it ends, Codex reviews its commits in a worktree; the next session answers each finding as fixed or dismissed before the next group starts, and the group is cleared at a commit the owner can merge up to (`package/.charter/chain_groups.py`).")
-    w("5. When the road needs the owner, the session writes every act into `owner.md` and waits; Codex reads the acts and sends back what an agent could do; the owner runs them with `charter owner run` and types `/resume-chain ok`, which closes the lines whose acts passed (`package/.charter/owner_acts.py`).")
+    w("4. With review enabled, a group is the units of one rail item (or a tasket group without rails). Codex or a configured command reviews its committed range in a detached worktree; the next session answers each finding before the next group starts. Auto review becomes off without Codex; off omits group boundaries. Fix-answer form is checked, but fixes are not automatically re-reviewed (`package/.charter/chain_groups.py:65`, `package/.charter/chain_groups.py:86`, `docs/verification.md`).")
+    w("5. When the road needs the owner, the session writes every act into `owner.md` and waits. Review of the acts is separately configurable; the owner runs them with `charter owner run` and types `/resume-chain ok`, which closes the lines whose acts passed (`package/.charter/owner_acts.py`).")
     w("")
     w("| State | Meaning | Source |")
     w("|---|---|---|")
@@ -1142,6 +1217,20 @@ def markdown() -> str:
     w("")
     for l in LIMITS:
         w(f"- {l}")
+    w("")
+    w("## 9. From a road to evidence")
+    w("")
+    w("The picture is `docs/assets/maps/journey.svg`. Availability is part of each step: this is a journey across Charter records, external runners and proposed integration, not a claim that Charter launches a selected set of rails (`docs/design/project-road-control-center.md`).")
+    w("")
+    w("| id | Step | Availability | Purpose / entry | Boundary | Source |")
+    w("|---|---|---|---|---|---|")
+    for jid, title, hue, status, purpose, command, limit, source in JOURNEY:
+        w(f"| `{jid}` | {title} | {status} | {purpose}; {command} | {limit} | {source} |")
+    w("")
+    w("| Availability | What it means | Source |")
+    w("|---|---|---|")
+    for status, meaning, source in AVAILABILITY:
+        w(f"| {status} | {meaning} | {source} |")
     w("")
     return "\n".join(L)
 
@@ -1346,6 +1435,12 @@ def page(svgs: dict[str, str]) -> str:
                     f'<div class="chips"><button data-go="{c["id"]}">open</button></div></div>' for c in CAPS)
     concept_cards = "".join(f'<div class="card h-{k[3]}"><h3>{esc(k[1])}</h3><p>{esc(plain(k[5]))}</p>'
                             f'<div class="chips"><button data-go="{k[0]}">open</button></div></div>' for k in CONCEPTS)
+    journey_cards = "".join(f'<div class="card h-{hue}"><h3>{i + 1}. {esc(title)}</h3>'
+                            f'<p><b>{esc(status)}</b></p><p>{esc(purpose)}. {esc(command)}.</p>'
+                            f'<p>{esc(limit)}</p><p class="muted">{esc(plain(source))}</p></div>'
+                            for i, (_id, title, hue, status, purpose, command, limit, source) in enumerate(JOURNEY))
+    availability = "".join(f'<li><b>{esc(status)}:</b> {esc(meaning)} <span class="muted">({esc(plain(source))})</span></li>'
+                           for status, meaning, source in AVAILABILITY)
     lens = "".join(f'<button class="lens" data-lens="{a}" aria-pressed="false">{n}</button>' for a, n in
                    [("owner", "Owner"), ("agent", "Agent"), ("reviewer", "Reviewer"), ("delegate", "Delegate"), ("machines", "Gates")])
     legend = "".join([
@@ -1367,7 +1462,7 @@ def page(svgs: dict[str, str]) -> str:
 <h1>Charter maps</h1>
 <p>What charter provides, and how its ideas fit. Charter {VERSION}. The same maps as text, for an agent: <a href="maps.md">maps.md</a>.
 Also: <a href="charter-map.html">the elements on one map</a> (drawn at 0.4.8), <a href="method-visual.html">the method in diagrams</a>, <a href="cheatsheet.html">the desk sheet</a>.</p>
-<nav class="toc"><a href="#functional">1 · What it provides</a><a href="#concepts">2 · How its ideas fit</a><a href="#gates">3 · Every gate</a><a href="#authority">4 · Who may change what</a><a href="#chain">5 · A chain of sessions</a><a href="#legend">Legend</a></nav>
+<nav class="toc"><a href="#functional">1 · What it provides</a><a href="#concepts">2 · How its ideas fit</a><a href="#gates">3 · Every gate</a><a href="#authority">4 · Who may change what</a><a href="#chain">5 · A chain of sessions</a><a href="#journey">6 · Road to evidence</a><a href="#legend">Legend</a></nav>
 </div>
 <div class="controls"><span>Light up:</span><button class="lens" data-lens="all" aria-pressed="true">Everything</button>{lens}<button class="theme" title="Light or dark">◐</button></div>
 </header>
@@ -1393,8 +1488,16 @@ Also: <a href="charter-map.html">the elements on one map</a> (drawn at 0.4.8), <
 <div class="mapbox">{svgs["gates"]}</div><figcaption id="note-gates">Select a row for its detail.</figcaption></figure>
 <figure id="authority"><h2>4 · Who may change what</h2><p class="lede">The staircase is the owner's delegate: each level the owner grants takes a few more acts off the owner's desk. The last rows stay the owner's at every level.</p>
 <div class="mapbox">{svgs["authority"]}</div><figcaption id="note-authority">Select a row for its detail.</figcaption></figure>
-<figure id="chain"><h2>5 · A chain of sessions</h2><p class="lede">The road worked without a person at the keyboard: fresh sessions, a context budget, a review per group, and the owner's side of a wait.</p>
+<figure id="chain"><h2>5 · A chain of sessions</h2><p class="lede">Fresh sessions, a context budget, optional review per group, and the owner's side of a wait. Inspect the actual launcher and review mode; chain semantics differ from supervised human gates.</p>
 <div class="mapbox">{svgs["chain"]}</div></figure>
+</section>
+
+<section class="view" id="journey"><h2>6 · From a road to evidence</h2>
+<p class="lede">Prepare coherent work, inspect the exact execution plan, then follow evidence and recovery. Each stage names what is released, external, unreleased or proposed.</p>
+<div class="mapbox">{svgs["journey"]}</div>
+<details class="words"><summary>The journey, boundaries and sources as text</summary><div class="cards">{journey_cards}</div></details>
+<ul>{availability}</ul>
+<p>Read the <a href="method.md#prepare-the-road-for-execution">method</a>, <a href="verification.md">verification limits</a> and <a href="design/project-road-control-center.md">integration acceptance scenarios</a>.</p>
 </section>
 
 <section class="legend" id="legend"><h2>Legend</h2><div class="lgrid">{legend}</div></section>
