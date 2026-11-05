@@ -20,7 +20,7 @@ Filed at the user's request on 2026-11-03: improve `charter next` so a person or
 
 The current command exports rails, unit states and owner work, but a nonempty Log can produce an `in-progress` display state without establishing eligibility. Read `package/.charter/bin/charter` (`_unit_state`, `_next_json`, `cmd_next`), `package/.charter/rails.py`, `package/.charter/owner.py` and `docs/verification.md` before designing the output.
 
-The originating private investigation and prototype are retained at `/home/gui/.local/share/readiness-lab/lecrm/study/REPORT.html`. Treat client examples as private and turn them into synthetic fixtures; do not copy their records into this repository.
+The originating investigation and prototype are kept privately by the owner, outside this repository. Treat client examples as private and turn them into synthetic fixtures; do not copy their records into this repository.
 
 ## Proposed outcome
 
