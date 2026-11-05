@@ -17,23 +17,23 @@ owner acts:
 
 | Handed to the owner | Owner-only? | Why |
 |---|---|---|
-| add `check:` and `binds:` to `api-routes-in-known-api-paths` and `data-path-via-data-dir` | yes | `package/.charter/checks.py:1182` refuses any change to `check`/`binds` of an active decision |
+| add `check:` and `binds:` to `api-routes-in-known-api-paths` and `data-path-via-data-dir` | yes | `package/.charter/checks.py:1211` refuses any change to `check`/`binds` of an active decision |
 | wire a test suite into the pre-commit hook | yes | `.charter/**` is `OWNER_ONLY_GLOBS` (`package/.charter/checks.py:46-48`) |
 | edit an allowlist in another repository | no | outside the tree, so no gate applies (`package/.charter/hooks/pre_tool_gate.py:53-57` returns early for a path outside the tree) |
-| raise a group's `group_order` | no | taskets' ordering fields are not owner-only (`package/.charter/checks.py:1148-1200`) |
+| raise a group's `group_order` | no | taskets' ordering fields are not owner-only (`package/.charter/checks.py:1177-1229`) |
 
 That gives two findings:
-1. **The rules ask for things that cannot hurt** (`package/.charter/checks.py:1182`). Adding a `check:` to a decision that has none makes the gate stricter, yet it is refused.
-   - The package already treats that kind of change as free when removing a legacy id: "removing an entry only strengthens the done gate" (`package/.charter/checks.py:1165`).
-   - It does the same when narrowing a split unit: "narrowing or closing a split unit is free" (`package/.charter/checks.py:1198`).
-2. **When an ask is real, answering it is expensive** (`package/.charter/checks.py:1209-1210`). The override tells the agent to "propose it (a change request, a new decision) and say so", so the owner receives prose in a chat.
-   - They then open the file, edit it by hand, and run `! CHARTER_OWNER=1 git commit …` (`package/.charter/lib.py:213-229` at commit `7758bec`, the code the proposal was written against); a batch of four asks means four such round-trips.
+1. **The rules ask for things that cannot hurt** (`package/.charter/checks.py:1211`). Adding a `check:` to a decision that has none makes the gate stricter, yet it is refused.
+   - The package already treats that kind of change as free when removing a legacy id: "removing an entry only strengthens the done gate" (`package/.charter/checks.py:1194`).
+   - It does the same when narrowing a split unit: "narrowing or closing a split unit is free" (`package/.charter/checks.py:1227`).
+2. **When an ask is real, answering it is expensive** (`package/.charter/checks.py:1238-1239`). The override tells the agent to "propose it (a change request, a new decision) and say so", so the owner receives prose in a chat.
+   - They then open the file, edit it by hand, and run `! CHARTER_OWNER=1 git commit …` (`package/.charter/lib.py:215-231` at commit `7758bec`, the code the proposal was written against); a batch of four asks means four such round-trips.
 
 <!-- charter: opinion -->
 
 ## Part 1: a change that only tightens a gate is free
 
-Apply `owner_only_changes` (`package/.charter/checks.py:1148`) in both edit and commit context, and
+Apply `owner_only_changes` (`package/.charter/checks.py:1177`) in both edit and commit context, and
 extend it so that these changes are no longer owner acts:
 
 | Change | Today | Proposed |
@@ -115,9 +115,9 @@ Slate change, tasket `-2004`.
 4. It appends `{path, blob}` to `.git/charter/approved.jsonl`.
 5. It commits by pathspec, with the trailer `Owner-Approved: <page> <sha256>`.
 
-`check_owner_only_staged` (`package/.charter/checks.py:1356`) gains one rule: a staged owner-only
+`check_owner_only_staged` (`package/.charter/checks.py:1385`) gains one rule: a staged owner-only
 path whose staged blob is listed in `approved.jsonl` is not refused. CI's author check
-(`check_owner_commits`, `package/.charter/checks.py:1367`) keeps working unchanged. On a solo machine the agent commits as the owner's
+(`check_owner_commits`, `package/.charter/checks.py:1396`) keeps working unchanged. On a solo machine the agent commits as the owner's
 git identity, so the trailer is the audit trail, not the gate.
 
 ### What this trusts, said plainly

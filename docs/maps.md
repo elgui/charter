@@ -308,7 +308,7 @@ The picture is `docs/assets/maps/chain.svg` (`docs/daily-use.md` § Running unit
 | `waiting` | a session needs the owner; every act is in owner.md | `docs/gates.md` § Chain budget and hand-over (0.4.9) |
 | `halted` | a session asked a question, or a review could not run | `docs/daily-use.md` § Running units in a chain |
 | `stalled` | two sessions in a row landed nothing | `docs/gates.md` § Chain budget and hand-over (0.4.9) |
-| `stopped` | charter chain stop requested an end | `package/.charter/chain.py:1498` |
+| `stopped` | charter chain stop requested an end | `package/.charter/chain.py:1505` |
 | `complete` | the road is finished, on a clean tree | `docs/daily-use.md` § Running units in a chain |
 
 ## 8. Where the gates stop
@@ -318,7 +318,7 @@ The picture is `docs/assets/maps/chain.svg` (`docs/daily-use.md` § Running unit
 - A gate that crashes lets the change through and logs `decision=error`; `--no-verify` skips the git hook, and CI runs the checks again (`docs/method.md` § The hard gates and why a warning would not do).
 - A merge, a deployment, a push and a purchase are actions, not files: no gate sees them, the rules file carries them (`docs/gates.md` § What a gate cannot see).
 - The lock that holds against an agent acting as the owner is outside the repository: branch protection and code owners (`docs/gates.md` § Owner-only changes).
-- Road order and `charter next` are not dependency admission; a chain takes a starting unit and mission, not an exact selected rail set (`package/.charter/rails.py:116`, `package/.charter/chain.py:1891`).
+- Road order and `charter next` are not dependency admission; a chain takes a starting unit and mission, not an exact selected rail set (`package/.charter/rails.py:116`, `package/.charter/chain.py:1903`).
 - Probe execution and required review are opt-ins; an anchored review line does not authenticate the reviewer. Chain auto review can be off (`docs/verification.md`, `package/.charter/chain_groups.py:86`).
 - The optional spec recipe is implemented but unreleased; it excludes chains because they do not enforce its human checkpoint. Stronger verification receipts remain proposed (`docs/design/project-road-control-center.md`).
 
@@ -330,11 +330,11 @@ The picture is `docs/assets/maps/journey.svg`. Availability is part of each step
 |---|---|---|---|---|---|
 | `j.road` | Read the road | RELEASED · records | Rails → units → current sources; next --json · unit show --json | Order and association explain direction; they do not prove dependency readiness. | `package/.charter/rails.py:116`, `package/.charter/bin/charter:664` |
 | `j.spec` | Resolve the gaps | METHOD · draft recipe | Compare sources, code and promises; Specs · decisions · open questions | Agents investigate technical unknowns; spec recipe is unreleased and optional. Sensitive rulings remain the owner's. | `docs/method.md`, `docs/review/2026-11-03-spec-design-verification.md` |
-| `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:676`, `docs/verification.md` |
+| `j.units` | Make work checkable | RELEASED · unit contract | Perimeter · acceptance · dependencies; probe UNIT --json · baseline checks | Review spec and units together. Judge probe relevance; passing form alone proves no behavior. | `package/.charter/checks.py:705`, `docs/verification.md` |
 | `j.plan` | Inspect the selection | INTEGRATION · proposed | Exact revision, units and prerequisites; Plan identity · runner · supervisor | Validate dependency closure and current authority. Existing Road interpretation is not runtime admission. | `docs/design/project-road-control-center.md` |
-| `j.launch` | Launch once | RUNNER · adapter needed | Claim the inspected plan atomically; Supervised group OR compatible chain | Current group runner takes one group; chain ignores human gates. Multi-rail admission is new integration work. | `package/.charter/chain.py:1891`, `docs/design/project-road-control-center.md` |
+| `j.launch` | Launch once | RUNNER · adapter needed | Claim the inspected plan atomically; Supervised group OR compatible chain | Current group runner takes one group; chain ignores human gates. Multi-rail admission is new integration work. | `package/.charter/chain.py:1903`, `docs/design/project-road-control-center.md` |
 | `j.evidence` | Observe evidence | RELEASED + external runner | Commits · probes · independent review; Judged revision · findings · answers | Keep deterministic checking, provider review, human credit and observed delivery distinct. | `docs/verification.md`, `package/.charter/chain_groups.py:86` |
-| `j.recover` | Pause and recover | RUNNER · specific semantics | Durable run state and exact next step; Failed · unknown · interrupted · held | Preserve work and reconcile before retry. A chain resume remains an owner act; no timeout supplies approval. | `package/.charter/chain.py:1528`, `docs/design/project-road-control-center.md` |
+| `j.recover` | Pause and recover | RUNNER · specific semantics | Durable run state and exact next step; Failed · unknown · interrupted · held | Preserve work and reconcile before retry. A chain resume remains an owner act; no timeout supplies approval. | `package/.charter/chain.py:1535`, `docs/design/project-road-control-center.md` |
 | `j.owner` | Show what remains | RELEASED · owner boundary | Only the remaining judgment or authority; owner --json · bound confirmation | Agent checks and review precede handoff. Execution, acceptance, merge and deployment remain distinct. | `package/.charter/owner.py:163`, `docs/design/owner-acceptance.md` |
 
 | Availability | What it means | Source |
