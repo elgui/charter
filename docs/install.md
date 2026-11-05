@@ -160,10 +160,10 @@ cd <clone> && python3 .charter/bin/charter setup
 
 Expected, one of:
 
-- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`package/.charter/bin/charter:821`)
-- `git hook already active (core.hooksPath = .charter/githooks)` (`package/.charter/bin/charter:812`)
-- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`package/.charter/bin/charter:814`).
-- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`package/.charter/bin/charter:816`).
+- `git config core.hooksPath .charter/githooks (was unset); worktrees of this clone share it` (`package/.charter/bin/charter:992`)
+- `git hook already active (core.hooksPath = .charter/githooks)` (`package/.charter/bin/charter:983`)
+- `git hook: <framework file> runs the charter gate; core.hooksPath left unset`: the framework's own install puts the gate in this clone (`package/.charter/bin/charter:985`).
+- `KEEP git hooks: this clone runs <framework>; ...`: the project runs other hooks and the gate is not wired into them yet. Tell the owner (step 6); do not re-run with `--replace-hooks` (`package/.charter/bin/charter:987`).
 
 `setup` needs no charter checkout. A clone that skips it is still gated by CI. The SessionStart banner says when the hook is missing (`package/.charter/githooks/README.md`).
 
