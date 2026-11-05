@@ -128,27 +128,40 @@ def run_bounded(argv: list[str], max_bytes: int, *, timeout: int = 120, **kw) ->
     size, truncated, expired = 0, False, False
     deadline = time.monotonic() + timeout
     with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, **kw) as proc:
-        with selectors.DefaultSelector() as sel:
-            sel.register(proc.stdout, selectors.EVENT_READ, "stdout")
-            sel.register(proc.stderr, selectors.EVENT_READ, "stderr")
-            while sel.get_map():
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    expired = True
-                    break
-                for key, _ in sel.select(left):
-                    chunk = os.read(key.fd, 8192)
-                    if not chunk:
-                        sel.unregister(key.fileobj)
-                        continue
-                    keep = chunk[:max_bytes - size]
-                    buffers[key.data].extend(keep)
-                    size += len(keep)
-                    if len(keep) < len(chunk):
-                        truncated = True
+        try:
+            with selectors.DefaultSelector() as sel:
+                sel.register(proc.stdout, selectors.EVENT_READ, "stdout")
+                sel.register(proc.stderr, selectors.EVENT_READ, "stderr")
+                while sel.get_map():
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        expired = True
                         break
-                if truncated:
-                    break
+                    for key, _ in sel.select(left):
+                        chunk = os.read(key.fd, 8192)
+                        if not chunk:
+                            sel.unregister(key.fileobj)
+                            continue
+                        keep = chunk[:max_bytes - size]
+                        buffers[key.data].extend(keep)
+                        size += len(keep)
+                        if len(keep) < len(chunk):
+                            truncated = True
+                            break
+                    if truncated:
+                        break
+            if not truncated and not expired:
+                try:
+                    proc.wait(timeout=max(0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    expired = True
+        except BaseException:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            raise
         if truncated or expired:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
