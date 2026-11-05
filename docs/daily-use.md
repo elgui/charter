@@ -7,7 +7,7 @@ What to do once charter is installed (`docs/install.md`), for the owner and for 
 | Word | Meaning |
 |---|---|
 | unit, tasket | One deliverable, as a markdown file in `.taskets/` with its acceptance criteria, evidence and log (`docs/method.md` § The unit of work) |
-| probe | A command that proves one acceptance criterion; it fails before the work and passes after (`package/charter/templates/unit.md:24-26`) |
+| probe | A command that proves one acceptance criterion; it fails before the work and passes after (`package/charter/templates/unit.md:25-27`) |
 | evidence | Under `## Evidence`: a commit SHA, a `path:line` and the `$ command` lines of the probes; a path or a URL alone is refused (`package/.claude/rules/charter.md:24`) |
 | track | `client` when a signed devis (quote) or contract covers the project, `prototype` otherwise (`docs/method.md` § Two tracks) |
 | scope | `charter/scope.md`, the summary of the signed devis; client track only (`docs/method.md:9`) |
@@ -19,14 +19,14 @@ What to do once charter is installed (`docs/install.md`), for the owner and for 
 ## The loop
 
 1. **Open a session.** Read the banner (`package/.charter/hooks/session_start.py`).
-2. **Pick or write the unit**, with probes that fail today (`package/charter/templates/unit.md:24-26`).
+2. **Pick or write the unit**, with probes that fail today (`package/charter/templates/unit.md:25-27`).
 3. **Start it**, and record the failing baseline (`package/.claude/skills/charter-unit/SKILL.md`).
 4. **Work** inside its perimeter; record decisions as they are made (`package/.claude/rules/charter.md:15-19`).
 5. **Commit.** The gate runs on every commit, whoever makes it (`package/.charter/githooks/pre-commit`).
 6. **Close it**: probes pass, boxes checked, evidence cited, `status: done` (`package/.claude/rules/charter.md:24`).
 7. **Report** when someone asks where things stand (`package/.claude/skills/charter-progress/SKILL.md`).
 
-The owner's part runs beside it: commit what only the owner may, approve or refuse what the agent proposed, and once a week read what the gates did (§ What only the owner does, below; `package/.claude/rules/charter.md:28-38`).
+The owner's part runs beside it: commit what only the owner may, approve or refuse what the agent proposed, and once a week read what the gates did (§ What only the owner does, below; `package/.claude/rules/charter.md:29-39`).
 
 ## 1. Open a session
 
@@ -53,7 +53,7 @@ One unit per deliverable. To the agent: "start unit `<id>`", or "write a unit fo
 
 A unit is ready when:
 
-- every line under `## Acceptance` names a probe that can be run, and that probe **fails now**. A criterion that protects behaviour which already works says `(guard)` (`package/charter/templates/unit.md:26`);
+- every line under `## Acceptance` names a probe that can be run, and that probe **fails now**. A criterion that protects behaviour which already works says `(guard)` (`package/charter/templates/unit.md:27`);
 - `perimeter:` lists the paths it may touch (`package/charter/templates/unit.md:11`);
 - on the client track, `scope:` names an item of `charter/scope.md` or an approved change (`package/.claude/rules/charter.md:9`);
 - where `charter/rails.md` exists, `rail:` names an open item of it. Work the road does not name waits until the owner adds a rail item, because that is the re-plan (`package/.claude/rules/charter.md:10`).
@@ -79,11 +79,11 @@ That failure is the baseline: it goes into the unit's `## Log` as the session's 
 ## 4. Work
 
 - Stay inside `perimeter:`. A file outside it gets a `- <path>: <why>` line under `## Outside perimeter` before the commit (`package/.claude/rules/charter.md:16`).
-- When a choice is made that other code will depend on, say "record the decision". The `charter-decision` skill writes `charter/decisions/<slug>.md`, and the code cites it as `charter:<slug>` (`package/.claude/skills/charter-decision/SKILL.md`). Project lessons go there too, as `kind: lesson`, not into personal memory (`package/.claude/rules/charter.md:43`).
+- When a choice is made that other code will depend on, say "record the decision". The `charter-decision` skill writes `charter/decisions/<slug>.md`, and the code cites it as `charter:<slug>` (`package/.claude/skills/charter-decision/SKILL.md`). Project lessons go there too, as `kind: lesson`, not into personal memory (`package/.claude/rules/charter.md:44`).
 - A file over the size limit is frozen. Move code out of it into a new file; letting it grow needs a `kind: split` unit the owner opens (`package/.claude/rules/charter.md:17`).
-- Work the client did not buy, or a change to price, dates or what is sold, becomes a change request, not a commit (`package/.claude/rules/charter.md:44`).
+- Work the client did not buy, or a change to price, dates or what is sold, becomes a change request, not a commit (`package/.claude/rules/charter.md:45`).
 - Append a dated `## Log` line whenever something lands or the session stops. The next session resumes from the unit, not from the transcript (`package/.claude/rules/charter.md:19`).
-- Subagents read; the parent session writes (`package/.claude/rules/charter.md:49`).
+- Subagents read; the parent session writes (`package/.claude/rules/charter.md:50`).
 
 In a Claude Code session, the gates act on each Edit, Write and NotebookEdit before it lands: an out-of-scope path, an owner-only file or a growing frozen file is refused with the override named (`docs/gates.md` § Claude Code hooks).
 
@@ -101,7 +101,7 @@ A refusal prints one line per finding, each with its `Override:`. Do what the ov
 
 Use [What verification establishes](verification.md) to distinguish a done record, executed probes, review and the tele-claude checker, and to report their limits (`docs/verification.md:7`).
 
-For an optional later check of whether delivered work helped, see the [hypothetical outcome-review example](examples/outcome-review.md), which uses existing Context, Acceptance, Evidence and Log sections (`package/charter/templates/unit.md:18`).
+For an optional later check of whether delivered work helped, see the [hypothetical outcome-review example](examples/outcome-review.md), which uses existing Context, Acceptance, Evidence and Log sections (`package/charter/templates/unit.md:19`).
 
 To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` § Finish).
 
@@ -109,11 +109,11 @@ To the agent: "finish the unit" (`package/.claude/skills/charter-unit/SKILL.md` 
 2. Check each `- [x] AC-n` whose probe passed (`package/.claude/skills/charter-unit/SKILL.md` § Finish, step 1).
 3. Under `## Evidence`: the commit SHA, the `path:line` of the change, and the `$ command` lines `charter probe` printed. With `review.required` on, also a `- review:` line that names the independent reviewer and anchors their verdict.
 4. `status: done`, and a closing `## Log` line (`package/.claude/rules/charter.md:19`).
-5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:738`).
+5. `python3 .charter/bin/charter unit stop` (`package/.charter/bin/charter:748`).
 
 A done flip without that evidence is refused, in the session and at commit. In the rehearsal, setting `status: done` with the box unchecked and no evidence gave `charter check: 2 blocking` and `Refused.`; with steps 1 to 4 the same commit passed (in the scratchpad rehearsal, 2026-09-25).
 
-The final message of the turn cites the same evidence. A completion claim without a commit, a `path:line` or a `$ command` is blocked once by the Stop hook (`package/.claude/rules/charter.md:25`).
+The final message of the turn cites the same evidence. A completion claim without a commit, a `path:line` or a `$ command` is blocked once by the Stop hook (`package/.claude/rules/charter.md:26`).
 
 ## 7. Report
 
@@ -142,7 +142,7 @@ Don't work in the same clone while a chain runs: both sessions would share one a
 
 ## What only the owner does
 
-The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:28-38`). Where the project's delegate level allows it, the owner's delegate takes the first rows instead and hands back what it will not take, with its reason, by the waiting session and a Telegram message; a daily digest lists what it did, each with a revert line (`docs/design/owner-delegate.md`):
+The agent prepares these and stops; the owner acts (`package/.claude/rules/charter.md:29-39`). Where the project's delegate level allows it, the owner's delegate takes the first rows instead and hands back what it will not take, with its reason, by the waiting session and a Telegram message; a daily digest lists what it did, each with a revert line (`docs/design/owner-delegate.md`):
 
 | When | What | How |
 |---|---|---|

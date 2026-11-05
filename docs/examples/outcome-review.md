@@ -1,6 +1,6 @@
 # An optional outcome check in an ordinary tasket
 
-The unit template already supplies Context, Acceptance, Evidence and Log; its existing fields suffice for this example (`package/charter/templates/unit.md:1`, `package/charter/templates/unit.md:18`). A done record makes evidence reviewable without judging its truth (`README.md:7`).
+The unit template already supplies Context, Acceptance, Evidence and Log; its existing fields suffice for this example (`package/charter/templates/unit.md:1`, `package/charter/templates/unit.md:19`). A done record makes evidence reviewable without judging its truth (`README.md:7`).
 
 <!-- charter: opinion -->
 Use this example when a later observation would help decide whether a change was useful. It is optional guidance, with no new fields, statuses or gates. Keep technical acceptance separate from the product hypothesis: a technically correct change can fail to help.
@@ -53,4 +53,4 @@ After the window, the observer compares the observation with the declared expect
 A failed hypothesis does not silently reopen a technically completed unit or authorize deployment/revert. Put the observation and decision in Evidence and Log; create future work only if someone chooses it. The sample's future observation date is a planning note, not a scheduled job or a present request for the owner.
 <!-- charter: /opinion -->
 
-Owner Desk is for a present owner need that state cannot derive: agents file/read, and the owner acts. File an ask only when an actual decision or owner-only action is needed now; a future observation window alone is not such an ask (`/home/gui/Projects/tele-claude/docs/OWNER_DESK.md:54`). Deployment and public release remain owner commitments (`package/.claude/rules/charter.md:57`).
+Owner Desk is for a present owner need that state cannot derive: agents file/read, and the owner acts. File an ask only when an actual decision or owner-only action is needed now; a future observation window alone is not such an ask (`/home/gui/Projects/tele-claude/docs/OWNER_DESK.md:54`). Deployment and public release remain owner commitments (`package/.claude/rules/charter.md:59`).
