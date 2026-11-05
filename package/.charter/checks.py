@@ -57,6 +57,7 @@ class Finding:
     message: str
     path: str = ""
     override: str = ""   # what a person or agent can do to legitimately pass
+    exit: int | None = None   # a probe finding: the probe's exit code, for the gate log row (0.4.23)
 
     def line(self) -> str:
         p = f" [{self.path}]" if self.path else ""
@@ -545,6 +546,21 @@ def _stream(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
 
 
+_PYTEST_RE = re.compile(r"(?:^|[\s/;&|(])(?:pytest|py\.test)(?=[\s;&|)]|$)|-m\s+pytest\b")
+
+
+def probe_outcome(cmd: str, code: int) -> str:
+    """`passed`, `failed` or `not-run` (0.4.23). Exit 126 and 127 (not executable, not found) mean the shell could not
+    start the command; pytest's 4 (usage error, such as a test file or `-k`/`::` selection that does not exist) and 5
+    (nothing collected) mean no test ran, when the command runs pytest. A deterministic rule on the exit code and the
+    command's words; none of these proves the probe fails without the change."""
+    if code == 0:
+        return "passed"
+    if code in (126, 127) or (code in (4, 5) and _PYTEST_RE.search(cmd)):
+        return "not-run"
+    return "failed"
+
+
 def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
     """Run one probe. (its record, the one-line tail the text line has always shown: the last line of stdout and
     stderr together, cut to 100 characters)."""
@@ -552,7 +568,7 @@ def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str
     try:
         r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
         out, err, code = r.stdout, r.stderr, r.returncode
-        outcome = "passed" if code == 0 else "failed"
+        outcome = probe_outcome(cmd, code)
         line = ((out + err).strip().splitlines() or [""])[-1][:100]
     except subprocess.TimeoutExpired as e:
         out, err, code, outcome = _stream(e.stdout), _stream(e.stderr), None, "timeout"
@@ -576,8 +592,9 @@ def run_probes_recorded(root: Path, text: str, path: str, timeout: int) -> tuple
         code = rec["exit"]
         lines.append(f"- `$ {cmd}` → " + (f"exit {code}" if code is not None else tail) + (f" ({tail})" if tail and code else ""))
         if code != 0:
-            out.append(Finding("probe", "block", f"{ac} probe failed: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
-                               override="make the probe pass, or reopen the unit"))
+            what = "could not run" if rec["outcome"] == "not-run" else "failed"
+            out.append(Finding("probe", "block", f"{ac} probe {what}: `{cmd}` " + (f"exited {code}: {tail}" if code is not None else tail), path=path,
+                               override="make the probe pass, or reopen the unit", exit=code))
     return out, lines, records
 
 
@@ -588,8 +605,9 @@ def failure_lines(records: list[dict]) -> list[str]:
     for r in records:
         if r["outcome"] == "passed":
             continue
-        how = f"exited {r['exit']}" if r["outcome"] == "failed" else "timed out"
-        out.append(f"{r['ac']} failed: `{r['command']}` {how} after {r['duration_s']} s")
+        how = "timed out" if r["outcome"] == "timeout" else f"exited {r['exit']}"
+        what = "could not run" if r["outcome"] == "not-run" else "failed"
+        out.append(f"{r['ac']} {what}: `{r['command']}` {how} after {r['duration_s']} s")
         for stream in ("stdout", "stderr"):
             tail, n = r[f"{stream}_tail"], r[f"{stream}_lines"]
             if not n:
@@ -636,11 +654,16 @@ def unit_base(root: Path, path: str) -> str | None:
     return p.stdout.strip() or None
 
 
+NOT_RUN_OVERRIDE = ("commit the test file or fix the command so that it runs at the base and fails there, or mark a criterion that guards "
+                    "existing behaviour `(guard)`; the unit's new tests run against the old code only in a later release")
+
+
 def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int) -> list[Finding]:
     """A probe that already passes before the unit's work does not test it (method.md § Real tests, point 2).
     Runs each probe in a detached worktree at `unit_base`; a criterion marked `(guard)` protects
     existing behaviour and is expected to pass there. Untracked dependencies (node_modules, a venv)
-    are absent from the worktree, so a probe that fails there for that reason is not reported."""
+    are absent from the worktree, so a probe that fails there for that reason is not reported. A probe that could not
+    run there (`probe_outcome` says `not-run`, or it timed out) is reported: it does not show a failure either (0.4.23)."""
     probes = [(ac, cmd) for ac, cmd, line in _probe_lines(text) if "(guard)" not in line]
     base = unit_base(root, path) if probes else None
     if not base:
@@ -661,8 +684,13 @@ def run_probes_at_base(root: Path, cfg: dict, text: str, path: str, timeout: int
             try:
                 code = subprocess.run(cmd, shell=True, cwd=str(wt), capture_output=True, timeout=timeout, env=env).returncode
             except subprocess.TimeoutExpired:
+                out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: timed out after {timeout} s, so `{cmd}` does not show it fails without the change", path=path,
+                                   override=NOT_RUN_OVERRIDE))
                 continue
-            if code == 0:
+            if probe_outcome(cmd, code) == "not-run":
+                out.append(Finding("probe", level, f"{ac} probe could not run at {base[:10]}: exit {code} (not-run), so `{cmd}` does not show it fails without the change", path=path,
+                                   override=NOT_RUN_OVERRIDE, exit=code))
+            elif code == 0:
                 out.append(Finding("probe", level, f"{ac} probe already passes at {base[:10]}, before the unit's work: `{cmd}` does not test the change", path=path,
                                    override="make the probe exercise the new behaviour, or mark a criterion that guards existing behaviour `(guard)`"))
         return out

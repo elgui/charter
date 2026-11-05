@@ -65,7 +65,7 @@ def cmd_check(a) -> int:
     sid = lib.session_id()   # a commit made from a session's shell carries its id to the git hook (0.4.15)
     for f in rep.findings:
         lib.log_event(root, "cli" if not a.ci else "ci", f.gate, f.level, f.message, path=f.path, mode="staged" if a.staged else "all",
-                      **({"session": sid} if sid else {}))
+                      **({"session": sid} if sid else {}), **({"exit": f.exit} if f.exit is not None else {}))
     for f in rep.findings:
         print(f.line())
     n_b, n_w = len(rep.blocks), len(rep.warns)
@@ -1010,6 +1010,8 @@ def cmd_probe(a) -> int:
     text = (root / u["_path"]).read_text(encoding="utf-8")
     found, lines, records = checks.run_probes_recorded(root, text, u["_path"], a.timeout or int((cfg.get("probes") or {}).get("timeout_s", 120)))
     failed = [r["ac"] for r in records if r["outcome"] != "passed"]
+    exits = {r["ac"]: r["exit"] for r in records if r["outcome"] != "passed"}
+    not_run = [r["ac"] for r in records if r["outcome"] == "not-run"]
     changed = checks.changed_since_base(root, u, u["_path"]) if (failed or a.json) else None
     if a.json:   # the record a tool reads (0.4.15); the text below is unchanged for the tools that parse it
         print(json.dumps({**_schema(root), "unit": a.id, "path": u["_path"], "probes": records, "failed": failed,
@@ -1022,8 +1024,10 @@ def cmd_probe(a) -> int:
             print(f.line(), file=sys.stderr)
     sid = lib.session_id()
     lib.log_event(root, "cli", "probe", "block" if found else "passed",
-                  f"{len(lines)} probe(s) of {a.id}" + (f"; failed: {', '.join(failed)}" if failed else ""), path=u["_path"],
-                  **({"failed": failed} if failed else {}), **({"session": sid} if sid else {}))
+                  f"{len(lines)} probe(s) of {a.id}" + (f"; failed: {', '.join(failed)}" if failed else "")
+                  + (f"; not-run: {', '.join(not_run)}" if not_run else ""), path=u["_path"],
+                  **({"failed": failed, "exits": exits} if failed else {}), **({"not_run": not_run} if not_run else {}),
+                  **({"session": sid} if sid else {}))
     return 1 if found else 0
 
 
