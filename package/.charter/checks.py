@@ -982,7 +982,7 @@ def check_perimeter(root: Path, cfg: dict, unit: dict | None, relpaths: list[str
             continue
         level = "block" if (at_commit and cfg.get("track") == "client") else "warn"
         if rp in others:
-            out.append(Finding("perimeter", level, f"{rp} is staged, but session {others[rp]} edited it and this session did not; "
+            out.append(Finding("perimeter", level, f"{rp} is staged, but session {others[rp]} has an edit record for it and this session's record does not list it; "
                                f"a plain `git commit` charges it to unit {unit['_id']}", path=rp,
                                override="commit only this session's paths, `git commit -m <message> -- <your paths>`, and leave the other "
                                         f"session's to it; or, if this work is the unit's, add `- {rp}: <why>` under `## Outside perimeter` in {unit['_path']}"))
@@ -1136,7 +1136,7 @@ def _fm(text: str | None) -> dict:
 
 
 # `— owner: do|check|decide` on an acceptance line: a line only the owner closes (owner.OWNER_SEG_RE names the kind)
-OWNER_MARK_RE = re.compile(r"\s[—–]\s*owner:", re.I)
+OWNER_MARK_RE = lib.OWNER_SEGMENT_RE
 BOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s*(.*)$")
 
 
@@ -1303,7 +1303,7 @@ def owner_only_staged(root: Path, cfg: dict, paths: list[str]) -> dict[str, list
 
 # the kind word after `— owner:`: owner.OWNER_SEG_RE, repeated here because owner.py imports this module; a bare
 # `owner:` is a check
-OWNER_KIND_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
+OWNER_KIND_RE = lib.OWNER_SEGMENT_RE
 SCOPE_FILE = lib.CHARTER_DIR + "/scope.md"
 RAILS_FILE = lib.CHARTER_DIR + "/rails.md"
 SETTINGS_FILE = ".claude/settings.json"
