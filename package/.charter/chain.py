@@ -747,12 +747,19 @@ def cmd_close_session(root: Path, a) -> int:
     """The detached closer: delete session n through the shim. A stall of the session server fails one call, so it tries
     three times; a tab already gone is closed. What it cannot close it says, and the next hand-over tries again."""
     chain = load(root, a.id)
-    delay = int((lib.load_config(root).get("chain") or {}).get("close_delay_s", 60))
+    rec = link(root, chain["id"], a.n)
+    if not rec.get("close_started") or rec.get("tab_closed"):
+        # only the closer `close_session` starts may delete a session: never a live one, never twice
+        print(f"chain {chain['id']} session {a.n}: no close was requested for it" if not rec.get("tab_closed")
+              else f"chain {chain['id']} session {a.n}: already closed")
+        return 2
+    delay = max(0, int((lib.load_config(root).get("chain") or {}).get("close_delay_s", 60)))
     why = ""
     for _ in range(3):
         time.sleep(delay)
         why = close_tab(chain, link(root, chain["id"], a.n))
-        if not why or "not found" in why.lower():
+        w = why.lower()
+        if not why or "session not found" in w or "http 404" in w:   # the shim's answer for a tab already gone
             with editing_link(root, chain["id"], a.n) as rec:
                 rec["tab_closed"] = now()
             event(root, chain["id"], f"s{a.n:02d}", "tab-closed", "its process is gone, its transcript stays (`claude --resume`)")
@@ -1842,6 +1849,11 @@ def typed_by_owner(root: Path, sid: str) -> str:
         # nothing types into its tab but the owner, who landed there six times in three chains (the owner, 2026-10-05)
         return (f"this is session {j[1]} of chain {j[0]['id']}, which is still working: its prompts come from the chain. "
                 f"Type it once the session has handed over, or in a session of your own (`{own_session(root)}`)")
+    if j and resolve_launcher(j[0].get("launcher", "auto"))[0] == "spawn":
+        # a spawned session's tab is deleted once it ends (close_session); a resume typed there would launch the next
+        # session from a pane its closer may kill mid-launch (/reviewPR #43, pass B)
+        return (f"this is session {j[1]} of chain {j[0]['id']}, which has ended, and its tab is being closed. "
+                f"Type it in a session of your own (`{own_session(root)}`)")
     return ""
 
 

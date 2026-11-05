@@ -182,6 +182,8 @@ def config_from(user: dict) -> dict:
                     problems.append(f"unknown key `{k}.{sk}`{_near(sk, t)}; ignored")
                 elif not _typed(sv, t[sk]):
                     problems.append(f"`{k}.{sk}` is {json.dumps(sv)}, not a {t[sk].__name__}; left at {json.dumps(cfg[k][sk])}")
+                elif k == "chain" and sk == "close_delay_s" and sv < 0:
+                    problems.append(f"`chain.close_delay_s` is {sv}, below 0; left at {json.dumps(cfg[k][sk])}")
                 elif k == "delegate" and sk == "level" and sv not in DELEGATE_LEVELS:
                     problems.append(f"`delegate.level` is {json.dumps(sv)}, not one of {', '.join(DELEGATE_LEVELS)}{_near(sv, DELEGATE_LEVELS)}; read as strict")
                 else:

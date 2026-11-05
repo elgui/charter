@@ -40,6 +40,9 @@ elif argv[0] == "delete":
     if os.path.exists(os.path.join(d, "delete-fails")):
         print("tele-claude stalled", file=sys.stderr)
         sys.exit(1)
+    if os.path.exists(os.path.join(d, "delete-backend-missing")):
+        print("backend not found: tele-claude", file=sys.stderr)
+        sys.exit(1)
     if os.path.exists(os.path.join(d, "delete-404")):
         print(json.dumps({{"error": "DELETE -> HTTP 404: Session not found"}}), file=sys.stderr)
         sys.exit(1)
@@ -313,6 +316,51 @@ class CloseFailure(CloseCase):
         self.hand_over()
         self.wait_event("s01 tab-closed")
         self.assertEqual(self.deleted().count("tab-1"), 1)
+
+
+
+class ReviewOf43(CloseCase):
+    """/reviewPR #43, pass B (gpt-6.1-sol)."""
+
+    def test_close_session_refuses_a_session_no_closer_was_started_for(self):
+        self.join(1, "s1")
+        r = cli(self.root, "close-session", self.cid, "1")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("no close was requested", r.stdout)
+        self.assertEqual(self.deleted(), [])
+
+    def test_only_the_shims_session_not_found_counts_as_closed(self):
+        (self.shimdir / "delete-backend-missing").write_text("")
+        self.join(1, "s1")
+        self.write_handoff(1)
+        self.assertEqual(cli(self.root, "next", sid="s1").returncode, 0)
+        self.wait_event("s01 tab-not-closed")
+        self.assertEqual(self.deleted().count("tab-1"), 3)
+        self.assertFalse(chainlib.link(self.root, self.cid, 1).get("tab_closed"))
+
+    def test_a_negative_close_delay_is_a_config_problem(self):
+        import lib
+        cfg = lib.config_from({"chain": {"close_delay_s": -1}})
+        self.assertEqual(cfg["chain"]["close_delay_s"], 60)
+        self.assertTrue(any("close_delay_s" in x for x in cfg[lib.PROBLEMS]))
+
+
+class ResumeNotInAClosingTab(ShimMixin, WaitCase):
+    """/reviewPR #43, pass B: a resume typed in the ended session's own tab would launch from a pane its closer deletes."""
+
+    def start(self, *extra, **kw):
+        self.fake_shim()
+        return super().start(*extra, **kw)
+
+    def test_the_owner_is_sent_to_a_session_of_their_own(self):
+        from test_chain_0_4_7 import resume
+        self.join(1, "s1")
+        self.wait_handoff(1)
+        self.assertEqual(self.next("s1").returncode, 0)
+        r = resume(self.root, "ok", sid="s1")
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("its tab is being closed", r.stdout)
+        self.assertEqual(chainlib.load(self.root)["state"], "waiting")
 
 
 if __name__ == "__main__":
