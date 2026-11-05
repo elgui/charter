@@ -637,6 +637,23 @@ def matches_any(relpath: str, globs: list[str]) -> bool:
     return False
 
 
+def globs_overlap(a: str, b: str) -> bool:
+    """True when some path could match both `a` and `b` (a unit's perimeter against a decision's
+    `gate_paths:`, 0.4.23). A literal path is matched against the other glob; two globs overlap when
+    their literal prefixes nest, which errs towards overlap: a gate that fires once too often is
+    cheaper than one that never fires."""
+    wild = re.compile(r"[*?\[]")
+    la, lb = wild.split(a, 1)[0], wild.split(b, 1)[0]
+    a_lit, b_lit = la == a, lb == b
+    if a_lit and b_lit:
+        return a == b
+    if a_lit:
+        return matches_any(a, [b])
+    if b_lit:
+        return matches_any(b, [a])
+    return la.startswith(lb) or lb.startswith(la)
+
+
 # ---------------------------------------------------------------- frontmatter
 
 _FM_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.S)

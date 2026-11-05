@@ -21,6 +21,12 @@ superseded_by:
 ask:
 # recommend: while proposed, active | rejected, with the reason under ## Recommendation; optional
 recommend:
+# read: docs that say how to follow this decision; while it is active every session start names them, and each must exist; optional
+read: []
+# gate_paths + gate_evidence: while active, a unit whose `perimeter:` touches these globs closes only when its `## Evidence`
+# matches the regular expression gate_evidence, or the unit lists this decision under `waives:` (a warning); set both or neither; optional
+gate_paths: []
+gate_evidence:
 ---
 
 ## Decision

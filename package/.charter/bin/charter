@@ -188,6 +188,7 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 continue
             rep.add(*checks.check_decisions_text(root, decs, p, text))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "decisions"])
+        rep.add(*checks.check_decision_reads(root, decs, paths if a.staged else None))
         for u in units.values():
             if str(u.get("status", "")) not in done_st and str(u.get("status", "")) not in lib.TERMINAL_STATUSES:
                 rep.add(*checks.check_unit_decisions(root, decs, u))
@@ -221,14 +222,21 @@ def cmd_anchors(a) -> int:
     """Exit 1 on any unanchored claim or unresolved anchor. With --pr (a pull-request description),
     `#123` counts as an anchor and the result is a warning: the method's posture for a check whose
     false positives have not yet been measured. On the prototype track every result is a warning
-    (docs/method.md, Two tracks)."""
+    (docs/method.md, Two tracks). --strict makes findings exit 1 in both cases, for a probe on a
+    deliverable. A path that is not a file exits 2; `-` reads stdin (0.4.23)."""
     root = lib.repo_root(a.root)
-    warn_only = a.pr or lib.load_config(root).get("track") == "prototype"
+    warn_only = not a.strict and (a.pr or lib.load_config(root).get("track") == "prototype")
     rc = 0
     for f in a.files:
         p = Path(f)
-        text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else sys.stdin.read()
-        checks.DOC_DIR = p.resolve().parent if p.exists() else None
+        if f != "-" and not p.is_file():
+            # until 0.4.23 a missing path read stdin, found 0 claims and passed: a probe on a report could not fail
+            print(f"{f}: no such file")
+            lib.log_event(root, "cli", "anchors", "block", "no such file", path=f, mode="pr" if a.pr else "doc")
+            rc = 2
+            continue
+        text = sys.stdin.read() if f == "-" else p.read_text(encoding="utf-8", errors="replace")
+        checks.DOC_DIR = p.resolve().parent if f != "-" else None
         rep = checks.check_anchors(root, text, min_len=a.min_len, issues=a.pr)
         status = "ok" if rep.ok else ("WARN" if warn_only else "FAIL")
         print(f"{f}: {status} — {rep.claims} claim(s), {rep.anchored} anchored, {rep.admitted} admitted unverified, "
@@ -245,7 +253,7 @@ def cmd_anchors(a) -> int:
         lib.log_event(root, "cli", "anchors", "ok" if rep.ok else "warn" if warn_only else "block",
                       f"{len(rep.unanchored)} unanchored, {len(rep.unresolved)} unresolved", path=f, mode="pr" if a.pr else "doc")
         if not rep.ok and not warn_only:
-            rc = 1
+            rc = max(rc, 1)
     return rc
 
 
@@ -823,6 +831,8 @@ def cmd_unit(a) -> int:
         cfg = lib.load_config(root)
         for f in checks.check_unit_scope(root, cfg, units[a.id]) + checks.check_unit_decisions(root, checks.decision_index(root), units[a.id]):
             print(f.line())
+        for g in checks.decision_gates(root, units[a.id]):   # say at the start what done will ask for (0.4.23)
+            print("gate: " + checks.gate_line(g))
         env = os.environ.get("CHARTER_UNIT", "").strip()
         if env and env != a.id:
             print(f"note: CHARTER_UNIT={env} in the environment takes precedence over this choice")
@@ -1339,7 +1349,9 @@ def main(argv=None) -> int:
     pr.add_argument("--json", action="store_true", help="each probe's record: exit code, duration, stdout and stderr tails; the paths changed since the unit's base")
     pr.set_defaults(fn=cmd_probe)
     an = sub.add_parser("anchors"); an.add_argument("files", nargs="+"); an.add_argument("--min-len", type=int, default=40)
-    an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn"); an.set_defaults(fn=cmd_anchors)
+    an.add_argument("--pr", action="store_true", help="a pull-request description: `#123` is an anchor, findings warn")
+    an.add_argument("--strict", action="store_true", help="exit 1 on findings even on the prototype track or with --pr (for probes)")
+    an.set_defaults(fn=cmd_anchors)
     s = sub.add_parser("synth"); s.add_argument("--write", action="store_true"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_synth)
     l = sub.add_parser("ledger"); l.add_argument("action", choices=["fold", "add", "show"]); l.add_argument("--result", default=None); l.add_argument("--unit", default=None)
     l.add_argument("--human-minutes", type=int, default=None, help="with add: record time a person spent on the unit"); l.add_argument("--note", default=None)
