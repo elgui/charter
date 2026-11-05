@@ -28,3 +28,14 @@ class SurveyRefAnchors(unittest.TestCase):
         self.assertTrue(charter_plan.check(root, good, ref="survey-ref").ok)
         self.assertFalse(charter_plan.check(root, bad, ref="survey-ref").ok)
 
+    def test_survey_cli_uses_the_ref_for_its_generated_documents(self):
+        import subprocess
+        import tempfile
+        from helpers import INSTALLER
+        root = make_project()
+        self.addCleanup(cleanup, root)
+        git(root, "rm", "app/health.py")
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run([sys.executable, str(INSTALLER), "survey", str(root), "--ref", "main",
+                                "--offline", "--no-rehearse", "--track", "prototype", "--out", out], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

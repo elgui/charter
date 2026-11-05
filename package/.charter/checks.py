@@ -321,9 +321,7 @@ def check_size(root: Path, cfg: dict, rp: str, new_lines: int, old_lines: int,
 def _resolves(root: Path, anchor_kind: str, value: str, extra: str = "", ref: str | None = None) -> bool:
     if anchor_kind == "sha":
         return lib.git(root, "cat-file", "-e", f"{value}^{{commit}}").returncode == 0
-    if ref is not None and anchor_kind in ("fileline", "path"):
-        if value.startswith(("/", "~/")):
-            return False   # a surveyed ref cannot establish an external machine's files
+    if ref is not None and anchor_kind in ("fileline", "path") and not value.startswith(("/", "~/")):
         r = lib.git(root, "cat-file", "-t", f"{ref}:{value.rstrip('/')}")
         if r.returncode != 0:
             return False
@@ -1558,7 +1556,7 @@ NUMBER_RE = re.compile(r"[\d.]+")   # a last part made of digits and dots: a rat
 
 def _is_dir(root: Path, rel: str, ref: str | None = None) -> bool:
     """A file of that name is not the directory a path needs; a path this user may not look at is not here either."""
-    if ref is not None:
+    if ref is not None and not rel.startswith(("/", "~/")):
         r = lib.git(root, "cat-file", "-t", f"{ref}:{rel}")
         return r.returncode == 0 and r.stdout.strip() == "tree"
     try:
