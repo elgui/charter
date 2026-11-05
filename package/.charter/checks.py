@@ -705,7 +705,7 @@ def _probe_runner(root: Path, cfg: dict) -> list[str]:
 
 def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
                runner: list[str] | None = None) -> subprocess.CompletedProcess:
-    """A probe owns a process group: on timeout kill its shell and children, then drain and reap."""
+    """A probe owns a process group: kill and reap on timeout or interruption, with a bounded final drain."""
     if runner is None:
         cfg = lib.load_config(root)
         if cfg.get(lib.PROBLEMS):
@@ -725,8 +725,22 @@ def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            out, err = proc.communicate()
+            try:
+                out, err = proc.communicate(timeout=0.2)
+            except subprocess.TimeoutExpired as e:
+                # A descendant may have left the group while keeping a pipe open.
+                out, err = _stream(e.output), _stream(e.stderr)
+                proc.stdout.close()
+                proc.stderr.close()
+                proc.wait()
             raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+        except BaseException:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            raise
         return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
