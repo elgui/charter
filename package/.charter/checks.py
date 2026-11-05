@@ -544,7 +544,7 @@ def review_lines(root: Path, evidence: str) -> list[str]:
 
 def acceptance_items(body: str) -> list[str]:
     """Acceptance lines with the tick normalised, so ticking a box is not a change."""
-    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).splitlines() if CHECKBOX_RE.match(l)]
+    return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).split("\n") if CHECKBOX_RE.match(l)]
 
 
 def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Finding]:
@@ -1185,13 +1185,13 @@ def acceptance_boxes(text: str) -> list[tuple[int, str, bool, bool]]:
     sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
     base = (text or "").find(sec) if sec else -1
     out, pos = [], 0
-    for l in sec.splitlines(keepends=True) if base >= 0 else []:
+    for l in sec.split("\n") if base >= 0 else []:
         m = BOX_LINE_RE.match(l.rstrip("\n"))
         if m:
             ac = re.match(r"(AC-\d+)\b", m.group(2))
             key = ac.group(1) if ac else re.split(r"\s[—–]\s", m.group(2))[0].strip().lower()
             out.append((base + pos, key, m.group(1) != " ", bool(OWNER_MARK_RE.search(l))))
-        pos += len(l)
+        pos += len(l) + 1
     return out
 
 
@@ -1352,7 +1352,7 @@ def _owner_lines_by_key(text: str) -> dict[str, list[tuple[bool, str, str]]]:
     """key -> [(checked, the line after its box, kind)] for each line of a unit's acceptance marked `— owner:`."""
     sec = lib.acceptance(lib.split_frontmatter(text or "")[2])
     out: dict[str, list[tuple[bool, str, str]]] = {}
-    for l in (sec or "").splitlines():
+    for l in (sec or "").split("\n"):
         m = BOX_LINE_RE.match(l.rstrip("\n"))
         mk = OWNER_KIND_RE.search(l) if m else None
         if not mk:

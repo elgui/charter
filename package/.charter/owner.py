@@ -218,10 +218,12 @@ def _accept(root, cfg, uid, ac, expected, note, trailer, dry_run):
     contract = item["acceptance"]
     if not contract["branch"] or not expected or contract["expected"] != expected:
         raise Refused(f"{uid} {ac}: the criterion or branch changed; refresh the desk before confirming")
-    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = path.read_text(encoding="utf-8").split("\n")
     index = item["line"] - 1
+    if index >= len(lines) or lines[index] != contract["text"]:
+        raise Refused(f"{uid} {ac}: the criterion location changed; refresh the desk before confirming")
     lines[index] = lines[index].replace("[ ]", "[x]", 1)
-    text = "".join(lines)
+    text = "\n".join(lines)
     # Preserve all other source text and record the owner's actual observation, not a probe pass.
     receipt = (f"- {dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')} "
                f"owner accepted {ac}" + (f": {note}" if note else "")
