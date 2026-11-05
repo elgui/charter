@@ -35,7 +35,7 @@ KINDS = ("decide", "do", "check")
 FIELDS = ("key", "kind", "title", "file", "line", "ask", "recommend", "options", "check", "probe", "marked", "perform", "run", "contract", "why", "because", "readiness", "acceptance")
 # `- [ ] AC-4: rows arrive — owner: check — probe: `...``: a line only the owner can close (spec §10.2 of
 # tele-claude's docs/OWNER_DESK.md). The word after `owner:` is the kind; a bare `owner:` is a check.
-OWNER_SEG_RE = re.compile(r"\s[—–]\s*owner:\s*(decide|do|check)?\b", re.I)
+OWNER_SEG_RE = lib.OWNER_SEGMENT_RE
 # a legacy line that names a human step without the segment
 HUMAN_SEG_RE = re.compile(r"\s[—–]\s*human:", re.I)
 DECISION_RULINGS = ("active", "rejected", "superseded")
@@ -152,7 +152,7 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
         ac = box.group(2) or f"L{lineno}"
         probe = checks.PROBE_RE.match(line)
         what = re.sub(r"^\s*-\s*\[ \]\s*(AC-\d+:?\s*)?", "", line)
-        what = re.split(r"\s[—–]\s*(?:owner|human|probe):", what)[0].strip()
+        what = re.split(r"(?:\s[—–-]\s*|[;:]\s*)(?:owner|human|probe):", what)[0].strip()
         out.append(_item(key=f"owner-line:{uid}:{ac}", kind=(seg.group(1) or "check").lower() if seg else "check",
                          title=f"{uid} {ac}: {what}"[:200], file=u["_path"], line=lineno,
                          probe=probe.group(2) if probe else None, marked=bool(seg),
@@ -432,7 +432,7 @@ def owner_name(root: Path, cfg: dict) -> str:
 
 
 def set_field(text: str, key: str, value: str) -> str:
-    """Set a top-level frontmatter field, keeping every other line; a missing field goes after `status:`."""
+    """Set every top-level occurrence of a frontmatter field, keeping other lines; a missing field goes after `status:`."""
     m = re.match(r"\A(---\s*\n)(.*?\n)(---\s*(?:\n|\Z))", text, re.S)
     if not m:
         raise Refused("the file has no frontmatter")
@@ -440,7 +440,7 @@ def set_field(text: str, key: str, value: str) -> str:
     pat = re.compile(rf"^{re.escape(key)}:[^\n]*$", re.M)
     new = f"{key}: {value}"
     if pat.search(fm):
-        fm = pat.sub(lambda _: new, fm, count=1)
+        fm = pat.sub(lambda _: new, fm)
     else:
         st = re.search(r"^status:[^\n]*\n", fm, re.M)
         at = st.end() if st else len(fm)
