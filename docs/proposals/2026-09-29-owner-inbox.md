@@ -117,7 +117,7 @@ Slate change, tasket `-2004`.
 
 `check_owner_only_staged` (`package/.charter/checks.py:1231`) gains one rule: a staged owner-only
 path whose staged blob is listed in `approved.jsonl` is not refused. CI's author check
-(`check_owner_commits`, `:802`) keeps working unchanged. On a solo machine the agent commits as the owner's
+(`check_owner_commits`, `package/.charter/checks.py:1242`) keeps working unchanged. On a solo machine the agent commits as the owner's
 git identity, so the trailer is the audit trail, not the gate.
 
 ### What this trusts, said plainly
