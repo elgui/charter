@@ -906,11 +906,11 @@ def _unit_json(root: Path, uid: str) -> dict:
         return {"error": f"no tasket with id {uid} in {lib.TASKETS_DIR}/"}
     body = u.get("_body", "")
     text = (lib.artifact_root(root) / u["_path"]).read_text(encoding="utf-8", errors="replace")
-    offset = len(text.splitlines()) - len(body.splitlines())   # the file line before the body's first, as owner_lines counts
+    offset = len(text.split("\n")) - len(body.split("\n"))   # the file line before the body's first, as owner_lines counts
     heading, at, acc = lib.acceptance_span(body)
     legacy = ownerq.legacy_re(root, cfg)
     rows = []
-    for i, line in zip(at, acc.splitlines()):
+    for i, line in zip(at, acc.split("\n")):
         m = checks.BOX_LINE_RE.match(line)
         if not m:
             continue

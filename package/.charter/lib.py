@@ -25,6 +25,11 @@ TASKETS_DIR = ".taskets"
 # paths the perimeter gate never judges at commit, and the perimeter fit and the probe record leave out (0.4.15)
 PERIMETER_EXEMPT = (TASKETS_DIR + "/", CHARTER_DIR + "/", TOOL_DIR + "/", ".claude/", ".github/")   # directories: `charter_app/` is judged
 LEGACY_FILE = "charter/legacy-taskets.txt"
+# Existing dash segments may carry a following probe. Plain separators mark only a terminal owner segment.
+OWNER_SEGMENT_RE = re.compile(
+    r"^\s*-\s*\[[ xX]\][^\n]*?(?:\s[—–]\s*|(?:\s-|[;:])\s*"
+    r"(?=owner:\s*(?:(?:decide|do|check)\s*)?$))owner:\s*(decide|do|check)?\b", re.I)
+
 
 # Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).
 TERMINAL_STATUSES = ("deleted", "superseded", "parked", "skipped", "realized", "deferred")
@@ -695,7 +700,7 @@ def split_frontmatter(text: str) -> tuple[dict, str, str]:
     fields: dict = {}
     current_list_key = None
     blank: set[str] = set()
-    for line in raw.splitlines():
+    for line in raw.split("\n"):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if current_list_key and re.match(r"^\s+-\s+", line):
@@ -936,7 +941,7 @@ def acceptance(body: str) -> str:
 
 
 def acceptance_span(body: str) -> tuple[str | None, list[int], str]:
-    """(heading, the index in body.splitlines() of each line of the text, text) of the checklist `acceptance` reads;
+    """(heading, the index in body.split("\n") of each line of the text, text) of the checklist `acceptance` reads;
     (None, [], "") without one. `charter unit show --json` numbers the lines from it (0.4.13)."""
     for h in ACCEPTANCE_HEADINGS:
         at, s = _section_at(body, h)
@@ -1024,9 +1029,9 @@ def section(body: str, title: str) -> str:
 
 
 def _section_at(body: str, title: str) -> tuple[list[int], str]:
-    """(the index in body.splitlines() of each line of the text `section` returns; that text). A nested heading that
+    """(the index in body.split("\n") of each line of the text `section` returns; that text). A nested heading that
     starts with `title` again is not in the text, so the lines are not always contiguous in the body."""
-    lines = body.splitlines()
+    lines = body.split("\n")
     out, at, level, on = [], [], None, False
     want = title.lower()
     for i, line in enumerate(lines):

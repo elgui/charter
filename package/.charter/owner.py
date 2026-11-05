@@ -131,8 +131,8 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
     """Unchecked acceptance lines of an open unit that only the owner can close: marked with `— owner:`, or
     (unmarked, `marked: false`) naming a human step or the owner the way units did before the segment."""
     text = _read(root, u["_path"])
-    lines = text.splitlines()
-    first = len(lines) - len(u.get("_body", "").splitlines())   # the body's first line, past the frontmatter
+    lines = text.split("\n")
+    first = len(lines) - len(u.get("_body", "").split("\n"))   # the body's first line, past the frontmatter
     heads = tuple(h.lower() for h in lib.ACCEPTANCE_HEADINGS)
     out, level = [], 0
     for lineno, line in enumerate(lines[first:], first + 1):
