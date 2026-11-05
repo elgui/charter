@@ -27,7 +27,7 @@ That gives two findings:
    - The package already treats that kind of change as free when removing a legacy id: "removing an entry only strengthens the done gate" (`package/.charter/checks.py:1042`).
    - It does the same when narrowing a split unit: "narrowing or closing a split unit is free" (`package/.charter/checks.py:1073`).
 2. **When an ask is real, answering it is expensive** (`package/.charter/checks.py:1084-1085`). The override tells the agent to "propose it (a change request, a new decision) and say so", so the owner receives prose in a chat.
-   - They then open the file, edit it by hand, and run `! CHARTER_OWNER=1 git commit …` (`package/.charter/lib.py:487-503`); a batch of four asks means four such round-trips.
+   - They then open the file, edit it by hand, and run `! CHARTER_OWNER=1 git commit …` (`package/.charter/lib.py:213-229` at commit `7758bec`, the code the proposal was written against); a batch of four asks means four such round-trips.
 
 <!-- charter: opinion -->
 
