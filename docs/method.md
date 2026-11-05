@@ -1,6 +1,6 @@
 # Charter: a working method for client projects run with agents
 
-Version 0.4.24. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
+Version 0.4.25. Install, setup and upgrade: `docs/install.md`. Daily work under it: `docs/daily-use.md`. Package layout and commands: `docs/package.md`. Hook and gate reference: `docs/gates.md`. Adoption by starting point: `docs/migration.md`.
 
 ## The method on one page
 
@@ -250,6 +250,8 @@ A unit's `## Log` is the state a resumed session reads. `/charter-chain` runs fr
 With group review enabled, one rail group is worked at a time on one branch. Codex, or a configured review command, reviews a pinned committed range in a detached worktree; the following session answers every finding. Fix-answer validation checks form and commits, not truth, and does not itself launch a second review. `auto` selects Codex only if available; `off` removes group boundaries. Check the author's provider and the actual reviewer before claiming independence (`package/.charter/chain_groups.py:86`, `package/.charter/chain_groups.py:164`, `package/.charter/chain_groups.py:340`, `docs/verification.md`).
 
 When a session needs the owner it writes the acts into its wait record. Review of those acts is separately configurable. The owner performs them and resumes through the supported owner path; ordinary agent calls to `charter chain resume` refuse. The chain accepts a starting unit and mission, not a submitted list of selected rails or a dependency DAG, and does not interpret Tele-Claude's `gate: human`. A UI must expose that limitation before launch (`package/.charter/chain.py:1535`, `package/.charter/chain.py:1903`, `package/.charter/owner_acts.py`, `docs/design/continuous-chain.md`).
+
+**Preparing the human part of a gate.** A criterion a person must close names, when the unit is written, why a person is needed, what they will observe or judge, who prepares it and what package they receive. Three roles stay separate. The implementing agent finishes what an agent can finish, collects the bounded evidence and its limits, and rehearses the owner's path on the final candidate through the configured owner interface. A technical reviewer, where `review.required` or the unit asks for one, judges code and tests against a named revision. The owner supplies what only they can: private access, an observation on their device or account, taste, risk, or a human review the unit explicitly keeps. Neither the agent's tests, its rehearsal nor a model's review closes an `— owner:` line (`package/.claude/skills/charter-unit/SKILL.md`, `package/.charter/chain-rules.md` section 5). The boundary is the parser's: Charter checks that an owner line exists, carries its marker and, for an act, has its fields; it cannot decide that a procedure is usable, and it does not interpret an owner interface's own gate format. Usability is shown by a walk through the rendered task, and the hand-over review of acts asks the same question of an observation act (`package/.charter/owner_acts.py`).
 
 ## Integration seams and proposals
 
