@@ -31,7 +31,7 @@ LEGACY_FILE = "charter/legacy-taskets.txt"
 # Existing dash segments may carry a following probe. Plain separators mark only a terminal owner segment.
 OWNER_SEGMENT_RE = re.compile(
     r"^\s*-\s*\[[ xX]\][^\n]*?(?:\s[—–]\s*|(?:\s-|[;:])\s*"
-    r"(?=owner:\s*(?:(?:decide|do|check)\s*)?$))owner:\s*(decide|do|check)?\b", re.I)
+    r"(?=owner:\s*(?:(?:decide|do|check)\s*)?$))owner:\s*(?:(decide|do|check)\b|(?=$|[—–]))", re.I)
 
 
 # Statuses both engines treat as closed without being done (tele-claude project_tasket_reader.py:23-34).

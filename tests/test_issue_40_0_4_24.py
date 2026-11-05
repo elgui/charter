@@ -28,3 +28,13 @@ class OwnerSeparators(unittest.TestCase):
             self.assertEqual(checks.owner_line_changes(text, text.replace("[ ] AC-2", "[x] AC-2")), ["AC-2"])
         for line in ("- [ ] AC-2: ask owner: do the work", "Ordinary prose; owner: do", "- [ ] AC-2: ask; owner: does the work"):
             self.assertFalse(owner.OWNER_SEG_RE.search(line), line)
+    def test_bare_terminal_owner_marker_is_a_check(self):
+        root = make_project()
+        self.addCleanup(cleanup, root)
+        for sep in ("-", ";", ":", "—", "–"):
+            text = UNIT.replace("## Evidence", f"- [ ] AC-2: check delivery {sep} owner:\n\n## Evidence")
+            (root / ".taskets/u1.md").write_text(text)
+            u = lib.taskets(root)["u1"]
+            items = owner.owner_lines(root, "u1", u, owner.legacy_re(root, lib.load_config(root)))
+            self.assertTrue(any(x["key"] == "owner-line:u1:AC-2" and x["kind"] == "check" for x in items), sep)
+            self.assertEqual(checks.owner_line_changes(text, text.replace("[ ] AC-2", "[x] AC-2")), ["AC-2"])
