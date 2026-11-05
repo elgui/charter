@@ -19,7 +19,7 @@ owner acts:
 |---|---|---|
 | add `check:` and `binds:` to `api-routes-in-known-api-paths` and `data-path-via-data-dir` | yes | `package/.charter/checks.py:1059` refuses any change to `check`/`binds` of an active decision |
 | wire a test suite into the pre-commit hook | yes | `.charter/**` is `OWNER_ONLY_GLOBS` (`package/.charter/checks.py:46-48`) |
-| edit an allowlist in another repository | no | outside the tree, so no gate applies (`package/.charter/hooks/pre_tool_gate.py:40-46` gates only protected content) |
+| edit an allowlist in another repository | no | outside the tree, so no gate applies (`package/.charter/hooks/pre_tool_gate.py:53-57` returns early for a path outside the tree) |
 | raise a group's `group_order` | no | taskets' ordering fields are not owner-only (`package/.charter/checks.py:1025-1077`) |
 
 That gives two findings:
