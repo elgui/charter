@@ -3,9 +3,9 @@
 #52: a Log line dated with an ISO timestamp (`- 2026-11-09T12:00:00Z ...`, what `charter accept` writes) is a dated line.
 #51: `charter owner` reads every open unit's history in one pass, not one `git log --follow` per unit; a unit written
 by copying another does not inherit the other's history.
-Probes: a probe does not outlive charter when a caller kills charter's process group (tele-claude's
-tests/test_checker_core.py::test_total_timeout_kills_the_probes_too).
-Each test fails on the package at e6f413f, except two guards of what must not change: what is not a date, and a
+#53: a probe, and what it put in the background, does not outlive charter when a caller kills charter's process group
+(tele-claude's tests/test_checker_core.py::test_total_timeout_kills_the_probes_too), nor outlives its own end.
+Each test fails on the package at e6f413f (the two #53 tests also on a939b59, the first cut of 0.4.27), except two guards of what must not change: what is not a date, and a
 probe's exit status, output and runner failure as charter reads them."""
 import datetime as dt
 import os
@@ -127,20 +127,40 @@ class ProbeOutlivesNoCaller(unittest.TestCase):
         self.root = make_project()
         self.addCleanup(cleanup, self.root)
 
-    def test_killing_charters_group_kills_the_probe(self):
-        marker = self.root / "survivor"
+    def killed_mid_probe(self, probe):
+        """Run `charter probe u1` in a session of its own, as tele-claude's checker does, and kill that session's group
+        while the probe runs."""
         text = UNIT.replace("status: next", "status: now").replace(
-            "## Evidence", f"- [ ] AC-2: slow — probe: `sleep 2 && touch {marker}`\n\n## Evidence")
+            "## Evidence", f"- [ ] AC-2: slow — probe: `{probe}`\n\n## Evidence")
         (self.root / ".taskets" / "u1.md").write_text(text)
         commit_all(self.root, "u1")
         proc = subprocess.Popen([sys.executable, str(self.root / ".charter" / "bin" / "charter"), "--root", str(self.root),
                                  "probe", "u1", "--timeout", "30"], cwd=str(self.root), env=clean_env(),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        time.sleep(1.0)        # past AC-1, inside AC-2's sleep
+        time.sleep(1.0)        # past AC-1, inside AC-2
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait()
         time.sleep(2.5)
+
+    def test_killing_charters_group_kills_the_probe(self):
+        marker = self.root / "survivor"
+        self.killed_mid_probe(f"sleep 2 && touch {marker}")
         self.assertFalse(marker.exists(), "a probe outlived charter")
+
+    def test_killing_charters_group_kills_what_the_probe_backgrounded(self):
+        # the shell exits at once; the background job keeps the output open (elgui/charter#53)
+        marker = self.root / "survivor"
+        self.killed_mid_probe(f"(sleep 2; touch {marker}) & echo started")
+        self.assertFalse(marker.exists(), "a probe's background job outlived charter")
+
+    def test_what_a_finished_probe_left_running_ends_with_it(self):
+        marker = self.root / "survivor"
+        t0 = time.monotonic()
+        r = checks._run_probe(self.root, f"(sleep 1; touch {marker}) >/dev/null 2>&1 &", 10, runner=[])
+        self.assertEqual(r.returncode, 0)
+        self.assertLess(time.monotonic() - t0, 1.0)
+        time.sleep(1.5)
+        self.assertFalse(marker.exists(), "a finished probe's background job kept running")
 
     def test_the_probe_s_exit_is_charter_s_reading(self):
         self.assertEqual(checks._run_probe(self.root, "echo out; echo err >&2; exit 3", 10, runner=[]).returncode, 3)

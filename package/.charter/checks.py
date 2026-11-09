@@ -893,79 +893,99 @@ def _probe_runner(root: Path, cfg: dict) -> list[str]:
     return runner
 
 
-# The leader of a probe's session (0.4.27). A probe runs in a session of its own, so that a timeout kills all it
-# started (#35, 0.4.24); but then a caller that kills charter's process group, as tele-claude's checker does at its total
-# timeout (tests/test_checker_core.py::test_total_timeout_kills_the_probes_too there), no longer reached the probe. The
-# guard runs the probe in its own group and holds the read end of a pipe whose write end only charter holds: when charter
-# ends, however it ends (SIGKILL included), the pipe closes and the guard kills its group. It exits as the probe did.
-PROBE_GUARD = r"""
-import os, select, signal, subprocess, sys, threading
-fd = int(sys.argv[1])
-try:
-    child = subprocess.Popen(sys.argv[2:], close_fds=True)
-except OSError as e:
-    sys.stderr.write(f"probe runner could not start: {e}\n")
-    sys.exit(127)
-done_r, done_w = os.pipe()
-threading.Thread(target=lambda: (child.wait(), os.write(done_w, b"x")), daemon=True).start()
-while True:
-    ready = select.select([fd, done_r], [], [])[0]
-    if done_r in ready:
-        break
-    if fd in ready and not os.read(fd, 1):
-        os.killpg(0, signal.SIGKILL)
-code = child.returncode
-if code < 0:
-    signal.signal(-code, signal.SIG_DFL)
-    os.kill(os.getpid(), -code)
-sys.exit(code)
+# A probe runs in a session of its own, so that a timeout kills all it started (#35, 0.4.24). A caller that kills
+# charter's process group, as tele-claude's checker does at its total timeout and after each run, then no longer reached
+# the probe (0.4.27; elgui/charter#53; tests/test_checker_core.py::test_total_timeout_kills_the_probes_too there). Two
+# halves close that: charter kills the probe's group whenever the probe ends, so nothing it backgrounded outlives it; and
+# a watcher, in a session of its own and not the probe's parent, is told the group and kills it if charter dies first.
+# It learns of charter's death from its stdin closing without `done`, so a SIGKILL of charter is seen too. The group is
+# killed by number after charter is gone, so a number reused in that instant is a theoretical risk, as for any pgid.
+PROBE_WATCHER = r"""
+import os, signal, sys
+line = sys.stdin.readline().strip()
+rest = sys.stdin.read()
+if line.isdigit() and not rest.startswith("done"):
+    try:
+        os.killpg(int(line), signal.SIGKILL)
+    except OSError:
+        pass
 """
+
+
+def _kill_group(pgid: int) -> None:
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _watcher() -> subprocess.Popen | None:
+    """The probe's watcher, started before the probe; None when it cannot start (the probe then runs unwatched)."""
+    try:
+        return subprocess.Popen([sys.executable, "-I", "-S", "-c", PROBE_WATCHER], stdin=subprocess.PIPE, text=True,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return None
+
+
+def _tell_watcher(watcher: subprocess.Popen | None, text: str, close: bool = False) -> None:
+    if watcher is None:
+        return
+    try:
+        watcher.stdin.write(text)
+        watcher.stdin.flush()
+        if close:
+            watcher.stdin.close()
+    except (OSError, ValueError):
+        pass
+    if close:
+        try:
+            watcher.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            watcher.kill()
+            watcher.wait()
 
 
 def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
                runner: list[str] | None = None) -> subprocess.CompletedProcess:
-    """A probe owns a process group: kill and reap on timeout or interruption, with a bounded final drain. Its session
-    is led by `PROBE_GUARD`, which kills it if charter ends first."""
+    """A probe owns a process group: killed and reaped when it ends, on a timeout or on an interruption, with a bounded
+    final drain, and killed by its watcher if charter ends first (0.4.27)."""
     if runner is None:
         cfg = lib.load_config(root)
         if cfg.get(lib.PROBLEMS):
             return subprocess.CompletedProcess(cmd, 127, "", "probe refused: correct charter/config.json first")
         runner = _probe_runner(root, cfg)
-    alive_r, alive_w = os.pipe()       # charter keeps the write end; the guard sees it close when charter ends
-    command = [sys.executable, "-I", "-S", "-c", PROBE_GUARD, str(alive_r), *runner, "/bin/sh", "-c", cmd]
+    command = [*runner, "/bin/sh", "-c", cmd] if runner else cmd
+    watcher = _watcher()
     try:
-        proc = subprocess.Popen(command, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(alive_r,),
-                          encoding="utf-8", errors="replace", env=env, start_new_session=True)
-    except OSError as e:
-        os.close(alive_w)
-        return subprocess.CompletedProcess(cmd, 127, "", f"probe runner could not start: {e}")
-    finally:
-        os.close(alive_r)
-    with proc, open(alive_w, "wb", closefd=True):
         try:
-            out, err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
+            proc = subprocess.Popen(command, shell=not runner, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              encoding="utf-8", errors="replace", env=env, start_new_session=True)
+        except OSError as e:
+            return subprocess.CompletedProcess(cmd, 127, "", f"probe runner could not start: {e}")
+        _tell_watcher(watcher, f"{proc.pid}\n")
+        with proc:
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                out, err = proc.communicate(timeout=0.2)
-            except subprocess.TimeoutExpired as e:
-                # A descendant may have left the group while keeping a pipe open.
-                out, err = _stream(e.output), _stream(e.stderr)
-                proc.stdout.close()
-                proc.stderr.close()
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _kill_group(proc.pid)
+                try:
+                    out, err = proc.communicate(timeout=0.2)
+                except subprocess.TimeoutExpired as e:
+                    # A descendant may have left the group while keeping a pipe open.
+                    out, err = _stream(e.output), _stream(e.stderr)
+                    proc.stdout.close()
+                    proc.stderr.close()
+                    proc.wait()
+                raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+            except BaseException:
+                _kill_group(proc.pid)
                 proc.wait()
-            raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
-        except BaseException:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.wait()
-            raise
-        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+                raise
+            _kill_group(proc.pid)          # what the probe left running in its group ends with it (0.4.27)
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    finally:
+        _tell_watcher(watcher, "done\n", close=True)
 
 
 def probe_record(root: Path, ac: str, cmd: str, timeout: int) -> tuple[dict, str]:
