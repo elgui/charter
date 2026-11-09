@@ -24,6 +24,7 @@ kind: work
 
 - [ ] AC-1: <binary, observable state> — probe: `<command>`
 - [ ] AC-2: <...> — probe: `<command>`
+<!-- A criterion a person must close (taste, risk, a device or account only they have, a human review the unit keeps) says why a person is needed, what they will observe or judge, who prepares it and what package they get: not "the owner reviews the result". Do not invent a probe to avoid it. -->
 <!-- A probe must fail before the work. A criterion that protects behaviour which already exists says `(guard)`.
      A criterion only the owner can close carries an `— owner: check` (or `— owner: do`) segment before its probe:
      `- [ ] AC-3: rows arrive after the restart — owner: check — probe: `<command>``. `charter owner` lists it. -->

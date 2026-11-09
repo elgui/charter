@@ -278,6 +278,10 @@ For each act, in order, one entry:
 - beyond_title: true when the command does more than its title says (deletes, installs or sends something the title
   does not name).
 
+For an owner_judgement act that is an observation or a check (no command), also say in `why` whether the owner could do it
+from the act alone: an entry they can open, a finite path with the result to expect, what was completed and what was not
+verified. When not, say what is missing, so that the session can prepare it.
+
 A rule that lets a command run as root without a password (sudoers NOPASSWD) is high risk. Check that every command it
 allows is a root-owned file in a root-owned directory that the owner's user cannot write; otherwise say in `why` that
 anything able to edit that file gets root.

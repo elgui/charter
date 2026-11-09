@@ -46,7 +46,8 @@ An owner act is paste-ready when:
 - it holds no `<placeholder>`: a value the owner supplies is read with a prompt (`read "b?R2 bucket name: "`); owner.md is not edited after the hand-over, since `charter owner run` refuses a changed one;
 - an interactive command (wizard, editor, TUI) is an act of its own, with the answers to give under `do:`, which the owner sees before it runs;
 - it says what success prints (`expect-output:`, or `expect-exit:`) and, in its title or `do:`, how many Touch ID or password prompts to expect;
-- no secret is typed on a command line (shell history, `ps`): a secret goes through an interactive prompt.
+- no secret is typed on a command line (shell history, `ps`): a secret goes through an interactive prompt;
+- an act the owner performs by observing or judging is prepared the same way: finish what an agent can finish first; `do:` names the one question, an entry the owner can open (a link, the material itself, or the device), a short numbered path with the result to expect, what you completed and what you could not verify. Rehearse it on the final candidate and say which access you exercised. A technical review you ran is reported, never offered as the owner's verdict, and you do not invent a probe so as to skip an act that is the owner's. The hand-over review also asks whether the owner can follow it.
 
 `chain next` refuses a command of `owner.md` or of `## Wait` that holds a `<placeholder>`, and a `## Wait` that gives commands of its own.
 

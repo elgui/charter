@@ -24,6 +24,12 @@ per line, then at most one fenced block:
   read:           the one place the owner should read before running it
   timeout:        seconds after which the command is stopped (none by default; an install may take minutes)
 
+An act the owner performs by observing or judging, not by running a command, is prepared like a command: `do:` gives the
+one question, where to start (a link the owner can open, the material itself, or the device and how to reach the
+observable state), a short numbered path with the result to expect at each step, what the session already finished, and
+what it could not verify (access it did not exercise, judgment that remains); `check:` is only for what a command can
+decide. Never hand over raw logs, a bare path or "review the result". The reviewer reads the act as the owner will.
+
 A command runs with zsh (`zsh -c`) at the repository root, with the owner's terminal, so `sudo` asks for Touch ID or the
 password there. Each act is paste-ready (chain rules, section 5): no `<placeholder>` (`chain next` refuses one; read a
 value with `read "b?R2 bucket name: "`, since owner.md is not edited after the hand-over), no secret on a command line,
