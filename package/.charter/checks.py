@@ -548,24 +548,152 @@ def acceptance_items(body: str) -> list[str]:
     return [re.sub(r"\[[xX]\]", "[ ]", l.strip()) for l in lib.acceptance(body).split("\n") if CHECKBOX_RE.match(l)]
 
 
-def check_acceptance_change(old_text: str, new_text: str, path: str) -> list[Finding]:
-    """Once a unit leaves planning, removing or rewriting an acceptance line needs a `## Log` line saying why."""
+def _box_key(after_box: str) -> str:
+    """The key `acceptance_boxes` gives a checkbox line: its AC id, else its text before the first ` — ` segment."""
+    ac = re.match(r"(AC-\d+)\b", after_box)
+    return ac.group(1) if ac else re.split(r"\s[—–]\s", after_box)[0].strip().lower()
+
+
+def _names_key(line: str, key: str) -> bool:
+    """A Log line names a criterion: its AC id as a whole word (AC-2 is not AC-20), or the text a line without an id is known by."""
+    return bool(re.search(r"\b" + re.escape(key) + r"\b", line)) if re.fullmatch(r"AC-\d+", key) else key in line.lower()
+
+
+DATED_LOG_RE = re.compile(r"^\s*-\s*\d{4}-\d{2}-\d{2}\b")
+WORDS_RECEIPT_RE = re.compile(r"owner accepted (AC-\d+)\b.*\[words sha256:([0-9a-f]{16})\]\s*$", re.M)
+
+
+def words_hash(line: str) -> str:
+    """The digest of an acceptance line's words as the owner accepted them, the box read as open: `charter accept`
+    writes it into its receipt, so that a later reword of an accepted line shows (0.4.26)."""
+    return hashlib.sha256(re.sub(r"\[[xX]\]", "[ ]", line.rstrip(), count=1).encode()).hexdigest()[:16]
+
+
+def _lines_by_key(body: str) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for l in lib.acceptance(body).split("\n"):
+        m = BOX_LINE_RE.match(l.rstrip("\n"))
+        if m:
+            out.setdefault(_box_key(m.group(2)), []).append(l.rstrip())
+    return out
+
+
+def _accepted_rewords(ob: str, nb: str) -> list[tuple[str, str]]:
+    """(criterion, digest) for each line the owner accepted whose words this change alters: the receipt's digest
+    matched the line before and does not after."""
+    o, n = _lines_by_key(ob), _lines_by_key(nb)
+    out = []
+    for ac, h in dict.fromkeys(WORDS_RECEIPT_RE.findall(lib.section(nb, "Log"))):
+        if any(words_hash(l) == h for l in o.get(ac, [])) and not any(words_hash(l) == h for l in n.get(ac, [])):
+            out.append((ac, h))
+    return out
+
+
+def unit_history(root: Path, rp: str, limit: int = 200, ref: str = "HEAD") -> list[str]:
+    """The texts of a unit committed up to `ref`, newest first, across renames, at most `limit`: one `git log` and one
+    `git cat-file --batch`. A commit that deleted the file gives nothing."""
+    r = lib.git(root, "-c", "core.quotePath=false", "log", "--follow", f"-n{limit}", "--format=%x01%H", "--name-only", ref, "--", rp)
+    specs = []
+    for chunk in r.stdout.split("\x01")[1:]:
+        lines = [l for l in chunk.splitlines() if l.strip()]
+        if len(lines) >= 2:
+            specs.append(f"{lines[0]}:{lines[-1]}")
+    if not specs:
+        return []
+    p = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"], input=("\n".join(specs) + "\n").encode(), capture_output=True)
+    out, pos, data = [], 0, p.stdout
+    while pos < len(data):
+        nl = data.find(b"\n", pos)
+        if nl < 0:
+            break
+        head = data[pos:nl].split()
+        pos = nl + 1
+        if len(head) != 3 or head[1] != b"blob":
+            continue
+        size = int(head[2])
+        out.append(data[pos:pos + size].decode("utf-8", errors="replace"))
+        pos += size + 1
+    return out
+
+
+def _status(text: str) -> str:
+    return str(lib.split_frontmatter(text)[0].get("status", ""))
+
+
+def left_planning(root: Path, rp: str, ref: str = "HEAD") -> bool:
+    """Whether the unit was ever committed in a status past planning, up to `ref` (0.4.26)."""
+    return any(_status(t) not in lib.PLANNING_STATUSES for t in unit_history(root, rp, ref=ref))
+
+
+def planning_baseline(root: Path, rp: str) -> str | None:
+    """The unit as work started against it: its last committed text in a planning status before it first left
+    planning, or its first text when it was committed already started. None while it has never left planning."""
+    last = None
+    for t in reversed(unit_history(root, rp)):
+        if _status(t) in lib.PLANNING_STATUSES:
+            last = t
+        else:
+            return last or t
+    return None
+
+
+def words_when_started(root: Path, rp: str) -> dict[str, str]:
+    """Key -> the line after its box, as it stood when work started, for each key that had one line then."""
+    base = planning_baseline(root, rp)
+    if base is None:
+        return {}
+    out = {}
+    for k, ls in _lines_by_key(lib.split_frontmatter(base)[2]).items():
+        if len(ls) == 1:
+            out[k] = BOX_LINE_RE.match(ls[0]).group(2).rstrip()
+    return out
+
+
+def previous_words(started: dict[str, str], line: str) -> str | None:
+    """The words a criterion had when work started, when its line now reads otherwise (the box aside)."""
+    m = BOX_LINE_RE.match(line.rstrip("\n"))
+    if not m:
+        return None
+    was = started.get(_box_key(m.group(2)))
+    return was if was is not None and was != m.group(2).rstrip() else None
+
+
+def check_acceptance_change(old_text: str, new_text: str, path: str, root: Path | None = None,
+                            history_path: str | None = None, ref: str = "HEAD") -> list[Finding]:
+    """Once a unit leaves planning, removing or rewriting an acceptance line needs a dated `## Log` line naming it
+    (its AC id, or the text a line without an id is known by). With `root`, a unit committed past planning up to `ref`
+    (the commit the old text comes from) stays past it: moving it back to `next` does not lift the rule (0.4.26).
+    Rewording a line the owner accepted is reported."""
     if not old_text:
         return []
     of, _, ob = lib.split_frontmatter(old_text)
-    if str(of.get("status", "")) in lib.PLANNING_STATUSES:
-        return []
     _, _, nb = lib.split_frontmatter(new_text)
     new_items = acceptance_items(nb)
     changed = [i for i in acceptance_items(ob) if i not in new_items]
     if not changed:
         return []
+    out = [Finding("done", "warn", f"{ac}'s words differ from those the owner accepted (sha256:{h}); the owner has not seen the new ones",
+                   path=path, override="restore the accepted words, or ask the owner to accept the line again")
+           for ac, h in _accepted_rewords(ob, nb)]
+    if str(of.get("status", "")) in lib.PLANNING_STATUSES and (root is None or not left_planning(root, history_path or path, ref)):
+        return out
     old_log = [l for l in lib.section(ob, "Log").splitlines() if l.strip()]
     new_log = [l for l in lib.section(nb, "Log").splitlines() if l.strip()]
-    if len(new_log) > len(old_log):
-        return []
-    return [Finding("done", "block", f"acceptance changed after work started ({changed[0][:80]}) with no new `## Log` line", path=path,
-                    override="append a dated `## Log` line saying which criterion changed and why, in the same edit")]
+    override = "append a dated `## Log` line saying which criterion changed and why, in the same edit"
+    if len(new_log) <= len(old_log):
+        return out + [Finding("done", "block", f"acceptance changed after work started ({changed[0][:80]}) with no new `## Log` line", path=path,
+                              override=override)]
+    added = list(new_log)
+    for l in old_log:
+        if l in added:
+            added.remove(l)
+    dated = [l for l in added if DATED_LOG_RE.match(l)]
+    unnamed = [k for k in dict.fromkeys(_box_key(BOX_LINE_RE.match(i).group(2)) for i in changed)
+               if not any(_names_key(l, k) for l in dated)]
+    if unnamed:
+        out.append(Finding("done", "block", f"acceptance changed after work started ({changed[0][:80]}) with no new dated `## Log` line naming "
+                           + ", ".join(unnamed[:5]), path=path, override=override))
+    return out
 
 
 def _quotes_open(cmd: str) -> bool:
@@ -972,6 +1100,21 @@ def id_collision(root: Path, rp: str, new_text: str) -> list[Finding]:
         return [Finding("decisions" if sub == "decisions" else "changes", "block", f"id `{new_id}` is already held by {held['_path']}",
                         path=rp, override="give this file its own id; to replace a decision, supersede it")]
     return []
+
+
+def check_vacuous_binds(decs: dict[str, dict], tracked: list[str]) -> list[Finding]:
+    """An active decision whose `binds:` matches no tracked file guards nothing: no marker is asked for, its `check:`
+    never runs at a commit, and a check over the missing files may pass on them (0.4.26, from a tele-claude decision
+    whose four bound files were never built). A warning in `charter check --all`, not at each commit."""
+    out = []
+    for did, d in decs.items():
+        binds = lib.as_list(d.get("binds"))
+        if str(d.get("status", "active")) != "active" or not binds or any(lib.matches_any(p, binds) for p in tracked):
+            continue
+        out.append(Finding("decisions", "warn", f"decision `{did}` binds {', '.join(binds)}, which matches no file in the tree: "
+                           "it guards nothing, and a `check:` over those paths can pass on files that are not there", path=d["_path"],
+                           override="supersede it with `binds:` and `check:` that name the code as it is, written once that code exists"))
+    return out
 
 
 def run_decision_checks(root: Path, decs: dict[str, dict], only_bound_to: list[str] | None = None) -> list[Finding]:

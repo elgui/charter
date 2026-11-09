@@ -66,7 +66,7 @@ def main() -> int:
             rep.add(*checks.check_size(root, cfg, rp, new_lines, old_lines, len(new_text.encode("utf-8")), old_bytes))
             if rp.startswith(lib.TASKETS_DIR + "/") and rp.endswith(".md"):
                 rep.add(*checks.check_unit_done(root, cfg, new_text, rp))
-                rep.add(*checks.check_acceptance_change(old_text, new_text, rp))
+                rep.add(*checks.check_acceptance_change(old_text, new_text, rp, root))
                 keys = lib.inline_comments(new_text)
                 if keys:
                     rep.add(checks.Finding("done", "warn", f"inline comment on {', '.join(keys)}: tcv2's reader keeps it as part of the value; put the comment on its own line", path=rp))

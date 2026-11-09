@@ -134,7 +134,7 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
     lines = text.split("\n")
     first = len(lines) - len(u.get("_body", "").split("\n"))   # the body's first line, past the frontmatter
     heads = tuple(h.lower() for h in lib.ACCEPTANCE_HEADINGS)
-    out, level = [], 0
+    out, level, started = [], 0, None
     for lineno, line in enumerate(lines[first:], first + 1):
         h = re.match(r"^(#{1,6})\s+(.*)", line)
         if h:
@@ -153,10 +153,19 @@ def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]
         probe = checks.PROBE_RE.match(line)
         what = re.sub(r"^\s*-\s*\[ \]\s*(AC-\d+:?\s*)?", "", line)
         what = re.split(r"(?:\s[—–-]\s*|[;:]\s*)(?:owner|human|probe):", what)[0].strip()
-        out.append(_item(key=f"owner-line:{uid}:{ac}", kind=(seg.group(1) or "check").lower() if seg else "check",
-                         title=f"{uid} {ac}: {what}"[:200], file=u["_path"], line=lineno,
-                         probe=probe.group(2) if probe else None, marked=bool(seg),
-                         acceptance=acceptance_contract(root, uid, ac, u["_path"], line)))
+        it = _item(key=f"owner-line:{uid}:{ac}", kind=(seg.group(1) or "check").lower() if seg else "check",
+                   title=f"{uid} {ac}: {what}"[:200], file=u["_path"], line=lineno,
+                   probe=probe.group(2) if probe else None, marked=bool(seg),
+                   acceptance=acceptance_contract(root, uid, ac, u["_path"], line))
+        # the words the line had when work started, when they differ: the owner reads old beside new (0.4.26); the key
+        # is added only then, so the queue of a unit nobody reworded reads as before
+        if box.group(2):
+            if started is None:
+                started = checks.words_when_started(root, u["_path"])
+            was = checks.previous_words(started, line)
+            if was is not None:
+                it["previous"] = was
+        out.append(it)
     return out
 
 
@@ -227,7 +236,8 @@ def _accept(root, cfg, uid, ac, expected, note, trailer, dry_run):
     # Preserve all other source text and record the owner's actual observation, not a probe pass.
     receipt = (f"- {dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')} "
                f"owner accepted {ac}" + (f": {note}" if note else "")
-               + (f" ({trailer})" if trailer else ""))
+               + (f" ({trailer})" if trailer else "")
+               + f" [words sha256:{checks.words_hash(contract['text'])}]")   # the words accepted, so a later reword shows (0.4.26)
     log = re.search(r"^## Log[ \t]*$", text, re.M)
     if log:
         end = re.search(r"^## ", text[log.end():], re.M)
@@ -394,6 +404,8 @@ def human(rep: dict) -> str:
         L += ["", f"{titles[kind]}:"]
         for i in its:
             L.append(f"- [{i['key']}] {i['title']} ({i['file']}:{i['line']})" + ("" if i["marked"] else " (unmarked)"))
+            if i.get("previous"):
+                L.append(f"    was, when work started: {i['previous']}")
             if i["ask"]:
                 L += [f"    ask: {l}" for l in i["ask"].splitlines()]
             if i.get("readiness") and not i["readiness"]["ready"]:

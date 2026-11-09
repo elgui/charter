@@ -15,7 +15,7 @@ This project runs under the charter method (`charter/`, `.charter/`). Full text:
 - Code that depends on a decision carries `charter:<decision-id>` in a comment. A decision with `check:` is verified in CI and by `charter check --all`, and at commit when a staged path matches its `binds:`; a `check:` with no `binds:` does not run at commit.
 - Stay inside the unit's `perimeter:`. If you must touch a file outside it, add `- <path>: <why>` under `## Outside perimeter` in the unit before committing.
 - A file over the size limit is frozen. Move code out of it into a new file (shrinking is always allowed); a `kind: split` unit that lets it grow is opened by the owner.
-- Once a unit has left `next` or `later`, changing or removing an acceptance line needs a dated `## Log` line in the same edit.
+- Once a unit has left `next` or `later`, changing or removing an acceptance line needs a dated `## Log` line in the same edit that names it (its AC id, or its text when it has none). Moving the unit back to `next` does not lift this.
 - Append a dated line to the unit's `## Log` when something lands or when you stop. A resumed session reads the unit, not the transcript.
 - Keep comments in frontmatter on their own lines: an engine reads `status: done  # x` as the status `done  # x`.
 

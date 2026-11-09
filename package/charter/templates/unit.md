@@ -28,6 +28,10 @@ kind: work
 <!-- A probe must fail before the work. A criterion that protects behaviour which already exists says `(guard)`.
      A criterion only the owner can close carries an `— owner: check` (or `— owner: do`) segment before its probe:
      `- [ ] AC-3: rows arrive after the restart — owner: check — probe: `<command>``. `charter owner` lists it. -->
+<!-- A unit that changes a state machine (a poller, a session, a relay, a run) lists what the world does without the
+     user: a timer or tick, a process dying, a restart, a second device or hook answering, a late completion. Give an AC
+     for each one that can fire between two steps. An AC that says "never stuck" or "eventually"
+     names what must keep running, and its probe stops that. -->
 
 ## Evidence
 

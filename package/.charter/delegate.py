@@ -177,12 +177,20 @@ def _closed_probes(root: Path, rp: str, kinds_by_key: dict[str, str]) -> list[di
     """The probe of each `— owner: check` line this change closes, read from the staged unit."""
     text = checks.staged_text(root, rp)
     lines = checks._probe_lines(text)
-    out = []
+    out, started, by_key = [], None, checks._lines_by_key(lib.split_frontmatter(text)[2])
     for key, kind in kinds_by_key.items():
         if kind != "owner-check":
             continue
         hit = next(((ac, cmd) for ac, cmd, whole in lines if ac == key or key in whole.lower()), None)
-        out.append({"path": rp, "key": key, "probe": hit[1] if hit else None})
+        entry = {"path": rp, "key": key, "probe": hit[1] if hit else None}
+        now = by_key.get(key, [])
+        if len(now) == 1:
+            # the line's words when work started, when they differ: the judge reads old beside new (0.4.26)
+            started = checks.words_when_started(root, rp) if started is None else started
+            was = checks.previous_words(started, now[0])
+            if was is not None:
+                entry["previous"] = was
+        out.append(entry)
     return out
 
 

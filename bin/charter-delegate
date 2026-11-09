@@ -88,6 +88,8 @@ By kind:
   otherwise only adds Evidence or Log lines, and the evidence plausibly supports the line. Set probes_safe true only if
   every probe command is a read-only check safe to run unattended as the owner (tests, grep, curl GET); false for anything
   that writes outside the repository, deploys, deletes, sends, uses sudo or credentials, or pipes a download into a shell.
+  A probe entry with `previous` carries the line's words when work started, reworded since: commit only if the new words
+  ask at least as much as the old; escalate when they ask less (a dropped every, never or all, a weaker probe).
 - upgrade: a charter upgrade. Commit if the diff only replaces charter's own hook entries in .claude/settings.json.
 - ruling: the owner's typed words and the question they answered. Commit only if the words clearly give exactly this
   ruling (this verb, this target, this status); escalate on any ambiguity, condition or hedge in them.
