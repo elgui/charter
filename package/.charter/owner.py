@@ -127,14 +127,16 @@ def legacy_re(root: Path, cfg: dict) -> re.Pattern:
     return _legacy_re(owner_names(root, cfg))
 
 
-def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern) -> list[dict]:
+def owner_lines(root: Path, uid: str, u: dict, legacy: re.Pattern, started: dict[str, str] | None = None) -> list[dict]:
     """Unchecked acceptance lines of an open unit that only the owner can close: marked with `— owner:`, or
-    (unmarked, `marked: false`) naming a human step or the owner the way units did before the segment."""
+    (unmarked, `marked: false`) naming a human step or the owner the way units did before the segment. `started`, the
+    unit's words when work started, is read from its history when not given (`checks.words_when_started_many` reads
+    many units at once, 0.4.27)."""
     text = _read(root, u["_path"])
     lines = text.split("\n")
     first = len(lines) - len(u.get("_body", "").split("\n"))   # the body's first line, past the frontmatter
     heads = tuple(h.lower() for h in lib.ACCEPTANCE_HEADINGS)
-    out, level, started = [], 0, None
+    out, level = [], 0
     for lineno, line in enumerate(lines[first:], first + 1):
         h = re.match(r"^(#{1,6})\s+(.*)", line)
         if h:
@@ -320,14 +322,16 @@ def queue(root: Path, cfg: dict, units: dict[str, dict], states: dict[str, str])
                                run=[delegate.fallback(root, m)]))
     closed = lib.as_list(cfg.get("done_statuses")) + list(lib.TERMINAL_STATUSES)
     legacy = legacy_re(root, cfg)
-    for uid, u in units.items():
-        if str(u.get("status", "")) in closed:
-            continue
+    open_units = {uid: u for uid, u in units.items() if str(u.get("status", "")) not in closed}
+    # every open unit's history in one pass: one `git log --follow` per unit made the queue minutes-slow on a long
+    # history, past the 20 s a desk gives it (0.4.27)
+    started = checks.words_when_started_many(root, [u["_path"] for u in open_units.values()])
+    for uid, u in open_units.items():
         reason = str(u.get("gate_reason") or "")
         if reason.upper().startswith("HUMAN-ONLY"):
             items.append(_item(key=f"human:{uid}", kind="do", title=str(u.get("title", "")), file=u["_path"],
                                line=_line_of(_read(root, u["_path"]), r"^gate_reason:"), ask=reason))
-        items += owner_lines(root, uid, u, legacy)
+        items += owner_lines(root, uid, u, legacy, started.get(u["_path"]))
     return items
 
 

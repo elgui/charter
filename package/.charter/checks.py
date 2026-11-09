@@ -15,6 +15,7 @@ import shlex
 import signal
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -559,7 +560,9 @@ def _names_key(line: str, key: str) -> bool:
     return bool(re.search(r"\b" + re.escape(key) + r"\b", line)) if re.fullmatch(r"AC-\d+", key) else key in line.lower()
 
 
-DATED_LOG_RE = re.compile(r"^\s*-\s*\d{4}-\d{2}-\d{2}\b")
+# a date, or an ISO timestamp (`2026-11-09T12:00:00Z`, what `charter accept` writes): `T` is a word character, so
+# `\b` alone refused the second (0.4.27, #52)
+DATED_LOG_RE = re.compile(r"^\s*-\s*\d{4}-\d{2}-\d{2}(?:\b|T\d)")
 WORDS_RECEIPT_RE = re.compile(r"owner accepted (AC-\d+)\b.*\[words sha256:([0-9a-f]{16})\]\s*$", re.M)
 
 
@@ -591,13 +594,26 @@ def _accepted_rewords(ob: str, nb: str) -> list[tuple[str, str]]:
 
 def unit_history(root: Path, rp: str, limit: int = 200, ref: str = "HEAD") -> list[str]:
     """The texts of a unit committed up to `ref`, newest first, across renames, at most `limit`: one `git log` and one
-    `git cat-file --batch`. A commit that deleted the file gives nothing."""
-    r = lib.git(root, "-c", "core.quotePath=false", "log", "--follow", f"-n{limit}", "--format=%x01%H", "--name-only", ref, "--", rp)
+    `git cat-file --batch`. A commit that deleted the file gives nothing. A copy is where the unit begins: `--follow`
+    also follows copies, and a unit written by copying another is not that unit (0.4.27)."""
+    r = lib.git(root, "-c", "core.quotePath=false", "log", "--follow", f"-n{limit}", "--format=%x01%H", "--name-status", ref, "--", rp)
     specs = []
     for chunk in r.stdout.split("\x01")[1:]:
         lines = [l for l in chunk.splitlines() if l.strip()]
-        if len(lines) >= 2:
-            specs.append(f"{lines[0]}:{lines[-1]}")
+        if len(lines) < 2:
+            continue
+        parts = lines[-1].split("\t")
+        if parts[0].startswith("D"):
+            continue
+        specs.append(f"{lines[0]}:{parts[-1]}")
+        if parts[0].startswith("C"):
+            break
+    return _blobs(root, specs)
+
+
+def _blobs(root: Path, specs: list[str]) -> list[str]:
+    """The texts `<commit>:<path>` names, in order, from one `git cat-file --batch`; a spec that names no blob gives
+    nothing."""
     if not specs:
         return []
     p = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"], input=("\n".join(specs) + "\n").encode(), capture_output=True)
@@ -616,6 +632,39 @@ def unit_history(root: Path, rp: str, limit: int = 200, ref: str = "HEAD") -> li
     return out
 
 
+def unit_histories(root: Path, paths: list[str], limit: int = 200, ref: str = "HEAD") -> dict[str, list[str]]:
+    """What `unit_history` gives, for many units at once: one `git log` over the units directory and one
+    `git cat-file --batch`, where `unit_history` runs both per unit (0.4.27; `charter owner` on 84 units went from about
+    27 s to under a second on tele-claude). Renames inside the directory are followed (`-M`); a unit moved in from
+    outside it starts at that move, where `--follow` would go further back. A path outside the directory is read by
+    `unit_history`."""
+    want = set(paths)
+    out = {p: unit_history(root, p, limit, ref) for p in want if not p.startswith(lib.TASKETS_DIR + "/")}
+    inside = want - set(out)
+    if not inside:
+        return out
+    r = lib.git(root, "-c", "core.quotePath=false", "log", "-M", "--full-history", "--format=%x01%H", "--name-status", ref, "--", lib.TASKETS_DIR)
+    alias: dict[str, str] = {}                 # a path at an older commit -> the unit it became
+    specs: dict[str, list[str]] = {p: [] for p in inside}
+    for chunk in r.stdout.split("\x01")[1:]:
+        lines = chunk.splitlines()
+        sha = lines[0].strip()
+        for line in lines[1:]:
+            parts = line.split("\t")
+            if len(parts) < 2 or parts[0].startswith("D"):
+                continue                       # a deletion gives nothing, as in `unit_history`
+            unit = alias.get(parts[-1], parts[-1])
+            if unit in specs and len(specs[unit]) < limit:
+                specs[unit].append(f"{sha}:{parts[-1]}")
+            if parts[0].startswith("R") and len(parts) == 3:
+                alias[parts[1]] = unit         # older commits name the unit by its previous path
+    flat = [s for p in sorted(inside) for s in specs[p]]
+    texts = iter(_blobs(root, flat))
+    for p in sorted(inside):
+        out[p] = [next(texts, "") for _ in specs[p]]
+    return out
+
+
 def _status(text: str) -> str:
     return str(lib.split_frontmatter(text)[0].get("status", ""))
 
@@ -625,11 +674,9 @@ def left_planning(root: Path, rp: str, ref: str = "HEAD") -> bool:
     return any(_status(t) not in lib.PLANNING_STATUSES for t in unit_history(root, rp, ref=ref))
 
 
-def planning_baseline(root: Path, rp: str) -> str | None:
-    """The unit as work started against it: its last committed text in a planning status before it first left
-    planning, or its first text when it was committed already started. None while it has never left planning."""
+def _baseline(history: list[str]) -> str | None:
     last = None
-    for t in reversed(unit_history(root, rp)):
+    for t in reversed(history):
         if _status(t) in lib.PLANNING_STATUSES:
             last = t
         else:
@@ -637,9 +684,13 @@ def planning_baseline(root: Path, rp: str) -> str | None:
     return None
 
 
-def words_when_started(root: Path, rp: str) -> dict[str, str]:
-    """Key -> the line after its box, as it stood when work started, for each key that had one line then."""
-    base = planning_baseline(root, rp)
+def planning_baseline(root: Path, rp: str) -> str | None:
+    """The unit as work started against it: its last committed text in a planning status before it first left
+    planning, or its first text when it was committed already started. None while it has never left planning."""
+    return _baseline(unit_history(root, rp))
+
+
+def _words_of(base: str | None) -> dict[str, str]:
     if base is None:
         return {}
     out = {}
@@ -647,6 +698,16 @@ def words_when_started(root: Path, rp: str) -> dict[str, str]:
         if len(ls) == 1:
             out[k] = BOX_LINE_RE.match(ls[0]).group(2).rstrip()
     return out
+
+
+def words_when_started(root: Path, rp: str) -> dict[str, str]:
+    """Key -> the line after its box, as it stood when work started, for each key that had one line then."""
+    return _words_of(planning_baseline(root, rp))
+
+
+def words_when_started_many(root: Path, paths: list[str]) -> dict[str, dict[str, str]]:
+    """`words_when_started` for each path, read from one history pass (`unit_histories`, 0.4.27)."""
+    return {p: _words_of(_baseline(h)) for p, h in unit_histories(root, paths).items()}
 
 
 def previous_words(started: dict[str, str], line: str) -> str | None:
@@ -832,21 +893,55 @@ def _probe_runner(root: Path, cfg: dict) -> list[str]:
     return runner
 
 
+# The leader of a probe's session (0.4.27). A probe runs in a session of its own, so that a timeout kills all it
+# started (#35, 0.4.24); but then a caller that kills charter's process group, as tele-claude's checker does at its total
+# timeout (tests/test_checker_core.py::test_total_timeout_kills_the_probes_too there), no longer reached the probe. The
+# guard runs the probe in its own group and holds the read end of a pipe whose write end only charter holds: when charter
+# ends, however it ends (SIGKILL included), the pipe closes and the guard kills its group. It exits as the probe did.
+PROBE_GUARD = r"""
+import os, select, signal, subprocess, sys, threading
+fd = int(sys.argv[1])
+try:
+    child = subprocess.Popen(sys.argv[2:], close_fds=True)
+except OSError as e:
+    sys.stderr.write(f"probe runner could not start: {e}\n")
+    sys.exit(127)
+done_r, done_w = os.pipe()
+threading.Thread(target=lambda: (child.wait(), os.write(done_w, b"x")), daemon=True).start()
+while True:
+    ready = select.select([fd, done_r], [], [])[0]
+    if done_r in ready:
+        break
+    if fd in ready and not os.read(fd, 1):
+        os.killpg(0, signal.SIGKILL)
+code = child.returncode
+if code < 0:
+    signal.signal(-code, signal.SIG_DFL)
+    os.kill(os.getpid(), -code)
+sys.exit(code)
+"""
+
+
 def _run_probe(root: Path, cmd: str, timeout: int, env: dict | None = None,
                runner: list[str] | None = None) -> subprocess.CompletedProcess:
-    """A probe owns a process group: kill and reap on timeout or interruption, with a bounded final drain."""
+    """A probe owns a process group: kill and reap on timeout or interruption, with a bounded final drain. Its session
+    is led by `PROBE_GUARD`, which kills it if charter ends first."""
     if runner is None:
         cfg = lib.load_config(root)
         if cfg.get(lib.PROBLEMS):
             return subprocess.CompletedProcess(cmd, 127, "", "probe refused: correct charter/config.json first")
         runner = _probe_runner(root, cfg)
-    command = [*runner, "/bin/sh", "-c", cmd] if runner else cmd
+    alive_r, alive_w = os.pipe()       # charter keeps the write end; the guard sees it close when charter ends
+    command = [sys.executable, "-I", "-S", "-c", PROBE_GUARD, str(alive_r), *runner, "/bin/sh", "-c", cmd]
     try:
-        proc = subprocess.Popen(command, shell=not runner, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        proc = subprocess.Popen(command, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(alive_r,),
                           encoding="utf-8", errors="replace", env=env, start_new_session=True)
     except OSError as e:
+        os.close(alive_w)
         return subprocess.CompletedProcess(cmd, 127, "", f"probe runner could not start: {e}")
-    with proc:
+    finally:
+        os.close(alive_r)
+    with proc, open(alive_w, "wb", closefd=True):
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
