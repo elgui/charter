@@ -107,7 +107,7 @@ Keep the `< /dev/null`: with stdin open, `codex exec` waits for it. When Codex w
 
 1. Does every number, count and quotation match its source?
 2. Does each citation say what is claimed, and does each cited path exist in a clean clone?
-3. Walk each flow against the real code, with concurrency, retries, outages and restores. What breaks?
+3. Walk each flow against the real code, with concurrency, retries, outages and restores, and what each eventually-promise needs to keep running. What breaks?
 4. Which conclusion does the evidence not support, and which caveat was dropped?
 5. Can each probe fail before the work and pass after it, and does it prove the deliverable?
 6. Could two units still choose incompatibly? Is anything promised on no unit?
