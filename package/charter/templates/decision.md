@@ -9,7 +9,9 @@ owner: <who settles it>
 kind: design
 # binds: files that must carry `charter:<id>`; optional
 binds: [<glob>, <glob>]
-# check: a shell command that exits 0 while the decision holds; optional; it runs at every commit and in CI
+# check: a shell command that exits 0 while the decision holds; optional; it runs at every commit that stages a bound file and in CI.
+# Write it only once the code it guards exists. A check never seen failing proves nothing: before the decision goes active, break the
+# guarded code on scratch, run the check, see it fail, and record that under ## Because as `$ <break>; <check>` → exit <n>
 check: <shell command that exits 0 while the decision holds>
 # expires: a date or a condition in words; a date is exclusive (the decision counts as expired from the start of that day) and must be later than `date:`
 expires: <YYYY-MM-DD or a condition in words>
@@ -36,6 +38,8 @@ gate_evidence:
 ## Because
 
 <The case that justified it: the incident, the measurement, the constraint. This is what a reader needs to know whether it still applies.>
+
+<With a `check:`, the check seen failing: `$ <the scratch break>; <the check>` → exit <non-zero>, then the break undone.>
 
 ## Stops applying when
 

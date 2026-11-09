@@ -167,7 +167,8 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
                 prev = None   # git's similarity heuristic does not establish tasket identity
             status = str(fields.get("status", ""))
             prev_status = str(lib.split_frontmatter(prev or "")[0].get("status", ""))
-            rep.add(*checks.check_acceptance_change(prev or "", text, p))
+            # the unit's history up to the commit the old text comes from: HEAD at a commit, the base in CI (0.4.26)
+            rep.add(*checks.check_acceptance_change(prev or "", text, p, root, source, "HEAD" if a.staged else (base or "HEAD")))
             rep.add(*checks.check_probe_cut(text, p))
             if status not in done_st or (prev_status == status and not a.strict):
                 continue
@@ -197,6 +198,8 @@ def _check(a, root: Path, cfg: dict, gates: set, rep) -> None:
             rep.add(*checks.check_decisions_text(root, decs, p, text))
         rep.add(*[f for f in checks.duplicate_ids(root) if f.gate == "decisions"])
         rep.add(*checks.check_decision_reads(root, decs, paths if a.staged else None))
+        if not a.staged:
+            rep.add(*checks.check_vacuous_binds(decs, tracked))
         for u in units.values():
             if str(u.get("status", "")) not in done_st and str(u.get("status", "")) not in lib.TERMINAL_STATUSES:
                 rep.add(*checks.check_unit_decisions(root, decs, u))

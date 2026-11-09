@@ -124,7 +124,7 @@ class DeletedPathRegressions(ProjectCase):
                 renamed = root / '.taskets/renamed.md'
                 text = renamed.read_text().replace('retries == 3', 'retries == 4')
                 if logged:
-                    text += '\n- 2026-11-05 criterion revised with the implementation\n'
+                    text += '\n- 2026-11-05 AC-1 revised with the implementation\n'   # 0.4.26: the dated line names the criterion
                 renamed.write_text(text)
                 git(root, 'add', '.taskets/renamed.md')
                 result = charter(root, 'check', '--staged', '--done', '--no-probe')
