@@ -216,7 +216,10 @@ class ProbeCleanupRegressions(ProjectCase):
             with mock.patch.object(checks.subprocess, 'Popen', side_effect=start):
                 with self.assertRaises(KeyboardInterrupt):
                     checks._run_probe(self.root, 'sleep 20', 5, runner=[])
-            self.assertIsNotNone(processes[0].poll())
+            # the probe is the process whose output charter reads; from 0.4.27 a watcher starts beside it
+            probes = [proc for proc in processes if proc.stdout is not None]
+            self.assertEqual(len(probes), 1)
+            self.assertIsNotNone(probes[0].poll())
         finally:
             for proc in processes:
                 try:
@@ -224,8 +227,9 @@ class ProbeCleanupRegressions(ProjectCase):
                 except ProcessLookupError:
                     pass
                 proc.wait()
-                proc.stdout.close()
-                proc.stderr.close()
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
 
 
 class BoundedAndAnchorRegressions(ProjectCase):
