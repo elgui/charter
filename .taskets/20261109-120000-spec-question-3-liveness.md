@@ -26,4 +26,4 @@ The flow-promises brief's K2 asks for one clause in charter-spec's review questi
 ## Log
 
 - 2026-11-09 12:00 created by the 0.4.26 session; the spec branch was left untouched
-- 2026-11-09 14:00 the clause is committed on `charter-spec-draft` as 235f2b4 (question 3 of the spec review, `package/.claude/skills/charter-spec/SKILL.md:110` on that branch); AC-1's probe reads `main`, so the unit stays `next` until that branch merges
+- 2026-11-09 14:00 the clause is committed on `charter-spec-draft` as 235f2b4 (question 3 of the spec review, `package/.claude/skills/charter-spec/SKILL.md:110` on that branch); AC-1's probe greps the working tree, so it already passes in a `charter-spec-draft` checkout; on `main` it passes only once that branch merges, and the unit stays `next` until then
