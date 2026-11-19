@@ -385,7 +385,9 @@ def assessment_text(res: dict) -> str:
 
 
 def agreement_json(a: dict, b: dict, agr: dict) -> dict:
-    return {"schema": SCHEMA, "rubric": a["decl"]["rubric"], "project": a["decl"]["project"],
+    decl = a["decl"]
+    return {"schema": SCHEMA, "rubric": decl["rubric"], "project": decl["project"], "horizon": decl["horizon"],
+            "scope": decl["scope"], "outcomes": decl["outcomes"], "outcomes_total": len(a["ids"]),
             "declaration_sha256": a["decl"]["_sha256"], "pair": list(a["pair"]), "raters": agr["raters"],
             "totals": agr["totals"], "by_criterion": agr["by_criterion"], "disagreements": [
                 {k: (rating(v) if k in agr["raters"] else v) for k, v in row.items()} for row in agr["disagreements"]],
@@ -403,6 +405,7 @@ def agreement_text(a: dict, b: dict, agr: dict) -> str:
            f"Cells agreeing: {t['agree']}/{t['cells']} (both snapshots); both rated: {t['known_agree']}/{t['both_known']} "
            f"exact, {t['known_within_one']}/{t['both_known']} within one; rated by one only: {t['one_unknown']}; "
            f"same direction of movement: {t['movement_agree']}/{t['movement_compared']}",
+           f"Declared cohort ({a['decl']['scope']}): {', '.join(a['ids'])}; horizon {a['decl']['horizon']}",
            "By criterion: " + "  ".join(f"{c} {v['agree']}/{v['cells']}" for c, v in agr["by_criterion"].items())]
     if agr["disagreements"]:
         out.append("Disagreements:")

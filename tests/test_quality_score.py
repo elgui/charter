@@ -308,6 +308,19 @@ class Agreement(Bed):
         self.assertIn("interview-trial U2 after: cx-1 1, second 2  affects hold trial-token", out.stdout)
         self.assertIn("interview-trial D3 before: cx-1 ?, second 1", out.stdout)
 
+    def test_a_sample_comparison_keeps_its_sample_label(self):
+        # Rule 1: a sample receives a sample label; a saved comparison must not read as the project's (PR #59 review).
+        decl = self.write_decl(declaration(outcomes=("interview-trial",), assessors=("cx-1", "second"),
+                                           scope="sample"), "sample.json")
+        b = self.write_sheet(rows_for("interview-trial", INTERVIEW), "b.csv")
+        out = self.run_tool("agree", decl, self.a, b)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("Declared cohort (sample): interview-trial; horizon the test horizon", out.stdout)
+        out = self.run_tool("agree", decl, self.a, b, "--json")
+        data = json.loads(out.stdout)
+        self.assertEqual((data["scope"], data["horizon"], data["outcomes_total"]), ("sample", "the test horizon", 1))
+        self.assertEqual(data["outcomes"], [{"id": "interview-trial", "home": "rails.md#interview-trial"}])
+
     def test_movement_in_opposite_directions_is_counted(self):
         agr = self.agree(rows_for("interview-trial", dict(INTERVIEW, U1=("1", "0", "regression"))))
         self.assertEqual((agr["totals"]["movement_agree"], agr["totals"]["movement_compared"]), (10, 11))
