@@ -54,10 +54,19 @@ def _text(value, what: str) -> str:
 
 # --- the declaration -------------------------------------------------------------------------------------------
 
+def _unique_keys(pairs: list) -> dict:
+    keys = [k for k, _ in pairs]
+    repeated = sorted({k for k in keys if keys.count(k) > 1})
+    if repeated:
+        raise Refusal(f"The declaration repeats {', '.join(repeated)}: a later value would silently replace "
+                      "a frozen one.")
+    return dict(pairs)
+
+
 def read_declaration(path: Path) -> dict:
     raw = path.read_bytes()
     try:
-        decl = json.loads(raw.decode("utf-8-sig"))
+        decl = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_unique_keys)
     except json.JSONDecodeError as error:
         raise Refusal(f"The declaration is not JSON: {error}.") from None
     if not isinstance(decl, dict):

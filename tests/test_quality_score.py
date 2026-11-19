@@ -252,6 +252,21 @@ class Refusals(Bed):
             with self.assertRaises(cq.Refusal, msg=json.dumps(decl)[:200]):
                 cq.read_declaration(self.write_decl(decl))
 
+    def test_a_repeated_key_is_refused(self):
+        # json.loads keeps the last of two equal keys: a trailing "holds": [] erased a critical hold (PR #59 review).
+        hold = {"id": "h", "reason": "r", "critical": True}
+        text = json.dumps(declaration(holds=[hold]))[:-1] + ', "holds": []}'
+        path = self.dir / "dup.json"
+        path.write_text(text, encoding="utf-8")
+        with self.assertRaises(cq.Refusal) as ctx:
+            cq.read_declaration(path)
+        self.assertIn("repeats holds", str(ctx.exception))
+        nested = json.dumps(declaration()).replace('"sha256": "' + "aa" * 32 + '"',
+                                                   '"sha256": "' + "aa" * 32 + '", "sha256": "cc"')
+        path.write_text(nested, encoding="utf-8")
+        with self.assertRaises(cq.Refusal):
+            cq.read_declaration(path)
+
     def test_rater_and_pair_must_be_declared(self):
         decl = declaration(assessors=("first", "second"))
         with self.assertRaises(cq.Refusal):
