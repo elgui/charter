@@ -83,7 +83,10 @@ def read_declaration(path: Path) -> dict:
     for outcome in outcomes:
         if not isinstance(outcome, dict) or set(outcome) != {"id", "home"}:
             raise Refusal('Each outcome is an object with exactly "id" and "home" (its canonical home).')
-        ids.append(_text(outcome["id"], "outcome id").strip())
+        oid = _text(outcome["id"], "outcome id")
+        if oid != oid.strip():
+            raise Refusal(f"Outcome id {oid!r} has surrounding spaces: the worksheet must match it exactly.")
+        ids.append(oid)
         _text(outcome["home"], f"home of outcome {outcome['id']}")
     if len(set(ids)) != len(ids):
         raise Refusal("Declared outcome IDs must be unique: a second path to one result is not a second outcome.")

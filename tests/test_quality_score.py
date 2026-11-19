@@ -238,6 +238,8 @@ class Refusals(Bed):
                declaration(holds=[{"id": "h", "reason": "r", "critical": True, "outcome": "nope"}]),
                # Malformed collections are refused, not a traceback (review of PR #59).
                declaration(assessors=[{}]), declaration(assessors=[[]]),
+               # A padded ID was stripped for the cells but not for the exported inventory (PR #59 review).
+               declaration(outcomes=(" x ",)), declaration(outcomes=("x\t",)),
                # An assessor's name is a key of a disagreement row beside these fixed keys.
                declaration(assessors=["holds", "second"]), declaration(assessors=["outcome", "second"]),
                declaration(assessors=["first", "criterion"]), declaration(assessors=["side"]),
