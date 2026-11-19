@@ -1,41 +1,41 @@
 {
-  "reviewed": "2026-11-03",
-  "charter_version": "0.4.22",
+  "reviewed": "2026-11-19",
+  "charter_version": "0.4.27",
   "revisions": {
-    "charter": "b2df24eaac0ea16fd330e61502789c02c095c4ff",
-    "tele-claude": "b81dc050c62725580278f45a2ec59e6ce0bca331",
-    "spec_draft": "dee2f42e1feb372a04ebec99d8f0a59532f5c476"
+    "charter": "8d95bf0a14e7402f67a789c37781d48796979348",
+    "tele-claude": "1fb13e8641cb07c8f782de3805b5123fc0685fb8",
+    "spec_draft": "235f2b4870278ae7f8bd2a0ff64dd7ac81939c03"
   },
   "sources": [
     {
       "repo": "charter",
       "path": "package/VERSION",
-      "sha256": "3090ddf7b61b1cb50c979807d3ac5de9ad257e55ae15e503969357dc94d62c66"
+      "sha256": "1c98727d2e1c0362944734a145d900bd6b61b59436e87c4dc44253dbf3749814"
     },
     {
       "repo": "charter",
       "path": "package/.claude/rules/charter.md",
-      "sha256": "5cb26369efe4f66462fb18b149dd0c66eec913906261f3426ae3ca2de8a0cccb"
+      "sha256": "797c1c4d5c417a12b445a1ae00cda862e1f2203eeafa17f463f3aa9e3d4e2700"
     },
     {
       "repo": "charter",
       "path": "package/.charter/owner.py",
-      "sha256": "7dbc63f0b3f1f354744b42ed6adb039e6a4924bcdcec0b61944fe3c9c4fdcb06"
+      "sha256": "86f98f2283555ad12268c7d7e345e394178ca5a2a6bb57e6e8cf5337abac4a8f"
     },
     {
       "repo": "charter",
       "path": "package/.charter/bin/charter",
-      "sha256": "59150a1068790b88c9847033ca842ed6044ef9071ac14f5d893c1a16cf22ed40"
+      "sha256": "6e0b8556f765442bbec8ca81a5ad6be371d231424514b983b185b01cca7215b1"
     },
     {
       "repo": "charter",
       "path": "package/.charter/delegate.py",
-      "sha256": "ff7a54b0e6a910a249a9e368582c57ce6431f00bdd7fcb028d1824316fd09041"
+      "sha256": "f5a2d01eb462b5f58d43be865ffb5418196686b267ee328872c9ef9b840ab954"
     },
     {
       "repo": "charter",
       "path": "bin/charter-pkg",
-      "sha256": "45dd71599b6d96d2e1ba6c0e48614f910dc605ddd734f74a3714260d623f0d81"
+      "sha256": "fc4c96e54ae7c75ae468af0a6d6d10a75467e08f765c7b90d8c5f473fba4bf77"
     },
     {
       "repo": "charter",
@@ -45,27 +45,27 @@
     {
       "repo": "charter",
       "path": "docs/install.md",
-      "sha256": "eb68bd6ac163f0b74afb34bef3c8796dadbb81134cfde62d8310671a09aaa8ab"
+      "sha256": "51b2e4cd677b975d8e036ec4bdc2a6317f3fedb47dbe28c610c3dab93c8f34e4"
     },
     {
       "repo": "charter",
       "path": "docs/verification.md",
-      "sha256": "51f277501df4cf261d2af330262759d312dbd052fd7522269d4495f2ecdb6be9"
+      "sha256": "601952e86bf5a589e74feb9d53d81608f73a309fef6582592fc67b2d5d7f6ba3"
     },
     {
       "repo": "charter",
       "path": "docs/design/owner-delegate.md",
-      "sha256": "f36a2ba4e83f7cbfa609e07a6b822f762b946a49d3cd5c8b81f7d00a97ba6b77"
+      "sha256": "db5a9d16e35fa324e25855376e6dd725f098ca4eeeb5713029c9ce79a116d3a2"
     },
     {
       "repo": "charter",
       "path": "docs/design/continuous-chain.md",
-      "sha256": "62492c668a91fa48f024457d29fd0e92eb6e42d1df97dfe897ed93d993116d5e"
+      "sha256": "c1ea93830efe7767279c72c968137f4ccf0bdc65f51567dba56213dccc581f96"
     },
     {
       "repo": "tele-claude",
       "path": "docs/OWNER_DESK.md",
-      "sha256": "d6440cbcaaf093892c3037f8884f8d1d2d64682af586b5965df57ebd324a1fb9"
+      "sha256": "8abc0a109323cd3f306471cafc777fc6dabfbd74d4768e1c77086f0b4d6c05bf"
     },
     {
       "repo": "tele-claude",
@@ -75,17 +75,17 @@
     {
       "repo": "tele-claude",
       "path": "services/owner_desk/detectors/charter.py",
-      "sha256": "ce34c3448d4294ea4216a76b57ce2550e2e632c84009a18e595ee5ab220a3c4b"
+      "sha256": "87b8cb014ed2057459ca12348d233adb9a2599e8bdece81369bbfd041f33ef43"
     },
     {
       "repo": "tele-claude",
       "path": "services/owner_desk/runner.py",
-      "sha256": "ae9fbbc9ee0367345e94729d1013c4ff09e8099108a8daba3f3d116f459e1b22"
+      "sha256": "0981966a9ca9d71eeb5de570c0c636566e7f5b0da72b4a38e02949f27c0c6193"
     },
     {
       "repo": "tele-claude",
       "path": "services/owner_desk/cli.py",
-      "sha256": "51fa37928c2607bc44164417f1a274b1fbdf4c224034ae6c62acebaff9dfedfa"
+      "sha256": "eae127c530059e17e0d74f1642f6509bdc17bd195183febd63c1caba0eb8b35f"
     },
     {
       "repo": "tele-claude",
@@ -100,13 +100,13 @@
     {
       "repo": "tele-claude",
       "path": "docs/OWNER_DESK_ACCEPTANCE.md",
-      "sha256": "fcbe77d1981c5c56ccc48fdce2fd3a9b1df93e66c922640e544e1731887ab27a"
+      "sha256": "c27233db02276f8cb0b39e5010adfc4cf2d4755d24922bfe262a1b97e45fa2f0"
     },
     {
       "repo": "charter",
       "ref": "charter-spec-draft",
       "path": "package/.claude/skills/charter-spec/SKILL.md",
-      "sha256": "28dd1d94b49d09d62fdb1918176e660ab8c711e6718e3b1da3e364e38e598831"
+      "sha256": "9dcc1c962045f398eaee055b6dd3fd5aa2892e180d4a2628513c09a72e1f0e62"
     },
     {
       "repo": "charter",
