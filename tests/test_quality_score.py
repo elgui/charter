@@ -7,6 +7,7 @@ cell; the result is also emitted as JSON. The worked examples are the proposal's
 denominator" and the programme paragraph); the interview-trial fixture carries cx-1's ratings of 2026-11-18 only,
 with placeholder evidence, and must reproduce the figures reported then: 62.5–70.8 → 70.8–79.2 at 91.7% coverage."""
 import csv
+import hashlib
 import io
 import json
 import subprocess
@@ -374,6 +375,38 @@ class JsonOutput(Bed):
         self.assertEqual(len(data["inputs"]["worksheet_sha256"]), 64)
         # Same inputs, same output: nothing time-dependent is serialized.
         self.assertEqual(self.run_tool("score", decl, sheet, "--json").stdout, out.stdout)
+
+    def test_the_worksheet_digest_names_the_bytes_scored(self):
+        # The worksheet was parsed from one read and hashed from a second: replaced in between, the assessment
+        # bound the old ratings to the new file's digest (PR #59 review). Replace it as soon as reading begins.
+        from unittest import mock
+        decl = cq.read_declaration(self.write_decl(declaration()))
+        sheet = self.write_sheet(rows_for("x", {}))
+        scored = sheet.read_bytes()
+        zeros = self.write_sheet(rows_for("x", {}, default=("0", "0")), "zeros.csv")
+        real_open, real_read = Path.open, Path.read_bytes
+        state = {"swapped": False}
+
+        def swap_after(path):
+            if path == sheet and not state["swapped"]:
+                state["swapped"] = True
+                zeros.replace(sheet)
+
+        def opening(path, *args, **kwargs):
+            handle = real_open(path, *args, **kwargs)
+            swap_after(path)
+            return handle
+
+        def reading(path):
+            data = real_read(path)
+            swap_after(path)
+            return data
+
+        with mock.patch.object(Path, "open", opening), mock.patch.object(Path, "read_bytes", reading):
+            res = cq.assess(decl, sheet)
+        self.assertTrue(state["swapped"])
+        self.assertEqual(project(res, "after")[0], 100)
+        self.assertEqual(res["worksheet_sha256"], hashlib.sha256(scored).hexdigest())
 
     def test_redacted_evidence_keeps_a_digest(self):
         decl = self.write_decl(declaration())

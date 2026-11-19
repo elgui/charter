@@ -20,6 +20,7 @@ import argparse
 import csv
 import datetime as dt
 import hashlib
+import io
 import json
 import sys
 from fractions import Fraction
@@ -139,15 +140,19 @@ def read_declaration(path: Path) -> dict:
 
 # --- the worksheet ---------------------------------------------------------------------------------------------
 
-def read_worksheet(path: Path, outcomes: list[str]) -> dict:
-    """Every declared (outcome, criterion) cell once: {(outcome, criterion): {before, after, evidence, reason}}."""
+def read_worksheet(path: Path, outcomes: list[str], raw: bytes | None = None) -> dict:
+    """Every declared (outcome, criterion) cell once: {(outcome, criterion): {before, after, evidence, reason}}.
+
+    `raw` is the worksheet's bytes when the caller already read them, so the digest it records names what was parsed."""
     if not outcomes:
         raise Refusal("The declaration names no outcome. An empty inventory has no score.")
     if any(not o.strip() for o in outcomes) or len(set(outcomes)) != len(outcomes):
         raise Refusal("Declared outcome IDs must be nonempty and unique.")
     expected = {(o, c) for o in outcomes for c in CRITERIA}
     cells = {}
-    with path.open(encoding="utf-8-sig", newline="") as stream:
+    if raw is None:
+        raw = path.read_bytes()
+    with io.StringIO(raw.decode("utf-8-sig"), newline="") as stream:
         reader = csv.DictReader(stream, strict=True)
         if reader.fieldnames not in (HEADER, HEADER + ["reason"]):
             raise Refusal(f"Expected columns {','.join(HEADER)} and optionally reason.")
@@ -255,9 +260,10 @@ def assess(decl: dict, worksheet: Path, rater: str | None = None, pair: list[str
     before, after = pick_pair(decl, pair)
     rater = pick_rater(decl, rater)
     ids = decl["_ids"]
-    cells = read_worksheet(worksheet, ids)
+    raw = worksheet.read_bytes()  # read once: the digest names the bytes scored
+    cells = read_worksheet(worksheet, ids, raw)
     return {"decl": decl, "rater": rater, "pair": (before, after), "cells": cells, "ids": ids,
-            "worksheet_sha256": hashlib.sha256(worksheet.read_bytes()).hexdigest(),
+            "worksheet_sha256": hashlib.sha256(raw).hexdigest(),
             "scores": {"before": side_scores(cells, ids, "before"), "after": side_scores(cells, ids, "after")},
             "changes": changes(cells, ids)}
 
