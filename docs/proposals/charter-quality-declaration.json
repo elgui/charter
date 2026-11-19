@@ -1,0 +1,19 @@
+{
+  "rubric": "assess-charter-quality@<commit of the proposal used>",
+  "project": "<project>",
+  "horizon": "<the named delivery horizon>",
+  "scope": "complete",
+  "outcomes": [
+    {"id": "example", "home": "<canonical home of the outcome, e.g. charter/rails.md#r1>"}
+  ],
+  "snapshots": {
+    "before": {"sources": [{"ref": "<path or URL of a source>", "revision": "<commit>"}]},
+    "after": {"sources": [{"ref": "<path of a source>", "sha256": "<working-tree digest>"}]}
+  },
+  "settings": {},
+  "assessors": ["<assessor>"],
+  "evidence_cutoff": "2026-01-01T00:00:00Z",
+  "holds": [
+    {"id": "<hold>", "reason": "<what holds the affected path>", "critical": true, "outcome": "example", "criteria": ["U2"]}
+  ]
+}

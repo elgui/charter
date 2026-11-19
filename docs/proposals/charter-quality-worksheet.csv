@@ -1,0 +1,13 @@
+outcome,criterion,before,after,evidence
+example,S1,?,?,Identify the actor and observable result at each revision.
+example,S2,?,?,Trace a material ambiguity or exception to its ruling or owner.
+example,S3,?,?,Record the success and counterexample and the independent result.
+example,D1,?,?,Name the dependency or commitment that justifies this order.
+example,D2,?,?,Trace the predecessor evidence and record the missing-link replay.
+example,D3,?,?,Record the cold reader's next step and any dispatcher discrepancy.
+example,R1,?,?,Cite the agreed milestone and the intended beneficiary.
+example,R2,?,?,Trace a boundary case to its home and authorized decider.
+example,R3,?,?,Describe the missing user result that would keep the exit open.
+example,U1,?,?,Verify whether the worker can start or must wait and why.
+example,U2,?,?,Record the candidate-bound acceptance run and plausible wrong result.
+example,U3,?,?,Record the walk through a failed or interrupted handoff.
