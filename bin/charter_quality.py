@@ -34,6 +34,7 @@ REASONS = ("repaired-artifact", "changed-external-fact", "new-evidence", "regres
 DECLARATION_KEYS = {"rubric", "project", "horizon", "scope", "outcomes", "snapshots", "settings", "assessors",
                     "evidence_cutoff", "holds", "notes"}
 REQUIRED_KEYS = DECLARATION_KEYS - {"settings", "notes"}
+RESERVED_RATERS = {"outcome", "criterion", "side", "holds"}  # the fixed keys of a disagreement row
 
 
 class Refusal(ValueError):
@@ -104,6 +105,8 @@ def read_declaration(path: Path) -> dict:
         raise Refusal("assessors must be a nonempty list of distinct names.")
     for name in assessors:
         _text(name, "assessor")
+        if name in RESERVED_RATERS:
+            raise Refusal(f"Assessor name {name!r} is reserved ({', '.join(sorted(RESERVED_RATERS))}).")
     if len(set(assessors)) != len(assessors):
         raise Refusal("assessors must be a nonempty list of distinct names.")
     if "settings" in decl and not isinstance(decl["settings"], dict):
