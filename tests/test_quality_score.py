@@ -235,7 +235,13 @@ class Refusals(Bed):
                declaration(snapshots={"before": {"sources": [{"ref": "a"}]}, "after": {"sources": [{"ref": "a",
                                                                                                   "sha256": "b"}]}}),
                declaration(holds=[{"id": "h", "reason": "r", "critical": "yes"}]),
-               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "outcome": "nope"}])]
+               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "outcome": "nope"}]),
+               # Malformed collections are refused, not a traceback (review of PR #59).
+               declaration(assessors=[{}]), declaration(assessors=[[]]),
+               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "criteria": 5}]),
+               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "criteria": None}]),
+               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "criteria": "U2"}]),
+               declaration(holds=[{"id": "h", "reason": "r", "critical": True, "criteria": {}}])]
         for decl in bad:
             with self.assertRaises(cq.Refusal, msg=json.dumps(decl)[:200]):
                 cq.read_declaration(self.write_decl(decl))

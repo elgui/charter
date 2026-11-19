@@ -100,10 +100,12 @@ def read_declaration(path: Path) -> dict:
                 raise Refusal(f'Source {source["ref"]} of snapshot "{name}" needs a "revision" or a "sha256".')
 
     assessors = decl["assessors"]
-    if not isinstance(assessors, list) or not assessors or len(set(assessors)) != len(assessors):
+    if not isinstance(assessors, list) or not assessors:
         raise Refusal("assessors must be a nonempty list of distinct names.")
     for name in assessors:
         _text(name, "assessor")
+    if len(set(assessors)) != len(assessors):
+        raise Refusal("assessors must be a nonempty list of distinct names.")
     if "settings" in decl and not isinstance(decl["settings"], dict):
         raise Refusal("settings must be an object.")
 
@@ -118,7 +120,10 @@ def read_declaration(path: Path) -> dict:
             raise Refusal(f"Hold {hold['id']} needs critical: true or false.")
         if "outcome" in hold and hold["outcome"] not in ids:
             raise Refusal(f"Hold {hold['id']} names undeclared outcome {hold['outcome']}.")
-        bad = [c for c in hold.get("criteria", []) if c not in CRITERIA]
+        criteria = hold.get("criteria", [])
+        if not isinstance(criteria, list):
+            raise Refusal(f"criteria of hold {hold['id']} must be a list of criterion IDs.")
+        bad = [c for c in criteria if c not in CRITERIA]
         if bad:
             raise Refusal(f"Hold {hold['id']} names unknown criteria {', '.join(map(str, bad))}.")
     decl["_ids"] = ids
