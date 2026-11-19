@@ -63,7 +63,7 @@ For an existing project, start with the survey. For installation, follow [every 
 | Path | Purpose |
 |---|---|
 | [`package/`](package/) | Versioned files copied into each project: rules, hooks, CLI, templates, and CI workflow. A package change is a release. |
-| [`bin/`](bin/) | Installer, survey, and supporting tools. |
+| [`bin/`](bin/) | Installer, survey, and supporting tools, including the provisional [quality score](docs/proposals/assess-charter-quality.md) for a project's preparation (`bin/charter_quality.py`). |
 | [`machine/`](machine/) | Optional user-level Claude Code layer, installed once into `~/.claude`: a hook that says when a project is behind, and a skill to install, upgrade and migrate across projects. |
 | [`tests/`](tests/) | Tests for the package and installer. |
 | [`docs/`](docs/) | Method, guides, diagrams, design notes, and dated development records. |
