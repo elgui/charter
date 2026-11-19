@@ -34,7 +34,7 @@ HEADER = ["outcome", "criterion", "before", "after", "evidence"]
 REASONS = ("repaired-artifact", "changed-external-fact", "new-evidence", "regression", "assessor-disagreement")
 DECLARATION_KEYS = {"rubric", "project", "horizon", "scope", "outcomes", "snapshots", "settings", "assessors",
                     "evidence_cutoff", "holds", "notes"}
-REQUIRED_KEYS = DECLARATION_KEYS - {"settings", "notes"}
+REQUIRED_KEYS = DECLARATION_KEYS - {"notes"}  # settings too: {} says "none", absence says "never recorded"
 RESERVED_RATERS = {"outcome", "criterion", "side", "holds"}  # the fixed keys of a disagreement row
 
 
@@ -122,7 +122,7 @@ def read_declaration(path: Path) -> dict:
             raise Refusal(f"Assessor name {name!r} is reserved ({', '.join(sorted(RESERVED_RATERS))}).")
     if len(set(assessors)) != len(assessors):
         raise Refusal("assessors must be a nonempty list of distinct names.")
-    if "settings" in decl and not isinstance(decl["settings"], dict):
+    if not isinstance(decl["settings"], dict):
         raise Refusal("settings must be an object.")
 
     if not isinstance(decl["holds"], list):
@@ -354,7 +354,7 @@ def assessment_json(res: dict, redact: bool = False) -> dict:
         "schema": SCHEMA, "rubric": decl["rubric"], "project": decl["project"], "horizon": decl["horizon"],
         "scope": decl["scope"], "outcomes": decl["outcomes"], "outcomes_total": len(res["ids"]),
         "criteria": list(CRITERIA), "evidence_cutoff": decl["evidence_cutoff"], "rater": res["rater"],
-        "settings": decl.get("settings", {}),
+        "settings": decl["settings"],
         "snapshots": {name: decl["snapshots"][name] for name in res["pair"]},
         "inputs": {"declaration_sha256": decl["_sha256"], "worksheet_sha256": res["worksheet_sha256"],
                    "evidence_redacted": redact},

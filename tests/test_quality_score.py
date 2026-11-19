@@ -39,7 +39,8 @@ def declaration(outcomes=("x",), assessors=("first",), holds=(), **extra):
             "snapshots": {"before": {"sources": [{"ref": "unit.md", "sha256": "aa" * 32}]},
                           "after": {"sources": [{"ref": "unit.md", "sha256": "bb" * 32}]},
                           "control": {"sources": [{"ref": "unit.md", "revision": "c0ffee"}]}},
-            "assessors": list(assessors), "evidence_cutoff": "2026-11-18T19:05:15Z", "holds": list(holds)}
+            "settings": {}, "assessors": list(assessors), "evidence_cutoff": "2026-11-18T19:05:15Z",
+            "holds": list(holds)}
     decl.update(extra)
     return decl
 
@@ -226,7 +227,8 @@ class Refusals(Bed):
         self.refused(declaration(), rows_for("x", {}), "Expected columns", header=["outcome", "criterion", "x"])
 
     def test_declaration_fields(self):
-        for key in ("rubric", "horizon", "scope", "snapshots", "assessors", "evidence_cutoff", "holds"):
+        # settings is required as rule 1 asks: {} records "no settings", absence would say nothing (PR #59 review).
+        for key in ("rubric", "horizon", "scope", "snapshots", "settings", "assessors", "evidence_cutoff", "holds"):
             decl = declaration()
             del decl[key]
             with self.assertRaises(cq.Refusal, msg=key):
